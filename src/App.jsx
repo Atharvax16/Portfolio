@@ -779,10 +779,7 @@ function PhotoGallery() {
         gridTemplateColumns: "repeat(auto-fill, minmax(180px, 1fr))",
         gridAutoRows: "180px",
         gap: "0.6rem",
-        maxHeight: "58vh",
-        overflowY: "auto",
-        paddingRight: 4,
-      }} className="scr">
+      }}>
         {filtered.map((photo, i) => (
           <Rv key={photo.src} delay={i * 0.05}>
             <div
@@ -1035,8 +1032,6 @@ export default function App() {
   const [openProject, setOpenProject] = useState(null);
   const [showNeural, setShowNeural] = useState(false);
   const containerRef = useRef(null);
-  const scrollLock = useRef(false);
-  const modalOpenRef = useRef(false);
   const typed = useTypewriter(["Data Scientist.", "ML Engineer.", "Problem Solver.", "Hackathon Winner.", "AI Researcher."]);
 
   const handleBrainClick = (idx) => {
@@ -1045,52 +1040,21 @@ export default function App() {
     brainRegionRef.current = next;
   };
 
+  // Normal document scroll — just track which section is centered for the nav highlight.
   useEffect(() => {
-    const el = containerRef.current; if (!el) return;
-    const wh = (e) => {
-      if (scrollLock.current) return;
-      e.preventDefault();
-      const d = e.deltaY > 0 ? 1 : -1;
-      const n = Math.max(0, Math.min(SECS.length - 1, active + d));
-      if (n !== active) { scrollLock.current = true; setActive(n); setTimeout(() => { scrollLock.current = false; }, 850); }
-    };
-    el.addEventListener("wheel", wh, { passive: false });
-    return () => el.removeEventListener("wheel", wh);
-  }, [active]);
+    const obs = new IntersectionObserver((entries) => {
+      entries.forEach((e) => {
+        if (e.isIntersecting) {
+          const idx = SECS.indexOf(e.target.id);
+          if (idx !== -1) setActive(idx);
+        }
+      });
+    }, { rootMargin: "-45% 0px -45% 0px" });
+    SECS.forEach((id) => { const el = document.getElementById(id); if (el) obs.observe(el); });
+    return () => obs.disconnect();
+  }, []);
 
-  useEffect(() => {
-    const el = containerRef.current; if (!el) return;
-    let sy = 0;
-    const ts = (e) => { sy = e.touches[0].clientY; };
-    const te = (e) => {
-      if (scrollLock.current) return;
-      const d = sy - e.changedTouches[0].clientY;
-      if (Math.abs(d) > 50) {
-        const dir = d > 0 ? 1 : -1;
-        const n = Math.max(0, Math.min(SECS.length - 1, active + dir));
-        if (n !== active) { scrollLock.current = true; setActive(n); setTimeout(() => { scrollLock.current = false; }, 850); }
-      }
-    };
-    el.addEventListener("touchstart", ts, { passive: true });
-    el.addEventListener("touchend", te, { passive: true });
-    return () => { el.removeEventListener("touchstart", ts); el.removeEventListener("touchend", te); };
-  }, [active]);
-
-  useEffect(() => { modalOpenRef.current = !!openProject; }, [openProject]);
-
-  useEffect(() => {
-    const h = (e) => {
-      if (scrollLock.current || modalOpenRef.current) return;
-      let n = active;
-      if (e.key === "ArrowDown") n = Math.min(SECS.length - 1, active + 1);
-      else if (e.key === "ArrowUp") n = Math.max(0, active - 1);
-      if (n !== active) { scrollLock.current = true; setActive(n); setTimeout(() => { scrollLock.current = false; }, 850); }
-    };
-    window.addEventListener("keydown", h);
-    return () => window.removeEventListener("keydown", h);
-  }, [active]);
-
-  const goTo = (i) => { if (!scrollLock.current) { scrollLock.current = true; setActive(i); setTimeout(() => { scrollLock.current = false; }, 850); } };
+  const goTo = (i) => { const el = document.getElementById(SECS[i]); if (el) el.scrollIntoView({ behavior: "smooth", block: "start" }); };
   const logoClick = () => { const n = eggC + 1; setEggC(n); if (n >= 5) { setMatrix(true); setEggC(0); } };
 
   const st = {
@@ -1103,7 +1067,8 @@ export default function App() {
   return (
     <>
       <style>{`
-        *{margin:0;padding:0;box-sizing:border-box}html,body,#root{overflow:hidden;height:100%}
+        *{margin:0;padding:0;box-sizing:border-box}html{scroll-behavior:smooth;scroll-padding-top:56px}body{background:#07070E}
+        section{scroll-margin-top:56px}
         ::selection{background:rgba(255,107,74,0.3);color:#FF6B4A}
         @keyframes pulse{0%,100%{opacity:1}50%{opacity:0}}
         @keyframes glow{0%,100%{box-shadow:0 0 6px rgba(255,107,74,0.3)}50%{box-shadow:0 0 20px rgba(255,107,74,0.5)}}
@@ -1117,7 +1082,7 @@ export default function App() {
       {matrix && <MatrixOverlay onClose={() => setMatrix(false)} />}
       {openProject && <ResearchModal project={openProject} onClose={() => setOpenProject(null)} />}
 
-      <div ref={containerRef} style={{ width: "100vw", height: "100vh", background: P.bg, color: P.text, fontFamily: "'DM Sans',sans-serif", position: "relative", overflow: "hidden" }}>
+      <div ref={containerRef} style={{ width: "100%", minHeight: "100vh", background: P.bg, color: P.text, fontFamily: "'DM Sans',sans-serif", position: "relative" }}>
 
         {/* NAV DOTS */}
         <div style={{ position: "fixed", right: 14, top: "50%", transform: "translateY(-50%)", zIndex: 100, display: "flex", flexDirection: "column", gap: 10 }}>
@@ -1140,10 +1105,10 @@ export default function App() {
         </div>
 
         {/* SECTIONS */}
-        <div style={{ transform: `translateY(-${active * 100}vh)`, transition: "transform 0.8s cubic-bezier(0.76,0,0.24,1)", height: `${SECS.length * 100}vh` }}>
+        <div>
 
           {/* ═══ HOME ═══ */}
-          <section style={{ height: "100vh", display: "flex", alignItems: "center", padding: "0 2rem" }}>
+          <section id="Home" style={{ minHeight: "100vh", display: "flex", alignItems: "center", padding: "5rem 2rem 3rem" }}>
             <div style={{ display: "flex", width: "100%", maxWidth: 1050, margin: "0 auto", alignItems: "center", gap: "1.5rem", flexWrap: "wrap", paddingTop: "3rem" }}>
               <div style={{ flex: "1 1 340px", minWidth: 280 }}>
                 <Rv>
@@ -1210,7 +1175,7 @@ export default function App() {
           </section>
 
           {/* ═══ ABOUT ═══ */}
-          <section style={{ height: "100vh", display: "flex", alignItems: "center", justifyContent: "center" }}>
+          <section id="About" style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", padding: "2rem 0" }}>
             <div style={{ maxWidth: 900, width: "100%", padding: "4.5rem 2rem 2rem" }}>
               <Rv><p style={{ ...st.mn, fontSize: "0.68rem", color: P.muted, marginBottom: 4 }}>// about</p></Rv>
               <Rv delay={0.04}><h2 style={{ ...st.hd, fontSize: "1.8rem", marginBottom: "1.4rem" }}>The <span style={{ color: P.accent }}>Story</span> So Far</h2></Rv>
@@ -1250,8 +1215,8 @@ export default function App() {
           </section>
 
           {/* ═══ PROJECTS ═══ */}
-          <section style={{ height: "100vh", display: "flex", alignItems: "center", justifyContent: "center" }}>
-            <div style={{ maxWidth: 920, width: "100%", padding: "4.5rem 2rem 2rem", overflowY: "auto", maxHeight: "100vh" }} className="scr">
+          <section id="Projects" style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", padding: "3rem 0" }}>
+            <div style={{ maxWidth: 920, width: "100%", padding: "1.5rem 2rem" }}>
               <Rv><p style={{ ...st.mn, fontSize: "0.68rem", color: P.muted, marginBottom: 4 }}>// research &amp; projects</p></Rv>
               <Rv delay={0.04}><h2 style={{ ...st.hd, fontSize: "1.8rem", marginBottom: 4 }}>Selected <span style={{ color: P.accent }}>Work</span></h2></Rv>
               <Rv delay={0.08}><p style={{ color: P.muted, fontSize: "0.8rem", marginBottom: "1.3rem" }}>Click any project to open its case study — <span style={{ color: P.accent }}>abstract</span>, <span style={{ color: P.accent }}>method</span>, and <span style={{ color: P.accent }}>results</span>.</p></Rv>
@@ -1289,8 +1254,8 @@ export default function App() {
           </section>
 
           {/* ═══ SKILLS ═══ */}
-          <section style={{ height: "100vh", display: "flex", alignItems: "center", justifyContent: "center" }}>
-            <div style={{ maxWidth: 860, width: "100%", padding: "4.5rem 2rem 2rem", overflowY: "auto", maxHeight: "100vh" }} className="scr">
+          <section id="Skills" style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", padding: "3rem 0" }}>
+            <div style={{ maxWidth: 860, width: "100%", padding: "1.5rem 2rem" }}>
               <Rv><p style={{ ...st.mn, fontSize: "0.68rem", color: P.muted, marginBottom: 4 }}>// skills</p></Rv>
               <Rv delay={0.04}><h2 style={{ ...st.hd, fontSize: "1.8rem", marginBottom: "1.4rem" }}>Tech <span style={{ color: P.accent }}>Arsenal</span></h2></Rv>
               {[{ k: "lang", l: "Languages" }, { k: "ml", l: "ML & AI" }, { k: "data", l: "Data & BI" }, { k: "cloud", l: "Cloud" }].map((cat, ci) => (
@@ -1317,8 +1282,8 @@ export default function App() {
           </section>
 
           {/* ═══ JOURNEY ═══ */}
-          <section style={{ height: "100vh", display: "flex", alignItems: "center", justifyContent: "center" }}>
-            <div style={{ maxWidth: 720, width: "100%", padding: "4.5rem 2rem 2rem", overflowY: "auto", maxHeight: "100vh" }} className="scr">
+          <section id="Journey" style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", padding: "3rem 0" }}>
+            <div style={{ maxWidth: 720, width: "100%", padding: "1.5rem 2rem" }}>
               <Rv><p style={{ ...st.mn, fontSize: "0.68rem", color: P.muted, marginBottom: 4 }}>// journey</p></Rv>
               <Rv delay={0.04}><h2 style={{ ...st.hd, fontSize: "1.8rem", marginBottom: 4 }}>The <span style={{ color: P.accent }}>Path</span> I'm On</h2></Rv>
               <Rv delay={0.08}><p style={{ color: P.muted, fontSize: "0.8rem", marginBottom: "1.5rem" }}>Where I've been, where I'm going — and the mindset driving it all.</p></Rv>
@@ -1345,7 +1310,7 @@ export default function App() {
           </section>
 
           {/* ═══ GALLERY — LIFE BEYOND CODE ═══ */}
-          <section style={{ height: "100vh", display: "flex", alignItems: "center", justifyContent: "center" }}>
+          <section id="Gallery" style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", padding: "3rem 0" }}>
             <div style={{ maxWidth: 900, width: "100%", padding: "4.5rem 2rem 2rem" }}>
               <Rv><p style={{ ...st.mn, fontSize: "0.68rem", color: P.muted, marginBottom: 4 }}>// gallery</p></Rv>
               <Rv delay={0.04}><h2 style={{ ...st.hd, fontSize: "1.8rem", marginBottom: 4 }}>Life <span style={{ color: P.accent }}>Beyond Code</span></h2></Rv>
@@ -1359,7 +1324,7 @@ export default function App() {
           </section>
 
           {/* ═══ CONTACT ═══ */}
-          <section style={{ height: "100vh", display: "flex", alignItems: "center", justifyContent: "center" }}>
+          <section id="Contact" style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", padding: "3rem 0" }}>
             <div style={{ maxWidth: 620, width: "100%", padding: "4.5rem 2rem 2rem", textAlign: "center" }}>
               <Rv><p style={{ ...st.mn, fontSize: "0.68rem", color: P.muted, marginBottom: 4 }}>// contact</p></Rv>
               <Rv delay={0.04}><h2 style={{ ...st.hd, fontSize: "1.8rem", marginBottom: 4 }}>Let's <span style={{ color: P.accent }}>Connect</span></h2></Rv>
