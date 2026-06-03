@@ -289,6 +289,10 @@ const PROJECTS = [
   },
 ];
 
+// Display order for the Projects grid (lead with the flagship work).
+const PROJECT_ORDER = ["venueflow", "dr-xai-thesis", "catas", "research-companion", "cyberattack", "retinopathy-fl", "gait-parkinsons", "cc-fraud"];
+const ORDERED_PROJECTS = PROJECT_ORDER.map((id) => PROJECTS.find((p) => p.id === id)).filter(Boolean);
+
 const GALLERY_PHOTOS = [
   { src: "/images/hackathon-medtech-team.jpeg", caption: "3rd Place at AdvanceHealth MedTech Hackathon — Trinity College Dublin", category: "hackathon", span: "wide" },
   { src: "/images/hackathon-medtech-solo.jpeg", caption: "Ireland's First MedTech Student-Led Ideathon — Day 2", category: "hackathon", span: "tall" },
@@ -1221,7 +1225,7 @@ export default function App() {
               <Rv delay={0.04}><h2 style={{ ...st.hd, fontSize: "1.8rem", marginBottom: 4 }}>Selected <span style={{ color: P.accent }}>Work</span></h2></Rv>
               <Rv delay={0.08}><p style={{ color: P.muted, fontSize: "0.8rem", marginBottom: "1.3rem" }}>Click any project to open its case study — <span style={{ color: P.accent }}>abstract</span>, <span style={{ color: P.accent }}>method</span>, and <span style={{ color: P.accent }}>results</span>.</p></Rv>
               <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(360px,1fr))", gap: "0.8rem" }}>
-                {PROJECTS.map((p, i) => (
+                {ORDERED_PROJECTS.map((p, i) => (
                   <Rv key={p.id} delay={i * 0.07}>
                     <div
                       onClick={() => setOpenProject(p)}
