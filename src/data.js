@@ -30,7 +30,7 @@ export const PAPER = {
 
 /* Nav + scroll-tracked sections (paper running order).
    The gallery "Appendix" is intentionally NOT here — it stays out of nav. */
-export const SECS = ["Abstract", "Research", "Work", "Reading", "Foundations", "Methods", "About", "Contact"];
+export const SECS = ["Abstract", "Research", "Work", "Findings", "Reading", "Foundations", "Methods", "About", "Contact"];
 
 /* ════════════════════════════════════════
    RESEARCH FOCUS — the threads that define the work
@@ -424,6 +424,52 @@ export const PROJECTS = [
 /* Research-forward display order. */
 export const PROJECT_ORDER = ["dr-xai-thesis", "gen-image-detection", "retinopathy-fl", "catas", "research-companion", "venueflow", "cyberattack", "cc-fraud", "gait-parkinsons"];
 export const ORDERED_PROJECTS = PROJECT_ORDER.map((id) => PROJECTS.find((p) => p.id === id)).filter(Boolean);
+
+/* ════════════════════════════════════════
+   INSIGHTS — real figures from the work, each with the observation it
+   carries. The interactive panel a visiting researcher can step through.
+   ════════════════════════════════════════ */
+export const INSIGHTS = [
+  {
+    tag: "thesis", title: "Fidelity ≠ accuracy",
+    src: "/images/plots/thesis/fidelity_vs_accuracy.png",
+    insight: "Push restoration harder and the image looks better to the eye — but the classifier's accuracy doesn't follow it up. The gap between the two curves is the whole thesis in one figure.",
+  },
+  {
+    tag: "thesis", title: "Accuracy decays with noise",
+    src: "/images/plots/thesis/accuracy_vs_degradation_noise.png",
+    insight: "Every grader's accuracy slides as sensor noise climbs. Robustness isn't a property you get for free — it has to be measured before it can be defended.",
+  },
+  {
+    tag: "XAI", title: "Explanations destabilise first",
+    src: "/images/plots/thesis/insertion_auc_vs_noise.png",
+    insight: "Insertion-AUC falls under degradation: the model's explanations grow less faithful exactly when the input gets hard — when you'd most want to trust them.",
+  },
+  {
+    tag: "generative", title: "The non-saturating trick", sketch: "saturating",
+    insight: "When the generator is losing (D ≈ 0), the original saturating loss gives almost no gradient — training stalls. Flipping to −log(D) keeps the signal strong. A one-line change that rescues early GAN training.",
+  },
+  {
+    tag: "diffusion", title: "Cold-diffusion round trip",
+    src: "/images/plots/thesis/cold_diffusion_roundtrip_noise.png",
+    insight: "Deterministic forward/backward recovers the look of a noisy fundus image — but the fine pathology is exactly what a restorer is tempted to smooth away.",
+  },
+  {
+    tag: "routing", title: "Trust-score split",
+    src: "/images/plots/thesis/trust_score_distribution.png",
+    insight: "The quality-aware router separates images worth enhancing from those it should leave alone — turning the fidelity-vs-accuracy trade-off into a per-image decision.",
+  },
+  {
+    tag: "XAI", title: "Grad-CAM on the retina",
+    src: "/images/plots/gradcam-retinopathy.png",
+    insight: "Saliency lands on the lesions clinicians actually inspect — the kind of explanation a doctor can sanity-check, not just a pretty heatmap.",
+  },
+  {
+    tag: "anomaly", title: "Anomalies in CPU telemetry",
+    src: "/images/plots/anomaly-cpu-usage.png",
+    insight: "Injected attack spikes stand clear of baseline load. With a recall-first detector, a few false alarms are a fair price for never missing the spike that matters.",
+  },
+];
 
 export const GALLERY_PHOTOS = [
   { src: "/images/hackathon-medtech-team.jpeg", caption: "3rd Place at AdvanceHealth MedTech Hackathon — Trinity College Dublin", category: "hackathon", span: "wide" },

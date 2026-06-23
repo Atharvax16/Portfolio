@@ -1,9 +1,9 @@
 import { useState, useEffect } from "react";
 import {
   P, SECS, PAPER, RESEARCH_AREAS, READING_LOG, TIL_REPO, FROM_SCRATCH,
-  METHODS, JOURNEY, ORDERED_PROJECTS,
+  METHODS, JOURNEY, ORDERED_PROJECTS, INSIGHTS,
 } from "./data.js";
-import { Rv, Radar, PhotoGallery, MatrixOverlay, ResearchModal, SketchFidelityAccuracy, SketchResearcherFrontier, SketchMolecule, SketchAttention } from "./ui.jsx";
+import { Rv, Radar, PhotoGallery, MatrixOverlay, ResearchModal, SketchFidelityAccuracy, SketchResearcherFrontier, SketchMolecule, SketchAttention, InsightsViewer } from "./ui.jsx";
 
 /* Type tokens */
 const DISP = { fontFamily: "'Spectral',Georgia,serif" };
@@ -211,8 +211,15 @@ export default function App() {
           </div>
         </Section>
 
-        {/* ═══ 3 · READING & REPRODUCTIONS (references) ═══ */}
-        <Section id="Reading" num="3" note={<p style={noteTxt}>The <a href={TIL_REPO} target="_blank" rel="noopener noreferrer" className="body-link">til</a> journal — papers read in my own words, with notebooks where the idea needs to be felt.</p>}>
+        {/* ═══ 3 · FINDINGS (interactive figure explorer) ═══ */}
+        <Section id="Findings" num="3" note={<p style={noteTxt}>For the visiting researcher — step through the figures and the observation each one carries.</p>}>
+          <SecTitle>Findings &amp; Figures</SecTitle>
+          <Rv><p style={{ ...BODY, fontSize: "0.95rem", lineHeight: 1.75, color: P.sub, marginBottom: "1.4rem", maxWidth: 600 }}>Real plots from the work, annotated. Click through, or pick a thumbnail — from the thesis's fidelity-vs-accuracy crossing to the non-saturating GAN trick.</p></Rv>
+          <Rv delay={0.06}><InsightsViewer items={INSIGHTS} /></Rv>
+        </Section>
+
+        {/* ═══ 4 · READING & REPRODUCTIONS (references) ═══ */}
+        <Section id="Reading" num="4" note={<p style={noteTxt}>The <a href={TIL_REPO} target="_blank" rel="noopener noreferrer" className="body-link">til</a> journal — papers read in my own words, with notebooks where the idea needs to be felt.</p>}>
           <SecTitle>Reading &amp; Reproductions</SecTitle>
           <div style={{ display: "flex", flexDirection: "column", gap: "1.2rem" }}>
             {READING_LOG.map((r, i) => (
@@ -254,8 +261,8 @@ export default function App() {
           </Rv>
         </Section>
 
-        {/* ═══ 4 · FOUNDATIONS ═══ */}
-        <Section id="Foundations" num="4" note={<p style={noteTxt}>Not to reinvent the framework — to understand the mechanics it hides.</p>}>
+        {/* ═══ 5 · FOUNDATIONS ═══ */}
+        <Section id="Foundations" num="5" note={<p style={noteTxt}>Not to reinvent the framework — to understand the mechanics it hides.</p>}>
           <SecTitle>Foundations, From Scratch</SecTitle>
           <div>
             {FROM_SCRATCH.map((f, i) => (
@@ -277,8 +284,8 @@ export default function App() {
           </div>
         </Section>
 
-        {/* ═══ 5 · METHODS ═══ */}
-        <Section id="Methods" num="5">
+        {/* ═══ 6 · METHODS ═══ */}
+        <Section id="Methods" num="6">
           <SecTitle>Methods &amp; Tools</SecTitle>
           <div>
             {METHODS.map((m, i) => (
@@ -305,8 +312,8 @@ export default function App() {
           </Rv>
         </Section>
 
-        {/* ═══ 6 · ABOUT ═══ */}
-        <Section id="About" num="6">
+        {/* ═══ 7 · ABOUT ═══ */}
+        <Section id="About" num="7">
           <SecTitle>About</SecTitle>
           <Rv>
             <div style={{ display: "flex", gap: "1.3rem", alignItems: "flex-start", marginBottom: "1.4rem", flexWrap: "wrap" }}>

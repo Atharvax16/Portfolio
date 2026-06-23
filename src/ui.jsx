@@ -234,6 +234,83 @@ export function SketchAttention() {
   );
 }
 
+/* The non-saturating trick: when the generator is losing (D ≈ 0), the
+   saturating loss log(1−D) gives almost no gradient, while −log(D) still
+   pushes hard. Gradient-to-G vs the discriminator's belief. */
+export function SketchSaturating() {
+  return (
+    <svg viewBox="0 0 400 230" width="100%" height="100%" role="img"
+      aria-label="Sketch: gradient to the generator vs discriminator confidence, saturating vs non-saturating loss"
+      style={{ display: "block" }}>
+      <defs><RoughDefs id="rgh-sat" scale={1.4} seed={9} /></defs>
+      <g filter="url(#rgh-sat)" fill="none" strokeLinecap="round">
+        <path d="M50 24 L50 188 L368 188" stroke={P.sub} strokeWidth="1.4" />
+        {/* non-saturating −log(D): strong when D is small */}
+        <path d="M60 46 C 150 70, 250 150, 360 176" stroke={P.accent} strokeWidth="2.4" />
+        {/* saturating log(1−D): vanishes when D is small */}
+        <path d="M60 180 C 180 176, 270 120, 360 56" stroke={P.red} strokeWidth="2.4" strokeDasharray="6 5" />
+        {/* the danger zone: generator losing */}
+        <path d="M50 24 L110 24 L110 188 L50 188 Z" stroke="none" fill={P.red} fillOpacity="0.05" />
+      </g>
+      <text x="58" y="38" style={SK} fontSize="10" fill={P.accent}>−log D(G)  (non-saturating)</text>
+      <text x="360" y="48" textAnchor="end" style={SK} fontSize="10" fill={P.red}>log(1−D)  (saturating)</text>
+      <text x="80" y="206" textAnchor="middle" style={SK} fontSize="9" fontStyle="italic" fill={P.red}>G losing</text>
+      <text x="210" y="222" textAnchor="middle" style={SK} fontSize="10" fill={P.sub}>D(G(z)) — discriminator believes it's real →</text>
+      <text x="40" y="40" style={SK} fontSize="10" fill={P.sub} transform="rotate(-90 40 40)" textAnchor="end">∇ to G →</text>
+    </svg>
+  );
+}
+
+/* ════════════════════════════════════════
+   INSIGHTS VIEWER — step through real figures + the observation each carries
+   ════════════════════════════════════════ */
+export function InsightsViewer({ items }) {
+  const [i, setI] = useState(0);
+  const it = items[i];
+  const go = (d) => setI((i + d + items.length) % items.length);
+  return (
+    <div>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 10, flexWrap: "wrap", gap: 8 }}>
+        <div style={{ ...SK, fontSize: "0.62rem", color: P.sub, textTransform: "uppercase", letterSpacing: "0.08em" }}>
+          {it.tag} · figure {i + 1} / {items.length}
+        </div>
+        <div style={{ display: "flex", gap: 6 }}>
+          <button onClick={() => go(-1)} aria-label="Previous figure" style={{ ...SK, fontSize: "0.8rem", padding: "2px 10px", border: `1px solid ${P.line}`, background: P.paper2, color: P.ink, cursor: "pointer" }}>←</button>
+          <button onClick={() => go(1)} aria-label="Next figure" style={{ ...SK, fontSize: "0.8rem", padding: "2px 10px", border: `1px solid ${P.line}`, background: P.paper2, color: P.ink, cursor: "pointer" }}>→</button>
+        </div>
+      </div>
+
+      <div style={{ border: `1px solid ${P.line}`, borderTop: `2px solid ${P.ink}`, background: P.paper2 }}>
+        <div style={{ background: "#fff", minHeight: 60 }}>
+          {it.sketch === "saturating"
+            ? <div style={{ aspectRatio: "400 / 230" }}><SketchSaturating /></div>
+            : <img key={it.src} src={it.src} alt={it.title} style={{ width: "100%", display: "block", animation: "fadeUp 0.3s ease" }} />}
+        </div>
+        <div style={{ padding: "0.9rem 1.1rem 1rem" }}>
+          <div style={{ ...DISP, fontWeight: 600, fontSize: "1rem", color: P.ink, marginBottom: 4 }}>{it.title}</div>
+          <p style={{ ...BODY, fontSize: "0.88rem", color: P.sub, lineHeight: 1.65, textWrap: "pretty" }}>
+            <span style={{ ...SK, fontSize: "0.6rem", color: P.accent, textTransform: "uppercase", letterSpacing: "0.08em", marginRight: 6 }}>Insight</span>
+            {it.insight}
+          </p>
+        </div>
+      </div>
+
+      {/* thumbnail rail */}
+      <div style={{ display: "flex", gap: 6, marginTop: 10, flexWrap: "wrap" }}>
+        {items.map((m, j) => (
+          <button key={j} onClick={() => setI(j)} aria-label={m.title} title={m.title}
+            style={{ width: 58, height: 40, overflow: "hidden", padding: 0, cursor: "pointer", background: "#fff",
+              border: `1px solid ${j === i ? P.accent : P.line}`, outline: j === i ? `1px solid ${P.accent}` : "none" }}>
+            {m.sketch === "saturating"
+              ? <div style={{ ...SK, fontSize: "0.5rem", color: P.sub, height: "100%", display: "flex", alignItems: "center", justifyContent: "center" }}>GAN ∇</div>
+              : <img src={m.src} alt="" style={{ width: "100%", height: "100%", objectFit: "cover", opacity: j === i ? 1 : 0.55 }} />}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 /* ════════════════════════════════════════
    PHOTO GALLERY — figure plates
    ════════════════════════════════════════ */
