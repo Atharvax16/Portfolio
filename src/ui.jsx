@@ -134,7 +134,7 @@ export function MatrixOverlay({ onClose }) {
     const cols = Math.floor(c.width / fs);
     const dr = Array(cols).fill(1);
     const draw = () => {
-      ctx.fillStyle = "rgba(242,241,236,0.06)";
+      ctx.fillStyle = "rgba(250,250,247,0.06)";
       ctx.fillRect(0, 0, c.width, c.height);
       ctx.fillStyle = "#2B4C8C";
       ctx.font = `${fs}px 'IBM Plex Mono', monospace`;
