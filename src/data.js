@@ -6,13 +6,13 @@
     that read P.bg / P.text / P.card / P.border don't break.)
    ════════════════════════════════════════ */
 export const P = {
-  paper: "#FAFAF7", paper2: "#FFFFFF", ink: "#16181D", sub: "#585C64",
+  paper: "#F4F0E0", paper2: "#FFFFFF", ink: "#16181D", sub: "#585C64",
   faint: "#ECEBE5", line: "#D4D3CB",
   accent: "#2B4C8C", accentSoft: "rgba(43,76,140,0.10)",
   highlight: "rgba(232,194,76,0.40)",
   green: "#3F7A57", red: "#9B3B3B", yellow: "#9A7B1F",
   // legacy aliases (shared components):
-  bg: "#FAFAF7", bgAlt: "#F1F0EA", text: "#16181D", muted: "#585C64",
+  bg: "#F4F0E0", bgAlt: "#F1F0EA", text: "#16181D", muted: "#585C64",
   border: "#D4D3CB", card: "#FFFFFF", glow: "rgba(43,76,140,0.10)",
   accent2: "#2B4C8C", grad: "linear-gradient(90deg,#2B4C8C,#3D63A8)",
 };

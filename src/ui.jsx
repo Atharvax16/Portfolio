@@ -395,7 +395,7 @@ export function MatrixOverlay({ onClose }) {
     const cols = Math.floor(c.width / fs);
     const dr = Array(cols).fill(1);
     const draw = () => {
-      ctx.fillStyle = "rgba(250,250,247,0.06)";
+      ctx.fillStyle = "rgba(244,240,224,0.06)";
       ctx.fillRect(0, 0, c.width, c.height);
       ctx.fillStyle = "#2B4C8C";
       ctx.font = `${fs}px 'IBM Plex Mono', monospace`;
@@ -413,7 +413,7 @@ export function MatrixOverlay({ onClose }) {
   return (
     <div style={{ position: "fixed", inset: 0, zIndex: 9999, cursor: "pointer", background: P.paper }} onClick={onClose}>
       <canvas ref={ref} style={{ display: "block" }} />
-      <div style={{ position: "absolute", top: "50%", left: "50%", transform: "translate(-50%,-50%)", color: P.ink, ...MONO, fontSize: "1rem", textAlign: "center", background: "rgba(251,250,246,0.85)", padding: "1.4rem 2.4rem", border: `1px solid ${P.line}` }}>
+      <div style={{ position: "absolute", top: "50%", left: "50%", transform: "translate(-50%,-50%)", color: P.ink, ...MONO, fontSize: "1rem", textAlign: "center", background: "rgba(244,240,224,0.85)", padding: "1.4rem 2.4rem", border: `1px solid ${P.line}` }}>
         <div style={{ fontSize: "1.8rem", marginBottom: 8, color: P.accent }}>∎</div>
         You found the appendix.
         <div style={{ fontSize: "0.72rem", marginTop: 6, color: P.sub }}>Click anywhere to return</div>

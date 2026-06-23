@@ -63,7 +63,7 @@ export default function App() {
       <style>{`
         *{margin:0;padding:0;box-sizing:border-box}
         html{scroll-behavior:smooth;scroll-padding-top:74px}
-        body{background:#FAFAF7;color:#16181D;font-family:'Source Serif 4',Georgia,serif;-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility}
+        body{background:#F4F0E0;color:#16181D;font-family:'Source Serif 4',Georgia,serif;-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility}
         ::selection{background:rgba(232,194,76,0.55)}
         :focus-visible{outline:2px solid #2B4C8C;outline-offset:2px}
         @keyframes fadeUp{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}
@@ -94,7 +94,7 @@ export default function App() {
         <div className="vstamp">{PAPER.stamp}</div>
 
         {/* RUNNING HEAD */}
-        <header style={{ position: "fixed", top: 0, left: 0, right: 0, zIndex: 100, padding: "0.6rem 1.4rem", display: "flex", justifyContent: "space-between", alignItems: "center", background: "rgba(250,250,247,0.85)", backdropFilter: "blur(8px)", borderBottom: `1px solid ${P.line}` }}>
+        <header style={{ position: "fixed", top: 0, left: 0, right: 0, zIndex: 100, padding: "0.6rem 1.4rem", display: "flex", justifyContent: "space-between", alignItems: "center", background: "rgba(244,240,224,0.85)", backdropFilter: "blur(8px)", borderBottom: `1px solid ${P.line}` }}>
           <button onClick={logoClick} style={{ ...MONO, fontSize: "0.72rem", letterSpacing: "0.12em", textTransform: "uppercase", color: P.ink, background: "transparent", border: "none", cursor: "pointer", padding: 0 }}>A. Kocharekar</button>
           <nav style={{ display: "flex", gap: 2, alignItems: "center", flexWrap: "wrap" }}>
             {SECS.map((sec, i) => (
