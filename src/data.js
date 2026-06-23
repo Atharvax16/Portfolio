@@ -38,7 +38,8 @@ export const SECS = ["Abstract", "Research", "Work", "Reading", "Foundations", "
 export const RESEARCH_AREAS = [
   {
     title: "Robust & Explainable Medical Imaging",
-    blurb: "How diagnostic vision models break under the degradations real fundus photos collect — and whether their explanations stay faithful when they do. My MSc thesis pairs diffusion-based restoration with a quantitative XAI benchmark.",
+    thesis: "Towards a Robust and Explainable Pipeline for Diabetic Retinopathy Classification through Quality-Aware GenAI Image Restoration",
+    blurb: "My MSc thesis. I stress-test diabetic-retinopathy classifiers under the degradations real fundus photos collect — motion blur, exposure error, sensor noise — and then try to repair the damage with GenAI / diffusion-based restoration, all paired with a quantitative XAI benchmark. The uncomfortable finding: restoration makes the images look clean to the eye, yet the classifier's accuracy keeps fading. The restorer smooths away the very pathology signal the grader relies on — looks restored, reads wrong.",
     tags: ["robustness", "XAI", "diffusion", "medical imaging"],
   },
   {

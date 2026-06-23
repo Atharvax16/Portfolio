@@ -169,6 +169,12 @@ export default function App() {
                 <h3 style={{ ...DISP, fontWeight: 600, fontSize: "1.05rem", color: P.ink, marginBottom: 5 }}>
                   <span style={{ ...MONO, fontSize: "0.8rem", color: P.accent, marginRight: 8 }}>1.{i + 1}</span>{a.title}
                 </h3>
+                {a.thesis && (
+                  <div style={{ borderLeft: `2px solid ${P.accent}`, paddingLeft: "0.75rem", margin: "0 0 8px" }}>
+                    <div style={{ ...MONO, fontSize: "0.56rem", color: P.sub, textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 2 }}>MSc thesis</div>
+                    <div style={{ ...DISP, fontSize: "0.92rem", fontStyle: "italic", color: P.ink, lineHeight: 1.4 }}>“{a.thesis}”</div>
+                  </div>
+                )}
                 <p style={{ ...BODY, fontSize: "0.92rem", lineHeight: 1.72, color: P.ink, marginBottom: 8, textWrap: "pretty" }}>{a.blurb}</p>
                 <div style={{ display: "flex", gap: 5, flexWrap: "wrap" }}>{a.tags.map(t => <span key={t} style={chip}>{t}</span>)}</div>
               </div>
