@@ -146,6 +146,51 @@ export function SketchResearcherFrontier() {
   );
 }
 
+/* Why geometry is physics: a molecule's energy decomposes into bond
+   length, bond angle, and dihedral — orientation is real, so the network
+   that scores it must be equivariant. (MPNN → SchNet → DimeNet → NequIP.) */
+export function SketchMolecule() {
+  const atom = (x, y, k) => (
+    <g key={k}>
+      <circle cx={x} cy={y} r="9.5" fill={P.paper2} stroke={P.ink} strokeWidth="1.6" />
+    </g>
+  );
+  return (
+    <svg viewBox="0 0 400 230" width="100%" height="100%" role="img"
+      aria-label="Sketch: a four-atom molecule annotated with bond length r, angle theta, and dihedral phi"
+      style={{ display: "block" }}>
+      <defs><RoughDefs id="rgh-mol" scale={1.3} seed={3} /></defs>
+      <g filter="url(#rgh-mol)" fill="none" strokeLinecap="round">
+        {/* bonds */}
+        <path d="M70 150 L150 92" stroke={P.ink} strokeWidth="2" />
+        <path d="M150 92 L230 150" stroke={P.ink} strokeWidth="2" />
+        <path d="M230 150 L310 92" stroke={P.ink} strokeWidth="2" />
+        {/* out-of-plane bond — direction is physical */}
+        <path d="M310 92 L350 138" stroke={P.sub} strokeWidth="1.6" strokeDasharray="4 4" />
+        {/* angle arc at the middle atom */}
+        <path d="M167.6 105.2 A 22 22 0 0 1 132.4 105.2" stroke={P.accent} strokeWidth="1.6" />
+        {/* dihedral / direction arrow */}
+        <path d="M256 118 A 16 16 0 0 1 284 110" stroke={P.red} strokeWidth="1.6" />
+        <path d="M284 110 L278 106 M284 110 L282 117" stroke={P.red} strokeWidth="1.4" />
+        {/* atoms */}
+        {atom(70, 150, "a")}
+        {atom(150, 92, "b")}
+        {atom(230, 150, "c")}
+        {atom(310, 92, "d")}
+      </g>
+      {/* labels */}
+      <text x="100" y="132" style={SK} fontSize="11" fill={P.ink}>r</text>
+      <text x="150" y="128" textAnchor="middle" style={SK} fontSize="11" fill={P.accent}>θ</text>
+      <text x="272" y="100" style={SK} fontSize="11" fill={P.red}>φ</text>
+      <text x="344" y="156" style={SK} fontSize="9.5" fontStyle="italic" fill={P.sub}>orientation</text>
+      <text x="200" y="208" textAnchor="middle" style={{ fontFamily: "'IBM Plex Mono',monospace" }} fontSize="13" fill={P.ink}>
+        E = Σ Eᵣ(r) + Σ E_θ(θ) + Σ E_φ(φ)
+      </text>
+      <text x="200" y="224" textAnchor="middle" style={SK} fontSize="9.5" fontStyle="italic" fill={P.sub}>distance · angle · dihedral — direction matters</text>
+    </svg>
+  );
+}
+
 /* ════════════════════════════════════════
    PHOTO GALLERY — figure plates
    ════════════════════════════════════════ */

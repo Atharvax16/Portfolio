@@ -3,7 +3,7 @@ import {
   P, SECS, PAPER, RESEARCH_AREAS, READING_LOG, TIL_REPO, FROM_SCRATCH,
   METHODS, JOURNEY, ORDERED_PROJECTS,
 } from "./data.js";
-import { Rv, Radar, PhotoGallery, MatrixOverlay, ResearchModal, SketchFidelityAccuracy, SketchResearcherFrontier } from "./ui.jsx";
+import { Rv, Radar, PhotoGallery, MatrixOverlay, ResearchModal, SketchFidelityAccuracy, SketchResearcherFrontier, SketchMolecule } from "./ui.jsx";
 
 /* Type tokens */
 const DISP = { fontFamily: "'Spectral',Georgia,serif" };
@@ -231,6 +231,19 @@ export default function App() {
               </Rv>
             ))}
           </div>
+          <Rv delay={0.14}>
+            <figure style={{ margin: "1.6rem 0 0", display: "flex", gap: "1.2rem", alignItems: "center", flexWrap: "wrap", borderTop: `2px solid ${P.ink}`, paddingTop: "1.2rem" }}>
+              <div style={{ width: 320, maxWidth: "100%", flexShrink: 0, border: `1px solid ${P.line}`, background: P.paper2 }}>
+                <SketchMolecule />
+              </div>
+              <figcaption style={{ flex: 1, minWidth: 200 }}>
+                <p style={{ ...BODY, fontSize: "0.9rem", color: P.ink, lineHeight: 1.72, textWrap: "pretty" }}>
+                  What the quantum-chemistry arc <Cite n={3} /> taught me: a molecule's energy isn't a function of <i>which</i> atoms but of their <span style={{ background: P.highlight, padding: "0 2px" }}>geometry</span> — bond length <i>r</i>, bond angle <i>θ</i>, dihedral <i>φ</i>. Rotate the molecule and the energy must not change; bend it and it must. That single physical constraint is what each step from MPNN to NequIP bakes deeper into the network as equivariance.
+                </p>
+                <div style={{ ...MONO, fontSize: "0.6rem", color: P.sub, marginTop: 8 }}>Geometry as energy — why equivariance matters</div>
+              </figcaption>
+            </figure>
+          </Rv>
           <Rv delay={0.16}>
             <a href={TIL_REPO} target="_blank" rel="noopener noreferrer" style={{ ...MONO, fontSize: "0.7rem", color: P.ink, textDecoration: "none", border: `1px solid ${P.line}`, padding: "8px 14px", display: "inline-block", marginTop: "1.4rem", background: P.paper2 }}>Full journal on GitHub ↗</a>
           </Rv>
