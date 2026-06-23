@@ -3,7 +3,7 @@ import {
   P, SECS, PAPER, RESEARCH_AREAS, READING_LOG, TIL_REPO, FROM_SCRATCH,
   METHODS, JOURNEY, ORDERED_PROJECTS,
 } from "./data.js";
-import { Rv, Radar, PhotoGallery, MatrixOverlay, ResearchModal, SketchFidelityAccuracy, SketchResearcherFrontier, SketchMolecule } from "./ui.jsx";
+import { Rv, Radar, PhotoGallery, MatrixOverlay, ResearchModal, SketchFidelityAccuracy, SketchResearcherFrontier, SketchMolecule, SketchAttention } from "./ui.jsx";
 
 /* Type tokens */
 const DISP = { fontFamily: "'Spectral',Georgia,serif" };
@@ -226,6 +226,11 @@ export default function App() {
                     </div>
                     <p style={{ ...BODY, fontSize: "0.86rem", color: P.sub, lineHeight: 1.7, margin: "5px 0 6px", textWrap: "pretty" }}>{r.takeaway}</p>
                     <a href={r.link} target="_blank" rel="noopener noreferrer" style={{ ...MONO, fontSize: "0.66rem", color: P.accent, textDecoration: "underline", textUnderlineOffset: 3 }}>notes — {r.area} ↗</a>
+                    {r.sketch === "attention" && (
+                      <figure style={{ margin: "0.7rem 0 0", maxWidth: 360, border: `1px solid ${P.line}`, background: P.paper2 }}>
+                        <SketchAttention />
+                      </figure>
+                    )}
                   </div>
                 </div>
               </Rv>

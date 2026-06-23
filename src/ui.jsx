@@ -191,6 +191,49 @@ export function SketchMolecule() {
   );
 }
 
+/* Attention is just linear algebra: a row of softmax weights times the
+   value matrix yields one output vector. softmax(QKᵀ/√d) · V. */
+export function SketchAttention() {
+  const W = [
+    [0.72, 0.10, 0.10, 0.08],
+    [0.18, 0.60, 0.12, 0.10],
+    [0.10, 0.20, 0.50, 0.20],
+    [0.08, 0.10, 0.20, 0.62],
+  ];
+  const cell = 22, ax = 44, ay = 34, vx = 178, ox = 266, oy = 34;
+  return (
+    <svg viewBox="0 0 400 200" width="100%" height="100%" role="img"
+      aria-label="Sketch: an attention weight matrix times a value matrix equals the output"
+      style={{ display: "block" }}>
+      <defs><RoughDefs id="rgh-att" scale={1.1} seed={5} /></defs>
+      <g filter="url(#rgh-att)" strokeLinecap="round">
+        {/* attention weight matrix */}
+        {W.map((row, i) => row.map((w, j) => (
+          <rect key={`a${i}${j}`} x={ax + j * cell} y={ay + i * cell} width={cell} height={cell}
+            fill={P.accent} fillOpacity={w} stroke={P.line} strokeWidth="0.8" />
+        )))}
+        {/* value matrix V */}
+        {[0, 1, 2, 3].map(i => [0, 1].map(j => (
+          <rect key={`v${i}${j}`} x={vx + j * cell} y={ay + i * cell} width={cell} height={cell}
+            fill={P.paper2} stroke={P.ink} strokeWidth="1.1" />
+        )))}
+        {/* output */}
+        {[0, 1, 2, 3].map(i => [0, 1].map(j => (
+          <rect key={`o${i}${j}`} x={ox + j * cell} y={oy + i * cell} width={cell} height={cell}
+            fill={P.accentSoft} stroke={P.ink} strokeWidth="1.1" />
+        )))}
+      </g>
+      {/* operators + labels (un-roughened) */}
+      <text x="156" y="80" textAnchor="middle" style={SK} fontSize="16" fill={P.ink}>×</text>
+      <text x="246" y="80" textAnchor="middle" style={SK} fontSize="16" fill={P.ink}>=</text>
+      <text x="88" y="144" textAnchor="middle" style={SK} fontSize="10" fill={P.accent}>softmax(QKᵀ/√d)</text>
+      <text x="200" y="144" textAnchor="middle" style={SK} fontSize="11" fill={P.ink}>V</text>
+      <text x="288" y="144" textAnchor="middle" style={SK} fontSize="9.5" fill={P.sub}>attention(Q,K,V)</text>
+      <text x="200" y="20" textAnchor="middle" style={SK} fontSize="9.5" fontStyle="italic" fill={P.sub}>each query: a weighted average of values · rows sum to 1</text>
+    </svg>
+  );
+}
+
 /* ════════════════════════════════════════
    PHOTO GALLERY — figure plates
    ════════════════════════════════════════ */

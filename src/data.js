@@ -74,6 +74,7 @@ export const READING_LOG = [
     takeaway: "Q/K/V as content-based routing — the entire architecture falls out of scaled dot-product attention plus positional encodings.",
     link: "https://github.com/Atharvax16/til/tree/main/papers/Attention",
     hasNotebook: true,
+    sketch: "attention",
   },
   {
     paper: "Generative Adversarial Nets",
