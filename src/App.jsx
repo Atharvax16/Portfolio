@@ -3,7 +3,7 @@ import {
   P, SECS, PAPER, RESEARCH_AREAS, READING_LOG, TIL_REPO, FROM_SCRATCH,
   METHODS, JOURNEY, ORDERED_PROJECTS,
 } from "./data.js";
-import { Rv, Radar, PhotoGallery, MatrixOverlay, ResearchModal, SketchFidelityAccuracy } from "./ui.jsx";
+import { Rv, Radar, PhotoGallery, MatrixOverlay, ResearchModal, SketchFidelityAccuracy, SketchResearcherFrontier } from "./ui.jsx";
 
 /* Type tokens */
 const DISP = { fontFamily: "'Spectral',Georgia,serif" };
@@ -299,6 +299,20 @@ export default function App() {
                 From Mumbai to Dublin, I've chased one question across the work — <span style={{ background: P.highlight, padding: "0 2px" }}>why does this model work, and when does it stop?</span> I don't just train models, I interrogate them: stress-test their robustness, audit their explanations, and rebuild their foundations from scratch.
               </p>
             </div>
+          </Rv>
+
+          <Rv delay={0.04}>
+            <figure style={{ margin: "0 0 1.8rem", display: "flex", gap: "1.2rem", alignItems: "center", flexWrap: "wrap", borderTop: `2px solid ${P.ink}`, paddingTop: "1.2rem" }}>
+              <div style={{ width: 280, maxWidth: "100%", flexShrink: 0, border: `1px solid ${P.line}`, background: P.paper2 }}>
+                <SketchResearcherFrontier />
+              </div>
+              <figcaption style={{ flex: 1, minWidth: 200 }}>
+                <p style={{ ...BODY, fontSize: "0.9rem", color: P.ink, lineHeight: 1.72, textWrap: "pretty" }}>
+                  A field grows outward in rings — every paper, method, and solved problem pushes the boundary a little further. A good researcher walks all the way out to that frontier and then <span style={{ background: P.highlight, padding: "0 2px" }}>dents the edge</span> with something new. I'm near the centre still: early, working from first principles, with the long climb ahead — and a dent I intend to leave.
+                </p>
+                <div style={{ ...MONO, fontSize: "0.6rem", color: P.sub, marginTop: 8 }}>Where I sit on the research frontier</div>
+              </figcaption>
+            </figure>
           </Rv>
 
           <Rv delay={0.06}>

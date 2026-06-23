@@ -112,6 +112,40 @@ export function SketchFidelityAccuracy() {
   );
 }
 
+/* Where a researcher sits: rings of known work growing outward, a gap at
+   the frontier, and you near the centre — early, with the long climb ahead. */
+export function SketchResearcherFrontier() {
+  return (
+    <svg viewBox="0 0 360 300" width="100%" height="100%" role="img"
+      aria-label="Sketch: concentric rings of knowledge with a frontier gap and 'you are here' near the centre"
+      style={{ display: "block" }}>
+      <defs><RoughDefs id="rgh-rf" scale={1.5} seed={11} /></defs>
+      <g filter="url(#rgh-rf)" fill="none" strokeLinecap="round">
+        {/* inner rings — accumulated knowledge */}
+        <circle cx="155" cy="158" r="26" stroke={P.faint} strokeWidth="1.2" />
+        <circle cx="155" cy="158" r="58" stroke={P.line} strokeWidth="1.2" />
+        <circle cx="155" cy="158" r="92" stroke={P.line} strokeWidth="1.2" />
+        {/* frontier ring with a gap at the top */}
+        <path d="M198 39.6 A 126 126 0 1 1 112 39.6" stroke={P.ink} strokeWidth="1.8" />
+        {/* the dent being pushed past the frontier */}
+        <path d="M112 39.6 Q 155 8, 198 39.6" stroke={P.accent} strokeWidth="2.4" />
+        {/* the long climb */}
+        <path d="M155 150 L155 46" stroke={P.accent} strokeWidth="1.3" strokeDasharray="5 5" />
+        <path d="M150 56 L155 44 L160 56" stroke={P.accent} strokeWidth="1.3" />
+        {/* you */}
+        <circle cx="155" cy="158" r="4.5" fill={P.accent} stroke="none" />
+      </g>
+      {/* labels */}
+      <text x="216" y="26" style={SK} fontSize="10.5" fill={P.accent}>your dent — someday</text>
+      <text x="168" y="166" style={SK} fontSize="10.5" fill={P.ink}>you are here</text>
+      <text x="168" y="178" style={SK} fontSize="9.5" fontStyle="italic" fill={P.sub}>early, first principles</text>
+      <text x="155" y="296" textAnchor="middle" style={SK} fontSize="10" fill={P.sub}>frontier of the field</text>
+      <text x="60" y="112" style={SK} fontSize="9.5" fontStyle="italic" fill={P.sub}>knowledge</text>
+      <text x="60" y="124" style={SK} fontSize="9.5" fontStyle="italic" fill={P.sub}>grows outward</text>
+    </svg>
+  );
+}
+
 /* ════════════════════════════════════════
    PHOTO GALLERY — figure plates
    ════════════════════════════════════════ */
