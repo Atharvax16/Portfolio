@@ -3,3 +3,8 @@ dist
 .DS_Store
 *.local
 .claude
+
+# Stray images dropped at the repo root (site images live in public/images/)
+/*.jpeg
+/*.jpg
+/*.png
