@@ -300,7 +300,7 @@ export default function App() {
           <Rv delay={0.2}>
             <figure style={{ margin: "1.6rem 0 0", display: "flex", gap: "1rem", alignItems: "center", flexWrap: "wrap", borderTop: `2px solid ${P.ink}`, paddingTop: "1rem" }}>
               <div style={{ width: 96, height: 96, flexShrink: 0, border: `1px solid ${P.line}`, background: P.paper2, padding: 4 }}>
-                <img src="/images/lstm-notes.jpeg" alt="Working notes on LSTM gates" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                <img src="images/lstm-notes.jpeg" alt="Working notes on LSTM gates" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
               </div>
               <figcaption style={{ flex: 1, minWidth: 200 }}>
                 <p style={{ ...BODY, fontSize: "0.88rem", color: P.ink, lineHeight: 1.7 }}>
@@ -318,7 +318,7 @@ export default function App() {
           <Rv>
             <div style={{ display: "flex", gap: "1.3rem", alignItems: "flex-start", marginBottom: "1.4rem", flexWrap: "wrap" }}>
               <div style={{ width: 110, flexShrink: 0, border: `1px solid ${P.line}`, background: P.paper2, padding: 4 }}>
-                <img src="/images/portrait-sunglasses.jpeg" alt="Atharva Kocharekar" style={{ width: "100%", display: "block", filter: "grayscale(0.15)" }} />
+                <img src="images/portrait-sunglasses.jpeg" alt="Atharva Kocharekar" style={{ width: "100%", display: "block", filter: "grayscale(0.15)" }} />
               </div>
               <p style={{ ...BODY, fontSize: "0.95rem", lineHeight: 1.78, color: P.ink, flex: 1, minWidth: 220, textWrap: "pretty" }}>
                 From Mumbai to Dublin, I've chased one question across the work — <span style={{ background: P.highlight, padding: "0 2px" }}>why does this model work, and when does it stop?</span> I don't just train models, I interrogate them: stress-test their robustness, audit their explanations, and rebuild their foundations from scratch.
