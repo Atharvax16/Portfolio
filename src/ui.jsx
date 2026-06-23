@@ -51,6 +51,68 @@ export function Radar({ m }) {
 }
 
 /* ════════════════════════════════════════
+   HAND-DRAWN INK SKETCHES
+   A shared roughening filter (feTurbulence + displacement) gives clean
+   SVG paths a wobbly, pen-on-paper feel. Strokes are ink-blue marginalia.
+   ════════════════════════════════════════ */
+const SK = { font: "'IBM Plex Mono',monospace" };
+
+/* Drop into a <defs>; reference the filter by id to wobble a <g>. */
+function RoughDefs({ id, scale = 1.6, freq = 0.016, seed = 7 }) {
+  return (
+    <filter id={id} x="-15%" y="-15%" width="130%" height="130%">
+      <feTurbulence type="fractalNoise" baseFrequency={freq} numOctaves="2" seed={seed} result="n" />
+      <feDisplacementMap in="SourceGraphic" in2="n" scale={scale} xChannelSelector="R" yChannelSelector="G" />
+    </filter>
+  );
+}
+
+function SketchFrame({ caption, children, ratio = "5 / 3" }) {
+  return (
+    <figure style={{ margin: 0 }}>
+      <div style={{ border: `1px solid ${P.line}`, background: P.paper2, aspectRatio: ratio, display: "block" }}>
+        {children}
+      </div>
+      {caption && (
+        <figcaption style={{ ...SK, fontSize: "0.66rem", color: P.sub, marginTop: 8, lineHeight: 1.55 }}>
+          {caption}
+        </figcaption>
+      )}
+    </figure>
+  );
+}
+
+/* The central thesis tension: restoration quality climbs while the
+   classifier's accuracy slips — "looks restored, reads wrong". */
+export function SketchFidelityAccuracy() {
+  return (
+    <svg viewBox="0 0 400 240" width="100%" height="100%" role="img"
+      aria-label="Sketch: restoration quality rises while classifier accuracy falls, crossing in the middle"
+      style={{ display: "block" }}>
+      <defs><RoughDefs id="rgh-fa" scale={1.7} /></defs>
+      <g filter="url(#rgh-fa)" fill="none" strokeLinecap="round" strokeLinejoin="round">
+        {/* axes */}
+        <path d="M48 24 L48 198 L372 198" stroke={P.sub} strokeWidth="1.4" />
+        {/* quality rising */}
+        <path d="M58 184 C 150 176, 210 120, 364 52" stroke={P.accent} strokeWidth="2.4" />
+        {/* accuracy falling */}
+        <path d="M58 64 C 170 78, 240 150, 364 188" stroke={P.red} strokeWidth="2.4" />
+        {/* crossing mark */}
+        <circle cx="205" cy="128" r="7" stroke={P.ink} strokeWidth="1.3" />
+        <path d="M199 122 L211 134 M211 122 L199 134" stroke={P.ink} strokeWidth="1.1" />
+      </g>
+      {/* labels (left un-roughened for legibility) */}
+      <text x="366" y="44" textAnchor="end" style={SK} fontSize="11" fill={P.accent}>restoration quality ↑</text>
+      <text x="366" y="206" textAnchor="end" style={SK} fontSize="11" fill={P.red}>classifier accuracy ↓</text>
+      <text x="210" y="232" textAnchor="middle" style={SK} fontSize="10.5" fill={P.sub}>restoration strength →</text>
+      <text x="224" y="120" style={SK} fontSize="10" fontStyle="italic" fill={P.ink}>the crossing</text>
+      <text x="58" y="44" style={SK} fontSize="10.5" fontStyle="italic" fill={P.sub}>“looks restored,</text>
+      <text x="58" y="58" style={SK} fontSize="10.5" fontStyle="italic" fill={P.sub}>reads wrong”</text>
+    </svg>
+  );
+}
+
+/* ════════════════════════════════════════
    PHOTO GALLERY — figure plates
    ════════════════════════════════════════ */
 export function PhotoGallery() {

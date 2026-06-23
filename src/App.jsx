@@ -3,7 +3,7 @@ import {
   P, SECS, PAPER, RESEARCH_AREAS, READING_LOG, TIL_REPO, FROM_SCRATCH,
   METHODS, JOURNEY, ORDERED_PROJECTS,
 } from "./data.js";
-import { Rv, Radar, PhotoGallery, MatrixOverlay, ResearchModal } from "./ui.jsx";
+import { Rv, Radar, PhotoGallery, MatrixOverlay, ResearchModal, SketchFidelityAccuracy } from "./ui.jsx";
 
 /* Type tokens */
 const DISP = { fontFamily: "'Spectral',Georgia,serif" };
@@ -147,9 +147,11 @@ export default function App() {
               </Rv>
               <Rv delay={0.18}>
                 <figure style={{ margin: 0 }}>
-                  <img src="/images/plots/thesis/ddpm_forward_backward.png" alt="Forward noising and reverse denoising of a fundus image under a conditional DDPM" style={{ width: "100%", border: `1px solid ${P.line}`, background: "#fff", display: "block" }} />
+                  <div style={{ border: `1px solid ${P.line}`, background: P.paper2, aspectRatio: "5 / 3" }}>
+                    <SketchFidelityAccuracy />
+                  </div>
                   <figcaption style={{ ...MONO, fontSize: "0.66rem", color: P.sub, marginTop: 8, lineHeight: 1.55 }}>
-                    <b style={{ color: P.ink }}>Figure 1.</b> Forward noising and reverse denoising of a retinal fundus image under a conditional DDPM — the pathology-preserving restorer at the centre of the thesis.
+                    <b style={{ color: P.ink }}>Figure 1.</b> The thesis in one sketch — as restoration is pushed harder a fundus image <i>looks</i> cleaner, yet the diagnostic signal the classifier relies on quietly erodes. The two curves cross: the central tension between visual fidelity and downstream accuracy.
                   </figcaption>
                 </figure>
               </Rv>
