@@ -262,6 +262,233 @@ export function SketchSaturating() {
 }
 
 /* ════════════════════════════════════════
+   ARCHITECTURES LAB — interactive, hand-drawn walkthroughs (learning in public)
+   First panel: the Vision Transformer's patchify → patch-embedding pipeline.
+   Toggle the patch size and step through image → patchify → flatten →
+   linear projection → +[CLS]/positional, watching the token maths update.
+   ════════════════════════════════════════ */
+const VIT_STEPS = [
+  { key: "image", label: "image" },
+  { key: "patchify", label: "patchify" },
+  { key: "flatten", label: "flatten" },
+  { key: "embed", label: "project" },
+  { key: "sequence", label: "+CLS / pos" },
+];
+
+export function VitWalkthrough() {
+  const [patch, setPatch] = useState(16);
+  const [step, setStep] = useState(0);
+
+  const IMG = 224, D = 768;
+  const grid = IMG / patch;        // 16 | 14 | 7
+  const N = grid * grid;           // patches
+  const dim = patch * patch * 3;   // flattened patch length
+  const stepKey = VIT_STEPS[step].key;
+
+  // left-hand "image" geometry
+  const ox = 36, oy = 60, size = 196;
+  const cell = size / grid;
+  const hc = Math.floor(0.70 * grid), hr = Math.floor(0.26 * grid); // highlighted patch (over the sun)
+  const hill = `M${ox} ${oy + size * 0.66} Q ${ox + size * 0.28} ${oy + size * 0.52}, ${ox + size * 0.5} ${oy + size * 0.62} T ${ox + size} ${oy + size * 0.6} L ${ox + size} ${oy + size} L ${ox} ${oy + size} Z`;
+
+  const copy = {
+    image: {
+      title: "It starts with an ordinary image",
+      body: "A ViT can't read pixels directly — self-attention works over a sequence of tokens. So the first job is to turn one H×W×C image into a list of vectors.",
+      math: `input · ${IMG} × ${IMG} × 3`,
+    },
+    patchify: {
+      title: "Patchify — slice it into a grid",
+      body: `The image is cut into non-overlapping ${patch}×${patch} squares. A ${IMG}px image gives a ${grid}×${grid} grid — ${N} patches. Halve the patch size and the token count quadruples: more detail, more compute.`,
+      math: `(${IMG} / ${patch})² = ${grid}² = ${N} patches`,
+    },
+    flatten: {
+      title: "Flatten each patch into a vector",
+      body: `Each patch is a little ${patch}×${patch}×3 tensor. Read its pixels out row by row and it becomes one long vector — like unrolling a tile into a strip.`,
+      math: `${patch} × ${patch} × 3 = ${dim} values / patch`,
+    },
+    embed: {
+      title: "Project to the model width",
+      body: `A single shared linear layer maps every ${dim}-long patch vector to a fixed width (here D = ${D}). This learned projection is the “patch embedding” — the same matrix W is applied to every patch.`,
+      math: `Linear : ℝ^${dim} → ℝ^${D}`,
+    },
+    sequence: {
+      title: "Add a [CLS] token and positions",
+      body: `A learnable [CLS] token is prepended — its final state becomes the image's representation — and a positional embedding is added to every token so order survives. The result is exactly what a plain transformer encoder eats.`,
+      math: `(${N} + 1) × ${D}  →  Transformer encoder`,
+    },
+  };
+  const sc = copy[stepKey];
+
+  const tog = (on) => ({ ...SK, fontSize: "0.72rem", padding: "2px 10px", cursor: "pointer", border: `1px solid ${on ? P.accent : P.line}`, background: on ? P.accentSoft : P.paper2, color: on ? P.accent : P.sub });
+  const navBtn = { ...SK, fontSize: "0.8rem", padding: "2px 10px", border: `1px solid ${P.line}`, background: P.paper2, color: P.ink, cursor: "pointer" };
+
+  const right = (() => {
+    switch (stepKey) {
+      case "image":
+        return (
+          <g>
+            <line x1={ox + size} y1={oy + size * 0.32} x2={362} y2={oy + size * 0.32} stroke={P.sub} strokeWidth="1" strokeDasharray="3 3" />
+            <text x={370} y={oy + size * 0.30} style={SK} fontSize="12" fill={P.ink}>the raw input</text>
+            <text x={370} y={oy + size * 0.30 + 20} style={SK} fontSize="11" fill={P.sub}>H × W × C</text>
+            <text x={370} y={oy + size * 0.30 + 38} style={SK} fontSize="14" fill={P.accent}>224 × 224 × 3</text>
+            <text x={370} y={oy + size * 0.30 + 64} style={SK} fontSize="10" fontStyle="italic" fill={P.sub}>a transformer wants tokens,</text>
+            <text x={370} y={oy + size * 0.30 + 78} style={SK} fontSize="10" fontStyle="italic" fill={P.sub}>not a grid of pixels →</text>
+          </g>
+        );
+      case "patchify": {
+        const px = ox + (hc + 0.5) * cell, py = oy + (hr + 0.5) * cell;
+        return (
+          <g>
+            <line x1={px} y1={py} x2={372} y2={110} stroke={P.accent} strokeWidth="1" strokeDasharray="3 3" />
+            <text x={372} y={86} style={SK} fontSize="12" fill={P.ink}>cut into a grid of</text>
+            <text x={372} y={102} style={SK} fontSize="12" fill={P.ink}>non-overlapping patches</text>
+            <text x={372} y={146} style={SK} fontSize="30" fill={P.accent}>{N}</text>
+            <text x={372} y={166} style={SK} fontSize="12" fill={P.sub}>patches  ({grid} × {grid})</text>
+            <text x={372} y={192} style={SK} fontSize="11" fill={P.ink}>each patch · {patch}×{patch}×3</text>
+            <text x={372} y={210} style={SK} fontSize="10" fontStyle="italic" fill={P.sub}>smaller patch → more tokens</text>
+          </g>
+        );
+      }
+      case "flatten": {
+        const ex = 300, ey = 64, es = 72, n = 4, c = es / n;
+        const cols = ["#E8C24C", "#9CB8DE", "#3F7A57", "#C9A24B"];
+        const pix = [];
+        for (let r = 0; r < n; r++) for (let k = 0; k < n; k++) pix.push(<rect key={`p${r}-${k}`} x={ex + k * c} y={ey + r * c} width={c} height={c} fill={cols[(r + k) % cols.length]} fillOpacity="0.55" stroke={P.line} strokeWidth="0.5" />);
+        const sx = 300, sy = 178, sw = 17, m = 12;
+        const strip = [];
+        for (let k = 0; k < m; k++) { const ell = k >= m - 2; strip.push(<rect key={`s${k}`} x={sx + k * sw} y={sy} width={sw - 2} height={22} fill={ell ? "none" : P.accentSoft} stroke={ell ? "none" : P.line} strokeWidth="0.8" />); }
+        return (
+          <g>
+            {pix}
+            <rect x={ex} y={ey} width={es} height={es} fill="none" stroke={P.ink} strokeWidth="1.2" />
+            <text x={ex + es / 2} y={ey - 8} textAnchor="middle" style={SK} fontSize="10" fill={P.sub}>one {patch}×{patch} patch</text>
+            <path d={`M${ex + es / 2} ${ey + es + 4} L${ex + es / 2} ${sy - 8}`} stroke={P.accent} strokeWidth="1.2" fill="none" />
+            <path d={`M${ex + es / 2 - 4} ${sy - 14} L${ex + es / 2} ${sy - 6} L${ex + es / 2 + 4} ${sy - 14}`} stroke={P.accent} strokeWidth="1.2" fill="none" />
+            {strip}
+            <text x={sx + (m - 2) * sw + 2} y={sy + 16} style={SK} fontSize="15" fill={P.sub}>…</text>
+            <text x={sx} y={sy + 42} style={SK} fontSize="11" fill={P.ink}>flatten row-by-row → ℝ^{dim}</text>
+            <text x={sx} y={sy + 58} style={SK} fontSize="10" fontStyle="italic" fill={P.sub}>{patch}×{patch}×3 = {dim} numbers</text>
+          </g>
+        );
+      }
+      case "embed": {
+        const colX = 312, colY = 60, cw = 22, rowH = 15, cells = 8, colH = cells * rowH, outX = 482;
+        const inCells = [], outCells = [];
+        for (let k = 0; k < cells; k++) {
+          inCells.push(<rect key={`i${k}`} x={colX} y={colY + k * rowH} width={cw} height={rowH - 2} fill={P.accentSoft} stroke={P.line} strokeWidth="0.8" />);
+          outCells.push(<rect key={`o${k}`} x={outX} y={colY + k * rowH} width={cw} height={rowH - 2} fill={P.accent} fillOpacity={0.22 + 0.07 * k} stroke={P.ink} strokeWidth="0.8" />);
+        }
+        const wx = 372, ww = 86;
+        return (
+          <g>
+            {inCells}
+            <text x={colX + cw / 2} y={colY - 8} textAnchor="middle" style={SK} fontSize="10" fill={P.sub}>ℝ^{dim}</text>
+            <text x={colX + cw + 16} y={colY + colH / 2 + 4} textAnchor="middle" style={SK} fontSize="16" fill={P.ink}>×</text>
+            <rect x={wx} y={colY} width={ww} height={colH} fill={P.faint} stroke={P.ink} strokeWidth="1.1" />
+            <text x={wx + ww / 2} y={colY + colH / 2 - 3} textAnchor="middle" style={SK} fontSize="13" fill={P.ink}>W</text>
+            <text x={wx + ww / 2} y={colY + colH / 2 + 13} textAnchor="middle" style={SK} fontSize="9" fill={P.sub}>{dim}×{D}</text>
+            <text x={wx + ww + 12} y={colY + colH / 2 + 4} textAnchor="middle" style={SK} fontSize="16" fill={P.ink}>=</text>
+            {outCells}
+            <text x={outX + cw / 2} y={colY - 8} textAnchor="middle" style={SK} fontSize="10" fill={P.accent}>ℝ^{D}</text>
+            <text x={300} y={colY + colH + 26} style={SK} fontSize="11" fill={P.ink}>the shared “patch embedding”</text>
+            <text x={300} y={colY + colH + 42} style={SK} fontSize="10" fontStyle="italic" fill={P.sub}>same W for every patch</text>
+          </g>
+        );
+      }
+      case "sequence": {
+        const ty = 108, bw = 30, bh = 30, gap = 8, sx = 292;
+        const toks = ["[CLS]", "p₁", "p₂", "p₃", "…", "p_N"];
+        return (
+          <g>
+            <text x={sx} y={ty - 16} style={SK} fontSize="11" fill={P.ink}>prepend [CLS] · add positional embeddings</text>
+            {toks.map((t, k) => {
+              const x = sx + k * (bw + gap), isCls = k === 0, isEll = t === "…";
+              return (
+                <g key={k}>
+                  {!isEll && <rect x={x} y={ty} width={bw} height={bh} fill={isCls ? P.accent : P.accentSoft} stroke={isCls ? P.accent : P.line} strokeWidth="1" />}
+                  <text x={x + bw / 2} y={ty + bh / 2 + 3} textAnchor="middle" style={SK} fontSize={isCls ? 7.5 : 10} fill={isCls ? P.paper2 : P.ink}>{t}</text>
+                  {!isEll && <text x={x + bw / 2} y={ty + bh + 14} textAnchor="middle" style={SK} fontSize="11" fill={P.green}>+</text>}
+                  {!isEll && <rect x={x + bw / 2 - 7} y={ty + bh + 20} width={14} height={9} fill={P.green} fillOpacity="0.18" stroke={P.green} strokeWidth="0.7" />}
+                </g>
+              );
+            })}
+            <text x={sx} y={ty + bh + 52} style={SK} fontSize="9" fill={P.green}>positional · 0 … N</text>
+            <text x={sx} y={ty + bh + 76} style={SK} fontSize="12" fill={P.accent}>→ {N + 1} tokens, each ℝ^{D}</text>
+            <text x={sx} y={ty + bh + 92} style={SK} fontSize="10" fontStyle="italic" fill={P.sub}>now it's just a transformer over a sequence</text>
+          </g>
+        );
+      }
+      default: return null;
+    }
+  })();
+
+  const showGrid = step >= 1;
+
+  return (
+    <div>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 10, marginBottom: 10 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <span style={{ ...SK, fontSize: "0.6rem", color: P.sub, textTransform: "uppercase", letterSpacing: "0.08em" }}>patch size</span>
+          <div style={{ display: "flex", gap: 4 }}>
+            {[14, 16, 32].map(ps => <button key={ps} onClick={() => setPatch(ps)} aria-pressed={patch === ps} style={tog(patch === ps)}>{ps}</button>)}
+          </div>
+        </div>
+        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+          <span style={{ ...SK, fontSize: "0.62rem", color: P.sub, textTransform: "uppercase", letterSpacing: "0.06em" }}>step {step + 1} / 5</span>
+          <button onClick={() => setStep((step + 4) % 5)} aria-label="Previous step" style={navBtn}>←</button>
+          <button onClick={() => setStep((step + 1) % 5)} aria-label="Next step" style={navBtn}>→</button>
+        </div>
+      </div>
+
+      <div style={{ border: `1px solid ${P.line}`, borderTop: `2px solid ${P.ink}`, background: P.paper2 }}>
+        <div style={{ background: "#fff" }}>
+          <div style={{ aspectRatio: "600 / 300" }}>
+            <svg viewBox="0 0 600 300" width="100%" height="100%" role="img" aria-label={`Vision Transformer patch embedding — step ${step + 1}, ${VIT_STEPS[step].label}`} style={{ display: "block" }}>
+              <defs>
+                <RoughDefs id="rgh-vit" scale={1.1} seed={21} />
+                <clipPath id="vit-clip"><rect x={ox} y={oy} width={size} height={size} /></clipPath>
+              </defs>
+              <g filter="url(#rgh-vit)">
+                <g clipPath="url(#vit-clip)">
+                  <rect x={ox} y={oy} width={size} height={size} fill={P.accentSoft} />
+                  <path d={hill} fill={P.green} fillOpacity="0.28" stroke="none" />
+                  <circle cx={ox + size * 0.70} cy={oy + size * 0.26} r={size * 0.085} fill="#E8C24C" stroke="none" />
+                </g>
+                <rect x={ox} y={oy} width={size} height={size} fill="none" stroke={P.ink} strokeWidth="1.4" />
+                {showGrid && (
+                  <g stroke={P.ink} strokeWidth="0.6" strokeOpacity="0.5">
+                    {Array.from({ length: grid - 1 }).map((_, i) => <line key={`v${i}`} x1={ox + (i + 1) * cell} y1={oy} x2={ox + (i + 1) * cell} y2={oy + size} />)}
+                    {Array.from({ length: grid - 1 }).map((_, i) => <line key={`h${i}`} x1={ox} y1={oy + (i + 1) * cell} x2={ox + size} y2={oy + (i + 1) * cell} />)}
+                  </g>
+                )}
+                {showGrid && <rect x={ox + hc * cell} y={oy + hr * cell} width={cell} height={cell} fill={P.accent} fillOpacity="0.22" stroke={P.accent} strokeWidth="1.8" />}
+              </g>
+              <text x={ox + size / 2} y={oy - 14} textAnchor="middle" style={SK} fontSize="10" fill={P.sub}>input image</text>
+              {right}
+            </svg>
+          </div>
+        </div>
+        <div style={{ padding: "0.9rem 1.1rem 1rem" }}>
+          <div style={{ ...DISP, fontWeight: 600, fontSize: "1rem", color: P.ink, marginBottom: 4 }}>{sc.title}</div>
+          <p style={{ ...BODY, fontSize: "0.88rem", color: P.sub, lineHeight: 1.65, textWrap: "pretty", margin: 0 }}>
+            <span style={{ ...SK, fontSize: "0.6rem", color: P.accent, textTransform: "uppercase", letterSpacing: "0.08em", marginRight: 6 }}>step {step + 1}</span>
+            {sc.body}
+          </p>
+          <div style={{ ...SK, fontSize: "0.66rem", color: P.ink, marginTop: 9, background: P.faint, padding: "6px 9px", display: "inline-block" }}>{sc.math}</div>
+        </div>
+      </div>
+
+      <div style={{ display: "flex", gap: 6, marginTop: 10, flexWrap: "wrap" }}>
+        {VIT_STEPS.map((s, j) => (
+          <button key={s.key} onClick={() => setStep(j)} style={{ ...SK, fontSize: "0.62rem", padding: "4px 9px", cursor: "pointer", border: `1px solid ${j === step ? P.accent : P.line}`, background: j === step ? P.accentSoft : "#fff", color: j === step ? P.accent : P.sub }}>{j + 1}. {s.label}</button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/* ════════════════════════════════════════
    INSIGHTS VIEWER — step through real figures + the observation each carries
    ════════════════════════════════════════ */
 export function InsightsViewer({ items }) {

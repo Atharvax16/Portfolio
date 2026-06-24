@@ -30,7 +30,7 @@ export const PAPER = {
 
 /* Nav + scroll-tracked sections (paper running order).
    The gallery "Appendix" is intentionally NOT here — it stays out of nav. */
-export const SECS = ["Abstract", "Research", "Work", "Findings", "Reading", "Foundations", "Methods", "About", "Contact"];
+export const SECS = ["Abstract", "Research", "Work", "Findings", "Architectures", "Reading", "Foundations", "Methods", "About", "Contact"];
 
 /* ════════════════════════════════════════
    RESEARCH FOCUS — the threads that define the work
@@ -464,6 +464,17 @@ export const INSIGHTS = [
     src: "images/plots/anomaly-cpu-usage.png",
     insight: "Injected attack spikes stand clear of baseline load. With a recall-first detector, a few false alarms are a fair price for never missing the spike that matters.",
   },
+];
+
+/* ════════════════════════════════════════
+   ARCHITECTURES — interactive walkthroughs, "learning in public".
+   Each entry I study gets rebuilt as a hand-drawn, steppable sketch.
+   ViT is live; the rest are placeholders that surface as "coming next".
+   ════════════════════════════════════════ */
+export const ARCHITECTURES = [
+  { key: "vit", name: "Vision Transformer", status: "live", note: "patchify → embedding" },
+  { key: "cnn", name: "CNN", status: "coming", note: "convolution · pooling · receptive field" },
+  { key: "encdec", name: "Encoder–Decoder", status: "coming", note: "seq-to-seq · cross-attention" },
 ];
 
 export const GALLERY_PHOTOS = [

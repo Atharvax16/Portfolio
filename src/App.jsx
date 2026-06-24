@@ -1,9 +1,9 @@
 import { useState, useEffect } from "react";
 import {
   P, SECS, PAPER, RESEARCH_AREAS, READING_LOG, TIL_REPO, FROM_SCRATCH,
-  METHODS, JOURNEY, ORDERED_PROJECTS, INSIGHTS,
+  METHODS, JOURNEY, ORDERED_PROJECTS, INSIGHTS, ARCHITECTURES,
 } from "./data.js";
-import { Rv, Radar, PhotoGallery, MatrixOverlay, ResearchModal, SketchFidelityAccuracy, SketchResearcherFrontier, SketchMolecule, SketchAttention, InsightsViewer } from "./ui.jsx";
+import { Rv, Radar, PhotoGallery, MatrixOverlay, ResearchModal, SketchFidelityAccuracy, SketchResearcherFrontier, SketchMolecule, SketchAttention, InsightsViewer, VitWalkthrough } from "./ui.jsx";
 
 /* Type tokens */
 const DISP = { fontFamily: "'Spectral',Georgia,serif" };
@@ -218,8 +218,26 @@ export default function App() {
           <Rv delay={0.06}><InsightsViewer items={INSIGHTS} /></Rv>
         </Section>
 
-        {/* ═══ 4 · READING & REPRODUCTIONS (references) ═══ */}
-        <Section id="Reading" num="4" note={<p style={noteTxt}>The <a href={TIL_REPO} target="_blank" rel="noopener noreferrer" className="body-link">til</a> journal — papers read in my own words, with notebooks where the idea needs to be felt.</p>}>
+        {/* ═══ 4 · ARCHITECTURES (interactive walkthroughs) ═══ */}
+        <Section id="Architectures" num="4" note={<p style={noteTxt}>Learning in public — each architecture I study, rebuilt as an interactive sketch. Step through it; turn the knobs.</p>}>
+          <SecTitle>Architectures, Visualised</SecTitle>
+          <Rv><p style={{ ...BODY, fontSize: "0.95rem", lineHeight: 1.75, color: P.sub, marginBottom: "1.4rem", maxWidth: 600 }}>How a model actually <i>sees</i>. First up: the Vision Transformer — how one image becomes the sequence of tokens a transformer can attend over. Toggle the patch size and walk the pipeline end to end.</p></Rv>
+          <Rv delay={0.06}>
+            <div style={{ ...MONO, fontSize: "0.62rem", color: P.sub, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 10 }}>Vision Transformer · patchify → embedding</div>
+            <VitWalkthrough />
+          </Rv>
+          <Rv delay={0.12}>
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center", marginTop: "1.5rem", borderTop: `1px solid ${P.line}`, paddingTop: "1rem" }}>
+              <span style={{ ...MONO, fontSize: "0.62rem", color: P.sub }}>next in the series:</span>
+              {ARCHITECTURES.filter(a => a.status !== "live").map(a => (
+                <span key={a.key} style={{ ...MONO, fontSize: "0.66rem", color: P.sub, border: `1px dashed ${P.line}`, padding: "4px 10px", background: P.paper2 }}>{a.name} · {a.note} <span style={{ color: P.accent }}>soon</span></span>
+              ))}
+            </div>
+          </Rv>
+        </Section>
+
+        {/* ═══ 5 · READING & REPRODUCTIONS (references) ═══ */}
+        <Section id="Reading" num="5" note={<p style={noteTxt}>The <a href={TIL_REPO} target="_blank" rel="noopener noreferrer" className="body-link">til</a> journal — papers read in my own words, with notebooks where the idea needs to be felt.</p>}>
           <SecTitle>Reading &amp; Reproductions</SecTitle>
           <div style={{ display: "flex", flexDirection: "column", gap: "1.2rem" }}>
             {READING_LOG.map((r, i) => (
@@ -261,8 +279,8 @@ export default function App() {
           </Rv>
         </Section>
 
-        {/* ═══ 5 · FOUNDATIONS ═══ */}
-        <Section id="Foundations" num="5" note={<p style={noteTxt}>Not to reinvent the framework — to understand the mechanics it hides.</p>}>
+        {/* ═══ 6 · FOUNDATIONS ═══ */}
+        <Section id="Foundations" num="6" note={<p style={noteTxt}>Not to reinvent the framework — to understand the mechanics it hides.</p>}>
           <SecTitle>Foundations, From Scratch</SecTitle>
           <div>
             {FROM_SCRATCH.map((f, i) => (
@@ -285,7 +303,7 @@ export default function App() {
         </Section>
 
         {/* ═══ 6 · METHODS ═══ */}
-        <Section id="Methods" num="6">
+        <Section id="Methods" num="7">
           <SecTitle>Methods &amp; Tools</SecTitle>
           <div>
             {METHODS.map((m, i) => (
@@ -313,7 +331,7 @@ export default function App() {
         </Section>
 
         {/* ═══ 7 · ABOUT ═══ */}
-        <Section id="About" num="7">
+        <Section id="About" num="8">
           <SecTitle>About</SecTitle>
           <Rv>
             <div style={{ display: "flex", gap: "1.3rem", alignItems: "flex-start", marginBottom: "1.4rem", flexWrap: "wrap" }}>
