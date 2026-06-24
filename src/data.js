@@ -460,11 +460,6 @@ export const INSIGHTS = [
     insight: "The quality-aware router separates images worth enhancing from those it should leave alone — turning the fidelity-vs-accuracy trade-off into a per-image decision.",
   },
   {
-    tag: "XAI", title: "Grad-CAM on the retina",
-    src: "images/plots/gradcam-retinopathy.png",
-    insight: "Saliency lands on the lesions clinicians actually inspect — the kind of explanation a doctor can sanity-check, not just a pretty heatmap.",
-  },
-  {
     tag: "anomaly", title: "Anomalies in CPU telemetry",
     src: "images/plots/anomaly-cpu-usage.png",
     insight: "Injected attack spikes stand clear of baseline load. With a recall-first detector, a few false alarms are a fair price for never missing the spike that matters.",
