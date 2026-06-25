@@ -94,6 +94,15 @@ export const READING_LOG = [
     link: "https://github.com/Atharvax16/til/tree/main/papers/Quantum_chemistry",
     hasNotebook: false,
   },
+  {
+    paper: "Detecting Generated Images by Fitting Natural Image Distributions",
+    authors: "Zhang et al.",
+    year: "2025",
+    area: "Image Forensics",
+    takeaway: "Flip the task: rather than train a real-vs-fake classifier, fit the distribution of natural images and flag whatever falls off the manifold as generated. It sidesteps the generator arms race a binary detector — like my own gen-image-detection study — inherits, since any new generator still has to land off the natural-image manifold.",
+    link: "https://arxiv.org/abs/2511.01293",
+    hasNotebook: false,
+  },
 ];
 
 /* ════════════════════════════════════════
