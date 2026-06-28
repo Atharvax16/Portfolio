@@ -489,6 +489,275 @@ export function VitWalkthrough() {
 }
 
 /* ════════════════════════════════════════
+   DETECTION PARADIGMS — six lenses on a fake (learning in public)
+   Companion to detection_paradigms.ipynb: the same hidden statistical
+   difference between a real photo and an AI image, made visible six ways.
+   Step through spatial → frequency → fingerprint → patch → training-free → VLM.
+   ════════════════════════════════════════ */
+const PARADIGMS = [
+  {
+    key: "spatial", label: "spatial",
+    title: "Spatial — the pixels are already enough",
+    body: "Hand a classifier the raw pixels. Generated images come out subtly smoother, so simple per-patch statistics — brightness, local contrast, and above all the gradient (edge sharpness) — already separate the classes. A RandomForest on twelve such features lands ≈ 0.91, and the sharpness features carry the most weight.",
+    math: "feats = {mean, std, ∇x, ∇y} × RGB  →  RandomForest ≈ 0.91",
+  },
+  {
+    key: "frequency", label: "frequency",
+    title: "Frequency — a tell-tale grid in the Fourier picture",
+    body: "Rewrite the image as a sum of waves with an FFT. A generator's up-sampling step stamps a regular, periodic pattern into that frequency view — a bright grid of dots a real photo never shows. Collapse the 2-D spectrum into a radial curve and the fake sits higher at high frequencies.",
+    math: "F = |FFT(gray)|²  →  radial power spectrum",
+  },
+  {
+    key: "fingerprint", label: "fingerprint",
+    title: "Fingerprint — average the leftover noise",
+    body: "Like a camera sensor, each generator leaves a faint, consistent noise signature. Take the noise residual (image minus its blur) of many images and average them: real scene content cancels to grey, while the generator's repeated pattern survives — and lights up as structure in its FFT.",
+    math: "fp = mean_i ( xᵢ − blur(xᵢ) )",
+  },
+  {
+    key: "patch", label: "patch",
+    title: "Patch — find where the fake-ness is",
+    body: "One score per image hides partial edits. Slide a window across the image and score every tile by its high-frequency energy instead. On a stitched image — real left, fake right — the heatmap lights up the manipulated half, localising the edit rather than just flagging it.",
+    math: "score(tile) = high-freq energy  →  heatmap",
+  },
+  {
+    key: "trainfree", label: "training-free",
+    title: "Training-free — measure how well it rebuilds",
+    body: "No labels, no detector to train. Push the image through a model that tries to reconstruct it; real and generated images rebuild with different error. A toy PCA autoencoder fit on real texture already splits the two error distributions apart — the mechanism behind DIRE and AEROBLADE.",
+    math: "err = ‖ x − decode(encode(x)) ‖²",
+  },
+  {
+    key: "vlm", label: "VLM",
+    title: "Multimodal — ask a model why it's fake",
+    body: "Every method above returns a number. A vision-language model returns a verdict plus its reasons — “the hand has six fingers,” “the background text is garbled” — catching semantic mistakes that frequency math misses. Forced into a JSON schema, that verdict drops straight into the ensemble.",
+    math: "{ verdict, confidence, evidence[], reasoning }",
+  },
+];
+
+export function DetectionParadigms() {
+  const [step, setStep] = useState(0);
+  const pk = PARADIGMS[step].key;
+  const sc = PARADIGMS[step];
+
+  // shared little "photograph" motif (hill + sun), real or smoothed-fake
+  const Photo = ({ x, y, s, fake, id }) => (
+    <g>
+      <clipPath id={`dp-${id}`}><rect x={x} y={y} width={s} height={s} /></clipPath>
+      <g clipPath={`url(#dp-${id})`}>
+        <rect x={x} y={y} width={s} height={s} fill={P.accentSoft} />
+        <path d={`M${x} ${y + s * 0.66} Q ${x + s * 0.28} ${y + s * 0.52}, ${x + s * 0.5} ${y + s * 0.62} T ${x + s} ${y + s * 0.6} L ${x + s} ${y + s} L ${x} ${y + s} Z`} fill={P.green} fillOpacity={fake ? 0.18 : 0.3} />
+        <circle cx={x + s * 0.7} cy={y + s * 0.28} r={s * 0.1} fill="#E8C24C" />
+        {fake && <rect x={x} y={y} width={s} height={s} fill={P.paper2} fillOpacity="0.3" />}
+      </g>
+      <rect x={x} y={y} width={s} height={s} fill="none" stroke={P.ink} strokeWidth="1.4" />
+    </g>
+  );
+
+  const rings = (cx, cy) => [52, 40, 28, 16].map((r, i) => (
+    <circle key={r} cx={cx} cy={cy} r={r} fill="none" stroke={P.sub} strokeOpacity={0.12 + i * 0.13} strokeWidth="1" />
+  ));
+
+  const body = (() => {
+    switch (pk) {
+      case "spatial":
+        return (
+          <g>
+            <Photo x={66} y={78} s={104} id="sp-r" />
+            <Photo x={196} y={78} s={104} fake id="sp-f" />
+            <text x={118} y={70} textAnchor="middle" style={SK} fontSize="11" fill={P.ink}>real</text>
+            <text x={248} y={70} textAnchor="middle" style={SK} fontSize="11" fill={P.sub}>fake · smoother</text>
+            {/* gradient comparison bars */}
+            <line x1={372} y1={222} x2={566} y2={222} stroke={P.sub} strokeWidth="1.2" />
+            <rect x={404} y={104} width={36} height={118} fill={P.accent} fillOpacity="0.7" stroke={P.ink} strokeWidth="0.8" />
+            <rect x={494} y={168} width={36} height={54} fill={P.red} fillOpacity="0.5" stroke={P.ink} strokeWidth="0.8" />
+            <text x={422} y={236} textAnchor="middle" style={SK} fontSize="10" fill={P.accent}>∇ real</text>
+            <text x={512} y={236} textAnchor="middle" style={SK} fontSize="10" fill={P.red}>∇ fake</text>
+            <text x={470} y={92} textAnchor="middle" style={SK} fontSize="11" fill={P.ink}>edge sharpness</text>
+            <text x={470} y={258} textAnchor="middle" style={SK} fontSize="9.5" fontStyle="italic" fill={P.sub}>the feature that matters most</text>
+          </g>
+        );
+      case "frequency":
+        return (
+          <g>
+            <rect x={64} y={70} width={150} height={150} fill="#fff" stroke={P.ink} strokeWidth="1.3" />
+            {rings(139, 145)}
+            <circle cx={139} cy={145} r="4" fill={P.accent} />
+            <text x={139} y={238} textAnchor="middle" style={SK} fontSize="11" fill={P.ink}>real · smooth</text>
+            <rect x={250} y={70} width={150} height={150} fill="#fff" stroke={P.ink} strokeWidth="1.3" />
+            {rings(325, 145)}
+            {[-2, -1, 0, 1, 2].map(gx => [-2, -1, 0, 1, 2].map(gy => (
+              (gx === 0 && gy === 0) ? null :
+                <circle key={`${gx}${gy}`} cx={325 + gx * 26} cy={145 + gy * 26} r="3" fill={P.accent} fillOpacity="0.85" />
+            )))}
+            <circle cx={325} cy={145} r="4" fill={P.accent} />
+            <text x={325} y={238} textAnchor="middle" style={SK} fontSize="11" fill={P.accent}>fake · periodic grid</text>
+            <text x={482} y={120} style={SK} fontSize="11" fill={P.ink}>up-sampling</text>
+            <text x={482} y={138} style={SK} fontSize="11" fill={P.ink}>stamps a grid</text>
+            <text x={482} y={170} style={SK} fontSize="9.5" fontStyle="italic" fill={P.sub}>real photos</text>
+            <text x={482} y={184} style={SK} fontSize="9.5" fontStyle="italic" fill={P.sub}>never show it</text>
+          </g>
+        );
+      case "fingerprint": {
+        // a small deterministic speckle field
+        const spk = (ox, oy, n, seed) => {
+          const out = [];
+          let v = seed;
+          for (let i = 0; i < n; i++) {
+            v = (v * 9301 + 49297) % 233280;
+            const rx = ox + (v / 233280) * 80;
+            v = (v * 9301 + 49297) % 233280;
+            const ry = oy + (v / 233280) * 80;
+            out.push(<circle key={i} cx={rx} cy={ry} r="1.2" fill={P.sub} fillOpacity="0.6" />);
+          }
+          return out;
+        };
+        return (
+          <g>
+            {/* fanned residual tiles */}
+            {[0, 1, 2].map(k => (
+              <g key={k} transform={`translate(${58 + k * 14} ${96 - k * 10})`}>
+                <rect x={0} y={0} width={88} height={88} fill="#fff" stroke={P.line} strokeWidth="1" />
+                {k === 2 && spk(4, 4, 36, 7)}
+              </g>
+            ))}
+            <text x={120} y={224} textAnchor="middle" style={SK} fontSize="10" fill={P.sub}>noise residuals · many</text>
+            {/* arrow */}
+            <path d="M196 118 L246 118" stroke={P.accent} strokeWidth="1.4" fill="none" />
+            <path d="M238 112 L248 118 L238 124" stroke={P.accent} strokeWidth="1.4" fill="none" />
+            <text x={221} y="108" textAnchor="middle" style={SK} fontSize="9" fill={P.accent}>avg</text>
+            {/* averaged fingerprint with surviving structure */}
+            <rect x={262} y={74} width={120} height={120} fill="#f3f1ea" stroke={P.ink} strokeWidth="1.3" />
+            {[0, 1, 2, 3].map(r => [0, 1, 2, 3].map(c => (
+              <circle key={`${r}${c}`} cx={282 + c * 27} cy={94 + r * 27} r="3.2" fill={P.accent} fillOpacity="0.7" />
+            )))}
+            <text x={322} y={210} textAnchor="middle" style={SK} fontSize="10" fill={P.accent}>fingerprint survives</text>
+            <text x={470} y={120} style={SK} fontSize="11" fill={P.ink}>scene cancels,</text>
+            <text x={470} y={138} style={SK} fontSize="11" fill={P.ink}>pattern remains</text>
+            <text x={470} y={168} style={SK} fontSize="9.5" fontStyle="italic" fill={P.sub}>the generator's</text>
+            <text x={470} y={182} style={SK} fontSize="9.5" fontStyle="italic" fill={P.sub}>signature</text>
+          </g>
+        );
+      }
+      case "patch": {
+        const tx = 96, ty = 60, s = 150, cell = s / 5;
+        const cells = [];
+        for (let r = 0; r < 5; r++) for (let c = 0; c < 5; c++) {
+          const hot = c >= 3, mid = c === 2;
+          const fill = hot ? P.red : P.accent;
+          const op = hot ? 0.16 + (c - 3) * 0.16 : mid ? 0.06 : 0.04;
+          cells.push(<rect key={`${r}${c}`} x={tx + c * cell} y={ty + r * cell} width={cell} height={cell} fill={fill} fillOpacity={op} stroke={P.line} strokeWidth="0.4" />);
+        }
+        return (
+          <g>
+            <Photo x={tx} y={ty} s={s} id="pa-r" />
+            {/* right half: smoothed/blocky fake overlay */}
+            <rect x={tx + s / 2} y={ty} width={s / 2} height={s} fill={P.paper2} fillOpacity="0.32" />
+            {cells}
+            <line x1={tx + s / 2} y1={ty} x2={tx + s / 2} y2={ty + s} stroke={P.ink} strokeWidth="1.2" strokeDasharray="4 3" />
+            <rect x={tx} y={ty} width={s} height={s} fill="none" stroke={P.ink} strokeWidth="1.4" />
+            <text x={tx + s * 0.25} y={ty - 10} textAnchor="middle" style={SK} fontSize="10.5" fill={P.sub}>real</text>
+            <text x={tx + s * 0.75} y={ty - 10} textAnchor="middle" style={SK} fontSize="10.5" fill={P.red}>fake</text>
+            {/* colour key */}
+            <text x={300} y={96} style={SK} fontSize="11" fill={P.ink}>score every tile,</text>
+            <text x={300} y={114} style={SK} fontSize="11" fill={P.ink}>not the whole image</text>
+            <rect x={300} y={140} width={120} height={12} fill="url(#dp-heat)" stroke={P.line} strokeWidth="0.6" />
+            <defs>
+              <linearGradient id="dp-heat" x1="0" x2="1">
+                <stop offset="0" stopColor={P.accent} stopOpacity="0.15" />
+                <stop offset="1" stopColor={P.red} stopOpacity="0.8" />
+              </linearGradient>
+            </defs>
+            <text x={300} y={168} style={SK} fontSize="9.5" fill={P.sub}>cool</text>
+            <text x={420} y={168} textAnchor="end" style={SK} fontSize="9.5" fill={P.red}>hot</text>
+            <text x={300} y={196} style={SK} fontSize="9.5" fontStyle="italic" fill={P.sub}>localises the edit</text>
+          </g>
+        );
+      }
+      case "trainfree": {
+        const base = 214, x0 = 96, bw = 20;
+        const realH = [8, 22, 46, 64, 46, 22, 8];
+        const fakeH = [8, 20, 42, 58, 42, 20, 8];
+        return (
+          <g>
+            <line x1={70} y1={base} x2={556} y2={base} stroke={P.sub} strokeWidth="1.2" />
+            <line x1={70} y1={70} x2={70} y2={base} stroke={P.sub} strokeWidth="1.2" />
+            {realH.map((h, i) => <rect key={`r${i}`} x={x0 + i * bw} y={base - h} width={bw - 2} height={h} fill={P.accent} fillOpacity="0.45" stroke={P.accent} strokeWidth="0.6" />)}
+            {fakeH.map((h, i) => <rect key={`f${i}`} x={x0 + 232 + i * bw} y={base - h} width={bw - 2} height={h} fill={P.red} fillOpacity="0.4" stroke={P.red} strokeWidth="0.6" />)}
+            <line x1={332} y1={70} x2={332} y2={base} stroke={P.ink} strokeWidth="1" strokeDasharray="5 4" />
+            <text x={x0 + 60} y={96} textAnchor="middle" style={SK} fontSize="11" fill={P.accent}>real · low error</text>
+            <text x={x0 + 292} y={96} textAnchor="middle" style={SK} fontSize="11" fill={P.red}>fake · high error</text>
+            <text x={332} y={64} textAnchor="middle" style={SK} fontSize="9" fontStyle="italic" fill={P.ink}>split</text>
+            <text x={310} y={236} textAnchor="middle" style={SK} fontSize="10.5" fill={P.sub}>reconstruction error  →</text>
+            <text x={48} y={140} style={SK} fontSize="10" fill={P.sub} transform="rotate(-90 48 140)" textAnchor="middle">count</text>
+          </g>
+        );
+      }
+      case "vlm":
+        return (
+          <g>
+            <Photo x={70} y={84} s={120} id="vl-r" />
+            <text x={130} y={76} textAnchor="middle" style={SK} fontSize="10.5" fill={P.sub}>the image</text>
+            {/* magnifier hint */}
+            <circle cx={150} cy={138} r="20" fill="none" stroke={P.ink} strokeWidth="1.6" strokeOpacity="0.5" />
+            <line x1={164} y1={152} x2={178} y2={166} stroke={P.ink} strokeWidth="1.8" strokeOpacity="0.5" />
+            <path d="M198 144 L236 144" stroke={P.accent} strokeWidth="1.4" fill="none" />
+            <path d="M228 138 L238 144 L228 150" stroke={P.accent} strokeWidth="1.4" fill="none" />
+            {/* JSON verdict card */}
+            <rect x={250} y={70} width={296} height={150} rx="3" fill="#fff" stroke={P.ink} strokeWidth="1.3" />
+            <text x={266} y={94} style={SK} fontSize="11" fill={P.sub}>{"{"}</text>
+            <text x={278} y={114} style={SK} fontSize="11" fill={P.ink}>verdict: <tspan fill={P.red}>"ai_generated"</tspan>,</text>
+            <text x={278} y={134} style={SK} fontSize="11" fill={P.ink}>confidence: <tspan fill={P.accent}>0.88</tspan>,</text>
+            <text x={278} y={154} style={SK} fontSize="11" fill={P.ink}>evidence: [</text>
+            <text x={292} y={172} style={SK} fontSize="10" fill={P.sub}>"six fingers",</text>
+            <text x={292} y={188} style={SK} fontSize="10" fill={P.sub}>"garbled text" ]</text>
+            <text x={266} y={208} style={SK} fontSize="11" fill={P.sub}>{"}"}</text>
+            <text x={398} y={236} textAnchor="middle" style={SK} fontSize="9.5" fontStyle="italic" fill={P.sub}>a verdict — plus its reasons</text>
+          </g>
+        );
+      default: return null;
+    }
+  })();
+
+  const navBtn = { ...SK, fontSize: "0.8rem", padding: "2px 10px", border: `1px solid ${P.line}`, background: P.paper2, color: P.ink, cursor: "pointer" };
+
+  return (
+    <div>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 10, marginBottom: 10 }}>
+        <span style={{ ...SK, fontSize: "0.6rem", color: P.sub, textTransform: "uppercase", letterSpacing: "0.08em" }}>one hidden difference · six lenses</span>
+        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+          <span style={{ ...SK, fontSize: "0.62rem", color: P.sub, textTransform: "uppercase", letterSpacing: "0.06em" }}>lens {step + 1} / 6</span>
+          <button onClick={() => setStep((step + 5) % 6)} aria-label="Previous paradigm" style={navBtn}>←</button>
+          <button onClick={() => setStep((step + 1) % 6)} aria-label="Next paradigm" style={navBtn}>→</button>
+        </div>
+      </div>
+
+      <div style={{ border: `1px solid ${P.line}`, borderTop: `2px solid ${P.ink}`, background: P.paper2 }}>
+        <div style={{ background: "#fff" }}>
+          <div style={{ aspectRatio: "600 / 300" }}>
+            <svg viewBox="0 0 600 300" width="100%" height="100%" role="img" aria-label={`AI-image detection paradigm ${step + 1}: ${sc.label}`} style={{ display: "block" }} strokeLinecap="round" strokeLinejoin="round">
+              {body}
+            </svg>
+          </div>
+        </div>
+        <div style={{ padding: "0.9rem 1.1rem 1rem" }}>
+          <div style={{ ...DISP, fontWeight: 600, fontSize: "1rem", color: P.ink, marginBottom: 4 }}>{sc.title}</div>
+          <p style={{ ...BODY, fontSize: "0.88rem", color: P.sub, lineHeight: 1.65, textWrap: "pretty", margin: 0 }}>
+            <span style={{ ...SK, fontSize: "0.6rem", color: P.accent, textTransform: "uppercase", letterSpacing: "0.08em", marginRight: 6 }}>lens {step + 1}</span>
+            {sc.body}
+          </p>
+          <div style={{ ...SK, fontSize: "0.66rem", color: P.ink, marginTop: 9, background: P.faint, padding: "6px 9px", display: "inline-block" }}>{sc.math}</div>
+        </div>
+      </div>
+
+      <div style={{ display: "flex", gap: 6, marginTop: 10, flexWrap: "wrap" }}>
+        {PARADIGMS.map((s, j) => (
+          <button key={s.key} onClick={() => setStep(j)} style={{ ...SK, fontSize: "0.62rem", padding: "4px 9px", cursor: "pointer", border: `1px solid ${j === step ? P.accent : P.line}`, background: j === step ? P.accentSoft : "#fff", color: j === step ? P.accent : P.sub }}>{j + 1}. {s.label}</button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/* ════════════════════════════════════════
    INSIGHTS VIEWER — step through real figures + the observation each carries
    ════════════════════════════════════════ */
 export function InsightsViewer({ items }) {

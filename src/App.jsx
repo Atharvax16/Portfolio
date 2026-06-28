@@ -3,7 +3,7 @@ import {
   P, SECS, PAPER, RESEARCH_AREAS, READING_LOG, TIL_REPO, FROM_SCRATCH,
   METHODS, JOURNEY, ORDERED_PROJECTS, INSIGHTS, ARCHITECTURES,
 } from "./data.js";
-import { Rv, Radar, PhotoGallery, MatrixOverlay, ResearchModal, SketchFidelityAccuracy, SketchResearcherFrontier, SketchMolecule, SketchAttention, InsightsViewer, VitWalkthrough } from "./ui.jsx";
+import { Rv, Radar, PhotoGallery, MatrixOverlay, ResearchModal, SketchFidelityAccuracy, SketchResearcherFrontier, SketchMolecule, SketchAttention, InsightsViewer, VitWalkthrough, DetectionParadigms } from "./ui.jsx";
 
 /* Type tokens */
 const DISP = { fontFamily: "'Spectral',Georgia,serif" };
@@ -221,12 +221,19 @@ export default function App() {
         {/* ═══ 4 · ARCHITECTURES (interactive walkthroughs) ═══ */}
         <Section id="Architectures" num="4" note={<p style={noteTxt}>Learning in public — each architecture I study, rebuilt as an interactive sketch. Step through it; turn the knobs.</p>}>
           <SecTitle>Architectures, Visualised</SecTitle>
-          <Rv><p style={{ ...BODY, fontSize: "0.95rem", lineHeight: 1.75, color: P.sub, marginBottom: "1.4rem", maxWidth: 600 }}>How a model actually <i>sees</i>. First up: the Vision Transformer — how one image becomes the sequence of tokens a transformer can attend over. Toggle the patch size and walk the pipeline end to end.</p></Rv>
+          <Rv><p style={{ ...BODY, fontSize: "0.95rem", lineHeight: 1.75, color: P.sub, marginBottom: "1.4rem", maxWidth: 600 }}>How a model actually <i>sees</i> — each idea I study, rebuilt as an interactive sketch you can step through. Start with the Vision Transformer: how one image becomes the sequence of tokens a transformer can attend over. Toggle the patch size and walk the pipeline end to end.</p></Rv>
           <Rv delay={0.06}>
             <div style={{ ...MONO, fontSize: "0.62rem", color: P.sub, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 10 }}>Vision Transformer · patchify → embedding</div>
             <VitWalkthrough />
           </Rv>
-          <Rv delay={0.12}>
+          <Rv delay={0.1}>
+            <div style={{ borderTop: `1px solid ${P.line}`, margin: "1.8rem 0 1.2rem", paddingTop: "1.4rem" }}>
+              <p style={{ ...BODY, fontSize: "0.95rem", lineHeight: 1.75, color: P.sub, marginBottom: "1.2rem", maxWidth: 600 }}>And the question behind my <b style={DISP}>generative-image forensics</b> work: an AI image and a real photo can look identical, yet differ in their <i>statistics</i>. Reading round the literature, I rebuilt six detection paradigms as one sketch — each a different lens on that hidden difference. Step through them.</p>
+              <div style={{ ...MONO, fontSize: "0.62rem", color: P.sub, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 10 }}>Detecting AI images · six lenses on a fake</div>
+              <DetectionParadigms />
+            </div>
+          </Rv>
+          <Rv delay={0.14}>
             <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center", marginTop: "1.5rem", borderTop: `1px solid ${P.line}`, paddingTop: "1rem" }}>
               <span style={{ ...MONO, fontSize: "0.62rem", color: P.sub }}>next in the series:</span>
               {ARCHITECTURES.filter(a => a.status !== "live").map(a => (
