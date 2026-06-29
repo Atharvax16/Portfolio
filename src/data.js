@@ -103,6 +103,25 @@ export const READING_LOG = [
     link: "https://arxiv.org/abs/2511.01293",
     hasNotebook: false,
   },
+  {
+    paper: "Are GAN-Generated Images Easy to Detect? A Critical Analysis of the State-of-the-Art",
+    authors: "Gragnaniello et al.",
+    year: "2021",
+    area: "Image Forensics",
+    takeaway: "The frequency view that anchors my own FFT baseline. A 2D FFT un-mixes an image by scale — broad shapes to the centre, fine texture to the rim — and a real photo's energy falls off smoothly with radial frequency, while many generators leave structured, excess energy in the high-frequency tail through their up-sampling stacks. The catch the paper hammers home: that tell is fragile. JPEG re-compression and resizing on social media erode it, so a detector only generalises to unseen generators when it's trained with aggressive augmentation.",
+    link: "https://arxiv.org/abs/2104.02617",
+    hasNotebook: false,
+    sketch: "fft",
+  },
+  {
+    paper: "The Unwinnable Arms Race of AI Image Detection",
+    authors: "Aczel et al.",
+    year: "2025",
+    area: "Image Forensics",
+    takeaway: "I'd wondered if you could just 'reverse the GAN' — keep penalising the discriminator until it reliably beats the generator. But that is the detector's whole problem restated: a discriminator overfits to the generator it trained against, and the next generator lands off-distribution again. This paper makes the structural case — detectability tracks dataset complexity, not detector cleverness: simple scenes a generator learns perfectly and complex scenes that mask its slips both collapse the signal. The race is unwinnable by design, not for lack of tuning.",
+    link: "https://arxiv.org/abs/2509.21135",
+    hasNotebook: false,
+  },
 ];
 
 /* ════════════════════════════════════════

@@ -261,6 +261,75 @@ export function SketchSaturating() {
   );
 }
 
+/* FFT as a frequency un-mixer. The 2D spectrum sorts an image by scale:
+   low frequencies (broad shapes) land in the centre, high frequencies
+   (fine texture, edges) at the rim. Radially average it and a real photo
+   falls off smoothly; many generators — through their up-sampling stacks —
+   leave structured, excess energy in the high-frequency tail. That tail is
+   the tell. */
+export function SketchFFT() {
+  const px = 30, py = 52, ps = 116, pc = px + ps / 2, pcy = py + ps / 2;
+  const gx0 = 206, gx1 = 404, gy0 = 56, gy1 = 196;
+  const X = t => gx0 + t * (gx1 - gx0);                                   // low → high freq
+  const Yr = t => gy1 - (gy1 - gy0) * Math.exp(-3.1 * t);                 // real: smooth decay
+  const Yf = t => gy1 - (gy1 - gy0) * (Math.exp(-3.1 * t) + 0.34 * Math.pow(t, 2.4)); // fake: + high-freq tail
+  const N = 26;
+  const curve = (Y) => Array.from({ length: N + 1 }, (_, i) => { const t = i / N; return `${i ? "L" : "M"}${X(t).toFixed(1)} ${Math.min(gy1, Y(t)).toFixed(1)}`; }).join(" ");
+  const ycy = (gy0 + gy1) / 2;
+  return (
+    <svg viewBox="0 0 420 230" width="100%" height="100%" role="img"
+      aria-label="Sketch: the 2D FFT puts low frequencies at the centre and high at the edges; a real image's radial spectrum falls off smoothly while a generated image keeps an excess high-frequency tail"
+      style={{ display: "block" }}>
+      <defs>
+        <RoughDefs id="rgh-fft" scale={1.2} seed={13} />
+        <radialGradient id="fft-mag" cx="0.5" cy="0.5" r="0.5">
+          <stop offset="0" stopColor={P.accent} stopOpacity="0.9" />
+          <stop offset="0.18" stopColor={P.accent} stopOpacity="0.45" />
+          <stop offset="0.55" stopColor={P.accent} stopOpacity="0.12" />
+          <stop offset="1" stopColor={P.accent} stopOpacity="0.02" />
+        </radialGradient>
+      </defs>
+
+      {/* ── left: 2D |FFT| magnitude — low centre, high edges ── */}
+      <text x={pc} y={py - 8} textAnchor="middle" style={SK} fontSize="10.5" fill={P.ink}>|FFT| magnitude</text>
+      <rect x={px} y={py} width={ps} height={ps} fill="#fff" stroke={P.ink} strokeWidth="1.3" />
+      <rect x={px} y={py} width={ps} height={ps} fill="url(#fft-mag)" />
+      <g filter="url(#rgh-fft)" fill="none">
+        {[16, 30, 46].map(r => <circle key={r} cx={pc} cy={pcy} r={r} stroke={P.sub} strokeOpacity="0.3" strokeWidth="0.9" />)}
+      </g>
+      <circle cx={pc} cy={pcy} r="3.2" fill={P.accent} />
+      <text x={pc} y={pcy - 7} textAnchor="middle" style={SK} fontSize="9" fill={P.accent}>low</text>
+      <line x1={px + ps - 8} y1={py + 8} x2={px + ps - 22} y2={py + 22} stroke={P.red} strokeWidth="1" />
+      <text x={px + ps - 4} y={py + 15} textAnchor="end" style={SK} fontSize="9" fill={P.red}>high</text>
+      <text x={pc} y={py + ps + 16} textAnchor="middle" style={SK} fontSize="9" fontStyle="italic" fill={P.sub}>centre = low · edges = high</text>
+
+      {/* feed-in arrow → radial average */}
+      <text x={172} y={pcy - 8} textAnchor="middle" style={SK} fontSize="8.5" fill={P.accent}>radial avg</text>
+      <path d="M150 110 L194 110" stroke={P.accent} strokeWidth="1.4" fill="none" />
+      <path d="M186 104 L196 110 L186 116" stroke={P.accent} strokeWidth="1.4" fill="none" />
+
+      {/* ── right: radial spectrum — real vs fake ── */}
+      <g filter="url(#rgh-fft)" fill="none" strokeLinecap="round">
+        <path d={`M${gx0} ${gy0} L${gx0} ${gy1} L${gx1} ${gy1}`} stroke={P.sub} strokeWidth="1.3" />
+        <path d={curve(Yr)} stroke={P.accent} strokeWidth="2.3" />
+        <path d={curve(Yf)} stroke={P.red} strokeWidth="2.3" strokeDasharray="6 5" />
+      </g>
+      {/* high-freq divergence band */}
+      <rect x={X(0.62)} y={gy0} width={gx1 - X(0.62)} height={gy1 - gy0} fill={P.red} fillOpacity="0.05" />
+      <line x1={X(0.62)} y1={gy0} x2={X(0.62)} y2={gy1} stroke={P.sub} strokeWidth="0.8" strokeDasharray="3 3" />
+      {/* legend */}
+      <line x1={296} y1={70} x2={316} y2={70} stroke={P.accent} strokeWidth="2.3" />
+      <text x={320} y={73} style={SK} fontSize="9" fill={P.accent}>real</text>
+      <line x1={296} y1={86} x2={316} y2={86} stroke={P.red} strokeWidth="2.3" strokeDasharray="6 5" />
+      <text x={320} y={89} style={SK} fontSize="9" fill={P.red}>fake</text>
+      {/* annotations */}
+      <text x={(X(0.62) + gx1) / 2} y={gy1 + 14} textAnchor="middle" style={SK} fontSize="8.5" fontStyle="italic" fill={P.red}>the tell</text>
+      <text x={(gx0 + gx1) / 2} y={gy1 + 26} textAnchor="middle" style={SK} fontSize="9.5" fill={P.sub}>radial frequency →</text>
+      <text x={gx0 - 8} y={ycy} style={SK} fontSize="9.5" fill={P.sub} transform={`rotate(-90 ${gx0 - 8} ${ycy})`} textAnchor="middle">log |F|</text>
+    </svg>
+  );
+}
+
 /* ════════════════════════════════════════
    ARCHITECTURES LAB — interactive, hand-drawn walkthroughs (learning in public)
    First panel: the Vision Transformer's patchify → patch-embedding pipeline.
