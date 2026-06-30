@@ -104,6 +104,16 @@ export const READING_LOG = [
     hasNotebook: false,
   },
   {
+    paper: "Watch Your Up-Convolution: CNN-Based Generative Deep Neural Networks Are Failing to Reproduce Spectral Distributions",
+    authors: "Durall et al.",
+    year: "2020",
+    area: "Image Forensics",
+    takeaway: "The mechanism under the FFT tell. Transposed-conv up-sampling stuffs zeros between samples, and the learned filter never perfectly low-passes them — so a high-frequency copy of the spectrum survives, and the GAN's azimuthal power spectrum peels away from real images at high radial frequency. The shift this forced in my thinking: detection moved from matching pixels to matching statistics. Their fix is a spectral-regularization loss that pulls the generator's power spectrum onto the real one — which closes the gap and, pointedly, erases the artifact a frequency detector was relying on. The tell and the fix are the same equation.",
+    link: "https://arxiv.org/abs/2003.01826",
+    hasNotebook: false,
+    sketch: "spectral",
+  },
+  {
     paper: "Are GAN-Generated Images Easy to Detect? A Critical Analysis of the State-of-the-Art",
     authors: "Gragnaniello et al.",
     year: "2021",

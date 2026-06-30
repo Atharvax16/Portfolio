@@ -3,7 +3,7 @@ import {
   P, SECS, PAPER, RESEARCH_AREAS, READING_LOG, TIL_REPO, FROM_SCRATCH,
   METHODS, JOURNEY, ORDERED_PROJECTS, INSIGHTS, ARCHITECTURES,
 } from "./data.js";
-import { Rv, Radar, PhotoGallery, MatrixOverlay, ResearchModal, SketchFidelityAccuracy, SketchResearcherFrontier, SketchMolecule, SketchAttention, SketchFFT, InsightsViewer, VitWalkthrough, DetectionParadigms } from "./ui.jsx";
+import { Rv, Radar, PhotoGallery, MatrixOverlay, ResearchModal, SketchFidelityAccuracy, SketchResearcherFrontier, SketchMolecule, SketchAttention, SketchFFT, SketchSpectral, InsightsViewer, VitWalkthrough, DetectionParadigms } from "./ui.jsx";
 
 /* Type tokens */
 const DISP = { fontFamily: "'Spectral',Georgia,serif" };
@@ -266,6 +266,11 @@ export default function App() {
                     {r.sketch === "fft" && (
                       <figure style={{ margin: "0.7rem 0 0", maxWidth: 420, border: `1px solid ${P.line}`, background: P.paper2 }}>
                         <div style={{ aspectRatio: "420 / 230" }}><SketchFFT /></div>
+                      </figure>
+                    )}
+                    {r.sketch === "spectral" && (
+                      <figure style={{ margin: "0.7rem 0 0", maxWidth: 440, border: `1px solid ${P.line}`, background: P.paper2 }}>
+                        <div style={{ aspectRatio: "440 / 238" }}><SketchSpectral /></div>
                       </figure>
                     )}
                   </div>

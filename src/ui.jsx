@@ -330,6 +330,71 @@ export function SketchFFT() {
   );
 }
 
+/* Why up-convolution breaks the spectrum, and how to fix it (Durall 2020).
+   Transposed conv / up-sampling stuffs zeros between samples; the learned
+   filter never perfectly low-passes them, so a high-frequency copy of the
+   spectrum survives — the artifact. A spectral-regularization loss adds a
+   term that matches the generator's azimuthal power spectrum to real data,
+   pulling the curve back down — which also erases the detector's tell. */
+export function SketchSpectral() {
+  // left: zero-insertion stems
+  const yA = 88, yB = 176;
+  const inA = [[44, 30], [72, 46], [100, 22]];
+  const up = [[36, 30], [54, 0], [72, 46], [90, 0], [108, 22], [126, 0]];
+  // right: azimuthal power spectrum
+  const gx0 = 214, gx1 = 418, gy0 = 58, gy1 = 188;
+  const X = t => gx0 + t * (gx1 - gx0);
+  const Yr = t => gy1 - (gy1 - gy0) * Math.exp(-3.0 * t);                          // real
+  const Yg = t => gy1 - (gy1 - gy0) * (Math.exp(-3.0 * t) + 0.32 * Math.pow(t, 2.4)); // GAN, no reg
+  const N = 24;
+  const curve = (Y) => Array.from({ length: N + 1 }, (_, i) => { const t = i / N; return `${i ? "L" : "M"}${X(t).toFixed(1)} ${Math.min(gy1, Y(t)).toFixed(1)}`; }).join(" ");
+  const at = 0.85;
+  return (
+    <svg viewBox="0 0 440 238" width="100%" height="100%" role="img"
+      aria-label="Sketch: up-convolution inserts zeros that leave a high-frequency copy in the spectrum; a spectral-regularization loss matches the azimuthal power spectrum to real data and removes the artifact"
+      style={{ display: "block" }}>
+      <defs><RoughDefs id="rgh-spec" scale={1.2} seed={17} /></defs>
+
+      {/* ── left: up-conv inserts zeros ── */}
+      <text x={92} y={44} textAnchor="middle" style={SK} fontSize="10.5" fill={P.ink}>up-convolution</text>
+      <g filter="url(#rgh-spec)" strokeLinecap="round">
+        <line x1={28} y1={yA} x2={140} y2={yA} stroke={P.line} strokeWidth="1" />
+        {inA.map(([x, h], i) => <g key={`i${i}`}><line x1={x} y1={yA} x2={x} y2={yA - h} stroke={P.accent} strokeWidth="2" /><circle cx={x} cy={yA - h} r="3.4" fill={P.accent} /></g>)}
+        <line x1={28} y1={yB} x2={140} y2={yB} stroke={P.line} strokeWidth="1" />
+        {up.map(([x, h], i) => h > 0
+          ? <g key={`u${i}`}><line x1={x} y1={yB} x2={x} y2={yB - h} stroke={P.accent} strokeWidth="2" /><circle cx={x} cy={yB - h} r="3.2" fill={P.accent} /></g>
+          : <circle key={`u${i}`} cx={x} cy={yB} r="3" fill="none" stroke={P.red} strokeWidth="1.3" />)}
+      </g>
+      <text x={128} y={yA - 2} style={SK} fontSize="9" fill={P.sub}>input</text>
+      <text x={92} y={128} textAnchor="middle" style={SK} fontSize="9" fill={P.accent}>insert zeros ↓</text>
+      <text x={94} y={yB + 4} style={SK} fontSize="8.5" fill={P.red}>0</text>
+      <text x={92} y={212} textAnchor="middle" style={SK} fontSize="8.5" fontStyle="italic" fill={P.sub}>zeros → high-freq copy survives</text>
+
+      {/* ── right: azimuthal power spectrum + spectral-reg ── */}
+      <g filter="url(#rgh-spec)" fill="none" strokeLinecap="round">
+        <path d={`M${gx0} ${gy0} L${gx0} ${gy1} L${gx1} ${gy1}`} stroke={P.sub} strokeWidth="1.3" />
+        <path d={curve(Yr)} stroke={P.accent} strokeWidth="2.3" />
+        <path d={curve(Yg)} stroke={P.red} strokeWidth="2.3" strokeDasharray="6 5" />
+      </g>
+      {/* the reg loss pulls the GAN curve down onto the real curve */}
+      <path d={`M${X(at)} ${Yg(at) + 4} L${X(at)} ${Yr(at) - 5}`} stroke={P.green} strokeWidth="1.6" />
+      <path d={`M${X(at) - 4} ${Yr(at) - 11} L${X(at)} ${Yr(at) - 4} L${X(at) + 4} ${Yr(at) - 11}`} stroke={P.green} strokeWidth="1.6" fill="none" />
+      <circle cx={X(at)} cy={Yr(at)} r="3.2" fill={P.green} />
+      <text x={X(at) + 7} y={(Yg(at) + Yr(at)) / 2} style={SK} fontSize="9" fill={P.green}>+ reg</text>
+      {/* legend */}
+      <line x1={300} y1={70} x2={320} y2={70} stroke={P.accent} strokeWidth="2.3" />
+      <text x={324} y={73} style={SK} fontSize="9" fill={P.accent}>real</text>
+      <line x1={300} y1={86} x2={320} y2={86} stroke={P.red} strokeWidth="2.3" strokeDasharray="6 5" />
+      <text x={324} y={89} style={SK} fontSize="9" fill={P.red}>GAN</text>
+      {/* axes + loss */}
+      <text x={(gx0 + gx1) / 2} y={gy1 + 14} textAnchor="middle" style={SK} fontSize="9.5" fill={P.sub}>radial frequency →</text>
+      <text x={gx0 - 8} y={(gy0 + gy1) / 2} style={SK} fontSize="9.5" fill={P.sub} transform={`rotate(-90 ${gx0 - 8} ${(gy0 + gy1) / 2})`} textAnchor="middle">log power</text>
+      <text x={(gx0 + gx1) / 2} y={gy1 + 32} textAnchor="middle" style={{ fontFamily: "'IBM Plex Mono',monospace" }} fontSize="9.5" fill={P.ink}>L = L_adv + λ‖AS(G) − AS(real)‖</text>
+      <text x={(gx0 + gx1) / 2} y={gy1 + 46} textAnchor="middle" style={SK} fontSize="8.5" fontStyle="italic" fill={P.sub}>match the statistic → the tell disappears</text>
+    </svg>
+  );
+}
+
 /* ════════════════════════════════════════
    ARCHITECTURES LAB — interactive, hand-drawn walkthroughs (learning in public)
    First panel: the Vision Transformer's patchify → patch-embedding pipeline.
