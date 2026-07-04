@@ -114,6 +114,16 @@ export const READING_LOG = [
     sketch: "spectral",
   },
   {
+    paper: "Leveraging Frequency Analysis for Deep Fake Image Recognition",
+    authors: "Frank et al.",
+    year: "2020",
+    area: "Image Forensics",
+    takeaway: "The DCT counterpart to Durall — same culprit, sharper lens. Swap the DFT for the discrete cosine transform and the frequency view changes character: the cosine basis is real (no phase) and compacts energy, so the spectrum lays out as a clean coefficient grid rather than the DFT's smeared ring. The generator's upsampling stack then shows up as a stark checkerboard in the high-frequency coefficients — the same zero-insertion tell, but easier to read and to classify on. The point that stuck: a plain linear model on DCT features already separates real from fake, which reframes 'AI-image detection' as mostly a choice of the right transform. It's why my own pipeline leans on frequency features, not just learned embeddings.",
+    link: "https://arxiv.org/abs/2003.08685",
+    hasNotebook: false,
+    sketch: "dct",
+  },
+  {
     paper: "Are GAN-Generated Images Easy to Detect? A Critical Analysis of the State-of-the-Art",
     authors: "Gragnaniello et al.",
     year: "2021",

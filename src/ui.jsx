@@ -395,6 +395,69 @@ export function SketchSpectral() {
   );
 }
 
+/* DCT vs DFT on the same image (Frank 2020). The DFT magnitude smears the
+   up-sampling artifact into a ring and throws phase away; the DCT's real,
+   energy-compacting basis lays coefficients on a grid, so the generator's
+   up-sampling stack surfaces as a regular high-frequency lattice — a tell a
+   linear model can read straight off. Same culprit as Durall, sharper lens. */
+export function SketchDCT() {
+  const lx = 28, ly = 52, s = 150;                 // left: DFT magnitude panel
+  const rx = 252, ry = 52;                          // right: DCT coefficient panel
+  const lcx = lx + s / 2, lcy = ly + s / 2;
+  const dn = 8, dcell = s / dn;
+
+  // DCT coefficients: energy compacts toward the DC (top-left) corner.
+  const cells = [];
+  for (let r = 0; r < dn; r++) for (let c = 0; c < dn; c++) {
+    const f = (r + c) / (2 * (dn - 1));
+    const e = Math.exp(-3.4 * f);
+    cells.push(<rect key={`d${r}-${c}`} x={rx + c * dcell} y={ry + r * dcell} width={dcell} height={dcell} fill={P.accent} fillOpacity={(0.9 * e).toFixed(3)} stroke={P.line} strokeWidth="0.4" />);
+  }
+  // the up-sampling artifact — a regular lattice of high-frequency coefficients
+  const art = [];
+  for (let r = 1; r < dn; r += 2) for (let c = 1; c < dn; c += 2) {
+    art.push(<rect key={`a${r}-${c}`} x={rx + c * dcell + dcell * 0.2} y={ry + r * dcell + dcell * 0.2} width={dcell * 0.6} height={dcell * 0.6} fill={P.red} fillOpacity={0.45 + 0.35 * ((r + c) / (2 * (dn - 1)))} stroke="none" />);
+  }
+
+  return (
+    <svg viewBox="0 0 440 248" width="100%" height="100%" role="img"
+      aria-label="Sketch: on the same image the DFT smears the up-sampling artifact into a ring while the DCT lays it out as a regular high-frequency coefficient lattice"
+      style={{ display: "block" }}>
+      <defs><RoughDefs id="rgh-dct" scale={1.1} seed={29} /></defs>
+
+      {/* ── left: DFT magnitude ── */}
+      <text x={lcx} y={ly - 14} textAnchor="middle" style={SK} fontSize="10.5" fill={P.ink}>DFT — magnitude</text>
+      <g filter="url(#rgh-dct)">
+        <rect x={lx} y={ly} width={s} height={s} fill={P.faint} stroke={P.ink} strokeWidth="1.3" />
+        {[52, 40, 28, 16].map((rr, i) => <circle key={`ring${i}`} cx={lcx} cy={lcy} r={rr} fill="none" stroke={P.accent} strokeOpacity={0.14 + 0.06 * i} strokeWidth="2" />)}
+        <circle cx={lcx} cy={lcy} r="5" fill={P.accent} />
+        {[[-1, -1], [1, 1], [1, -1], [-1, 1]].map(([dx, dy], i) => <circle key={`peak${i}`} cx={lcx + dx * 46} cy={lcy + dy * 46} r="3" fill={P.red} fillOpacity="0.5" />)}
+      </g>
+      <text x={lcx} y={ly + s + 18} textAnchor="middle" style={SK} fontSize="9" fontStyle="italic" fill={P.sub}>smeared ring · phase thrown away</text>
+
+      {/* ── middle: same image, two transforms ── */}
+      <text x={(lx + s + rx) / 2} y={lcy - 6} textAnchor="middle" style={SK} fontSize="8.5" fill={P.sub}>same</text>
+      <text x={(lx + s + rx) / 2} y={lcy + 5} textAnchor="middle" style={SK} fontSize="8.5" fill={P.sub}>image</text>
+      <path d={`M${lx + s + 4} ${lcy + 20} L${rx - 6} ${lcy + 20}`} stroke={P.accent} strokeWidth="1.2" fill="none" />
+      <path d={`M${rx - 14} ${lcy + 15} L${rx - 4} ${lcy + 20} L${rx - 14} ${lcy + 25}`} stroke={P.accent} strokeWidth="1.2" fill="none" />
+
+      {/* ── right: DCT coefficients ── */}
+      <text x={rx + s / 2} y={ry - 14} textAnchor="middle" style={SK} fontSize="10.5" fill={P.ink}>DCT — coefficients</text>
+      <g filter="url(#rgh-dct)">
+        {cells}
+        {art}
+        <rect x={rx + dcell * 4} y={ry + dcell * 4} width={dcell * 4} height={dcell * 4} fill="none" stroke={P.red} strokeWidth="1" strokeDasharray="3 2" />
+        <rect x={rx} y={ry} width={s} height={s} fill="none" stroke={P.ink} strokeWidth="1.3" />
+      </g>
+      <text x={rx + dcell * 0.5} y={ry + dcell * 0.5 + 3} textAnchor="middle" style={SK} fontSize="7" fill={P.paper2}>DC</text>
+      <text x={rx + s / 2} y={ry + s + 18} textAnchor="middle" style={SK} fontSize="9" fontStyle="italic" fill={P.sub}>energy compacts ↖ · red lattice = the tell</text>
+
+      {/* ── bottom: the takeaway line ── */}
+      <text x={220} y={ry + s + 38} textAnchor="middle" style={{ fontFamily: "'IBM Plex Mono',monospace" }} fontSize="9.5" fill={P.ink}>real, energy-compacting basis → up-sampling grid stands out</text>
+    </svg>
+  );
+}
+
 /* ════════════════════════════════════════
    ARCHITECTURES LAB — interactive, hand-drawn walkthroughs (learning in public)
    First panel: the Vision Transformer's patchify → patch-embedding pipeline.
