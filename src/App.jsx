@@ -33,11 +33,44 @@ function SecTitle({ children }) {
   );
 }
 
+/* One reading-log reference — `n` is the stable citation number (1-based). */
+function RefItem({ r, n }) {
+  return (
+    <div id={`ref-${n}`} className="ref" style={{ display: "grid", gridTemplateColumns: "2rem 1fr", gap: "0.4rem" }}>
+      <div style={{ ...MONO, fontSize: "0.8rem", color: P.accent }}>[{n}]</div>
+      <div>
+        <div style={{ ...BODY, fontSize: "0.95rem", color: P.ink, lineHeight: 1.6 }}>
+          {r.authors}. <i>{r.paper}</i>. {r.year}.
+          {r.hasNotebook && <span style={{ ...MONO, fontSize: "0.58rem", color: P.accent, border: `1px solid ${P.accent}55`, padding: "0 6px", marginLeft: 8, verticalAlign: "middle" }}>+ notebook</span>}
+        </div>
+        <p style={{ ...BODY, fontSize: "0.86rem", color: P.sub, lineHeight: 1.7, margin: "5px 0 6px", textWrap: "pretty" }}>{r.takeaway}</p>
+        <a href={r.link} target="_blank" rel="noopener noreferrer" style={{ ...MONO, fontSize: "0.66rem", color: P.accent, textDecoration: "underline", textUnderlineOffset: 3 }}>notes — {r.area} ↗</a>
+        {r.sketch === "attention" && (
+          <figure style={{ margin: "0.7rem 0 0", maxWidth: 360, border: `1px solid ${P.line}`, background: P.paper2 }}>
+            <SketchAttention />
+          </figure>
+        )}
+        {r.sketch === "fft" && (
+          <figure style={{ margin: "0.7rem 0 0", maxWidth: 420, border: `1px solid ${P.line}`, background: P.paper2 }}>
+            <div style={{ aspectRatio: "420 / 230" }}><SketchFFT /></div>
+          </figure>
+        )}
+        {r.sketch === "spectral" && (
+          <figure style={{ margin: "0.7rem 0 0", maxWidth: 440, border: `1px solid ${P.line}`, background: P.paper2 }}>
+            <div style={{ aspectRatio: "440 / 238" }}><SketchSpectral /></div>
+          </figure>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export default function App() {
   const [active, setActive] = useState(0);
   const [matrix, setMatrix] = useState(false);
   const [eggC, setEggC] = useState(0);
   const [openProject, setOpenProject] = useState(null);
+  const [showForensics, setShowForensics] = useState(false);
 
   useEffect(() => {
     const obs = new IntersectionObserver((entries) => {
@@ -53,6 +86,13 @@ export default function App() {
   const link = { ...MONO, color: P.accent, textDecoration: "underline", textUnderlineOffset: 3, textDecorationThickness: "1px" };
   const chip = { ...MONO, fontSize: "0.64rem", color: P.sub, border: `1px solid ${P.line}`, borderRadius: 2, padding: "2px 8px" };
   const noteTxt = { ...BODY, fontSize: "0.74rem", color: P.sub, lineHeight: 1.55, fontStyle: "italic" };
+
+  /* Reading log splits into the fixed foundational trio (kept inline) and the
+     growing generative-image-forensics thread (tucked behind a toggle). `n` is
+     the stable 1-based citation number the Abstract's <Cite> links point at. */
+  const readingNumbered = READING_LOG.map((r, i) => ({ ...r, n: i + 1 }));
+  const foundationalReading = readingNumbered.filter((r) => r.area !== "Image Forensics");
+  const forensicsReading = readingNumbered.filter((r) => r.area === "Image Forensics");
 
   const Cite = ({ n }) => (
     <a href={`#ref-${n}`} style={{ ...MONO, fontSize: "0.78em", color: P.accent, textDecoration: "none" }}>[{n}]</a>
@@ -247,34 +287,9 @@ export default function App() {
         <Section id="Reading" num="5" note={<p style={noteTxt}>The <a href={TIL_REPO} target="_blank" rel="noopener noreferrer" className="body-link">til</a> journal — papers read in my own words, with notebooks where the idea needs to be felt.</p>}>
           <SecTitle>Reading &amp; Reproductions</SecTitle>
           <div style={{ display: "flex", flexDirection: "column", gap: "1.2rem" }}>
-            {READING_LOG.map((r, i) => (
+            {foundationalReading.map((r, i) => (
               <Rv key={r.paper} delay={i * 0.05}>
-                <div id={`ref-${i + 1}`} className="ref" style={{ display: "grid", gridTemplateColumns: "2rem 1fr", gap: "0.4rem" }}>
-                  <div style={{ ...MONO, fontSize: "0.8rem", color: P.accent }}>[{i + 1}]</div>
-                  <div>
-                    <div style={{ ...BODY, fontSize: "0.95rem", color: P.ink, lineHeight: 1.6 }}>
-                      {r.authors}. <i>{r.paper}</i>. {r.year}.
-                      {r.hasNotebook && <span style={{ ...MONO, fontSize: "0.58rem", color: P.accent, border: `1px solid ${P.accent}55`, padding: "0 6px", marginLeft: 8, verticalAlign: "middle" }}>+ notebook</span>}
-                    </div>
-                    <p style={{ ...BODY, fontSize: "0.86rem", color: P.sub, lineHeight: 1.7, margin: "5px 0 6px", textWrap: "pretty" }}>{r.takeaway}</p>
-                    <a href={r.link} target="_blank" rel="noopener noreferrer" style={{ ...MONO, fontSize: "0.66rem", color: P.accent, textDecoration: "underline", textUnderlineOffset: 3 }}>notes — {r.area} ↗</a>
-                    {r.sketch === "attention" && (
-                      <figure style={{ margin: "0.7rem 0 0", maxWidth: 360, border: `1px solid ${P.line}`, background: P.paper2 }}>
-                        <SketchAttention />
-                      </figure>
-                    )}
-                    {r.sketch === "fft" && (
-                      <figure style={{ margin: "0.7rem 0 0", maxWidth: 420, border: `1px solid ${P.line}`, background: P.paper2 }}>
-                        <div style={{ aspectRatio: "420 / 230" }}><SketchFFT /></div>
-                      </figure>
-                    )}
-                    {r.sketch === "spectral" && (
-                      <figure style={{ margin: "0.7rem 0 0", maxWidth: 440, border: `1px solid ${P.line}`, background: P.paper2 }}>
-                        <div style={{ aspectRatio: "440 / 238" }}><SketchSpectral /></div>
-                      </figure>
-                    )}
-                  </div>
-                </div>
+                <RefItem r={r} n={r.n} />
               </Rv>
             ))}
           </div>
@@ -291,7 +306,34 @@ export default function App() {
               </figcaption>
             </figure>
           </Rv>
+
+          {/* Generative-image forensics — the active thesis thread, kept behind a toggle
+              so the front page stays short as the reading list grows. */}
           <Rv delay={0.16}>
+            <div style={{ marginTop: "1.8rem", borderTop: `2px solid ${P.ink}`, paddingTop: "1.1rem" }}>
+              <button
+                onClick={() => setShowForensics((v) => !v)}
+                aria-expanded={showForensics}
+                aria-controls="forensics-reading"
+                style={{ width: "100%", display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: "1rem", background: "transparent", border: "none", padding: 0, cursor: "pointer", textAlign: "left" }}
+              >
+                <span>
+                  <span style={{ ...DISP, fontWeight: 600, fontSize: "1.05rem", color: P.ink }}>Generative-Image Forensics</span>
+                  <span style={{ ...BODY, fontSize: "0.82rem", color: P.sub, marginLeft: 10 }}>the active thesis thread · {forensicsReading.length} papers</span>
+                </span>
+                <span style={{ ...MONO, fontSize: "0.7rem", color: P.accent, flexShrink: 0, whiteSpace: "nowrap" }}>{showForensics ? "hide ▴" : "read list ▾"}</span>
+              </button>
+              {showForensics && (
+                <div id="forensics-reading" style={{ display: "flex", flexDirection: "column", gap: "1.2rem", marginTop: "1.2rem", animation: "fadeUp 0.4s ease both" }}>
+                  {forensicsReading.map((r) => (
+                    <RefItem key={r.paper} r={r} n={r.n} />
+                  ))}
+                </div>
+              )}
+            </div>
+          </Rv>
+
+          <Rv delay={0.18}>
             <a href={TIL_REPO} target="_blank" rel="noopener noreferrer" style={{ ...MONO, fontSize: "0.7rem", color: P.ink, textDecoration: "none", border: `1px solid ${P.line}`, padding: "8px 14px", display: "inline-block", marginTop: "1.4rem", background: P.paper2 }}>Full journal on GitHub ↗</a>
           </Rv>
         </Section>
