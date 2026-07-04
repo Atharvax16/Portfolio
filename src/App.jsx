@@ -3,7 +3,7 @@ import {
   P, SECS, PAPER, RESEARCH_AREAS, READING_LOG, TIL_REPO, FROM_SCRATCH,
   METHODS, JOURNEY, ORDERED_PROJECTS, INSIGHTS, ARCHITECTURES,
 } from "./data.js";
-import { Rv, Radar, PhotoGallery, MatrixOverlay, ResearchModal, SketchFidelityAccuracy, SketchResearcherFrontier, SketchMolecule, SketchAttention, SketchFFT, SketchSpectral, InsightsViewer, VitWalkthrough, DetectionParadigms } from "./ui.jsx";
+import { Rv, Radar, PhotoGallery, MatrixOverlay, ResearchModal, SketchFidelityAccuracy, SketchResearcherFrontier, SketchMolecule, SketchAttention, SketchFFT, SketchSpectral, InsightsViewer, VitWalkthrough, CnnWalkthrough, DetectionParadigms } from "./ui.jsx";
 
 /* Type tokens */
 const DISP = { fontFamily: "'Spectral',Georgia,serif" };
@@ -265,6 +265,13 @@ export default function App() {
           <Rv delay={0.06}>
             <div style={{ ...MONO, fontSize: "0.62rem", color: P.sub, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 10 }}>Vision Transformer · patchify → embedding</div>
             <VitWalkthrough />
+          </Rv>
+          <Rv delay={0.08}>
+            <div style={{ borderTop: `1px solid ${P.line}`, margin: "1.8rem 0 1.2rem", paddingTop: "1.4rem" }}>
+              <p style={{ ...BODY, fontSize: "0.95rem", lineHeight: 1.75, color: P.sub, marginBottom: "1.2rem", maxWidth: 600 }}>Then the <b style={DISP}>CNN</b> — the workhorse I keep circling back to brush up on. Convolution, activation and pooling funnel an image down into features; then a transposed convolution climbs back up by <i>inserting zeros</i> between samples — and that's the exact step the <b style={DISP}>Watch Your Up-Convolution</b> paper turns into an AI-image detector. Step down the encoder, then back up.</p>
+              <div style={{ ...MONO, fontSize: "0.62rem", color: P.sub, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 10 }}>Convolutional Neural Network · convolve → pool → receptive field → transpose ↑</div>
+              <CnnWalkthrough />
+            </div>
           </Rv>
           <Rv delay={0.1}>
             <div style={{ borderTop: `1px solid ${P.line}`, margin: "1.8rem 0 1.2rem", paddingTop: "1.4rem" }}>

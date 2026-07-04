@@ -623,6 +623,335 @@ export function VitWalkthrough() {
 }
 
 /* ════════════════════════════════════════
+   CNN WALKTHROUGH — the convolutional workhorse, brushed up in public.
+   Steps through the encoder path (convolve → activate → pool → stacked
+   receptive field) and then the way back up (transposed convolution),
+   where inserting zeros leaves the high-frequency artifact that Durall's
+   "Watch Your Up-Convolution" turns into an AI-image detector. Toggle the
+   kernel size and watch the feature-map arithmetic update.
+   ════════════════════════════════════════ */
+const CNN_STEPS = [
+  { key: "input", label: "image" },
+  { key: "conv", label: "convolve" },
+  { key: "relu", label: "activate" },
+  { key: "pool", label: "pool" },
+  { key: "stack", label: "receptive field" },
+  { key: "up", label: "transpose ↑" },
+];
+
+export function CnnWalkthrough() {
+  const [k, setK] = useState(3);
+  const [step, setStep] = useState(0);
+
+  const IN = 32;
+  const convOut = IN - k + 1;              // valid conv, stride 1, no pad
+  const poolOut = Math.floor(convOut / 2); // 2×2 max pool, stride 2
+  const stepKey = CNN_STEPS[step].key;
+
+  // input scene geometry (reused by the "image" step)
+  const ox = 44, oy = 68, size = 176;
+  const hill = `M${ox} ${oy + size * 0.66} Q ${ox + size * 0.28} ${oy + size * 0.52}, ${ox + size * 0.5} ${oy + size * 0.62} T ${ox + size} ${oy + size * 0.6} L ${ox + size} ${oy + size} L ${ox} ${oy + size} Z`;
+
+  const copy = {
+    input: {
+      title: "It starts with a grid of pixels",
+      body: "A CNN keeps the image as a 2-D grid — it never flattens it the way a transformer does. Spatial neighbours stay neighbours, so the network can learn local patterns: edges, corners, textures.",
+      math: `input · ${IN} × ${IN} × 3`,
+    },
+    conv: {
+      title: "Convolution — slide a small kernel",
+      body: `A ${k}×${k} kernel slides across the image; at each position it multiplies its weights against the pixels underneath and sums to a single number. The same kernel — shared weights — sweeps the whole image, producing a feature map that lights up wherever its pattern appears.`,
+      math: `(${IN} − ${k} + 1)² = ${convOut} × ${convOut} feature map · stride 1, no pad`,
+    },
+    relu: {
+      title: "Activate — keep only what fires",
+      body: "A ReLU zeroes every negative response and passes the positives through. Without this nonlinearity a stack of convolutions would collapse into one big linear filter — no depth, no hierarchy of features.",
+      math: `ReLU(x) = max(0, x)`,
+    },
+    pool: {
+      title: "Pool — keep what, forget a little where",
+      body: `Max-pooling takes the strongest response in each 2×2 block, halving the spatial size to ${poolOut}×${poolOut}. The network keeps what it saw and blurs exactly where — buying a little translation-tolerance and cutting the compute for the next layer.`,
+      math: `${convOut}×${convOut} —max 2×2→ ${poolOut}×${poolOut}`,
+    },
+    stack: {
+      title: "Stack the blocks — the receptive field grows",
+      body: "Repeat convolve → activate → pool. Each block shrinks the map and grows the channel count, so one deep neuron ends up looking back at a large patch of the original image — its receptive field. Early layers see edges; deep layers see whole objects. Space down, semantics up: that funnel is the encoder.",
+      math: `3 → 64 → 128 channels · 32 → 16 → 8 spatial`,
+    },
+    up: {
+      title: "Transposed conv — climbing back up (watch the zeros)",
+      body: "Decoders, segmentation heads and GAN generators run it in reverse: a small map back to full resolution. A transposed convolution does this by inserting zeros between samples, then convolving. The learned filter never perfectly smooths those zeros, so a periodic high-frequency copy of the spectrum survives — the exact artifact Durall's “Watch Your Up-Convolution” fingerprints to catch AI images.",
+      math: `insert zeros (stride) → conv → upsampled · leaves a high-freq tell`,
+    },
+  };
+  const sc = copy[stepKey];
+
+  const tog = (on) => ({ ...SK, fontSize: "0.72rem", padding: "2px 10px", cursor: "pointer", border: `1px solid ${on ? P.accent : P.line}`, background: on ? P.accentSoft : P.paper2, color: on ? P.accent : P.sub });
+  const navBtn = { ...SK, fontSize: "0.8rem", padding: "2px 10px", border: `1px solid ${P.line}`, background: P.paper2, color: P.ink, cursor: "pointer" };
+
+  const gridLines = (x, y, s, n, key) => (
+    <g stroke={P.ink} strokeWidth="0.5" strokeOpacity="0.35">
+      {Array.from({ length: n - 1 }).map((_, i) => <line key={`${key}v${i}`} x1={x + (i + 1) * s / n} y1={y} x2={x + (i + 1) * s / n} y2={y + s} />)}
+      {Array.from({ length: n - 1 }).map((_, i) => <line key={`${key}h${i}`} x1={x} y1={y + (i + 1) * s / n} x2={x + s} y2={y + (i + 1) * s / n} />)}
+    </g>
+  );
+
+  const right = (() => {
+    switch (stepKey) {
+      case "input":
+        return (
+          <g>
+            <g filter="url(#rgh-cnn)">
+              <g clipPath="url(#cnn-clip)">
+                <rect x={ox} y={oy} width={size} height={size} fill={P.accentSoft} />
+                <path d={hill} fill={P.green} fillOpacity="0.28" stroke="none" />
+                <circle cx={ox + size * 0.70} cy={oy + size * 0.26} r={size * 0.09} fill="#E8C24C" stroke="none" />
+              </g>
+              <rect x={ox} y={oy} width={size} height={size} fill="none" stroke={P.ink} strokeWidth="1.4" />
+              {gridLines(ox, oy, size, 8, "in")}
+            </g>
+            <text x={ox + size / 2} y={oy - 14} textAnchor="middle" style={SK} fontSize="10" fill={P.sub}>input image</text>
+            <line x1={ox + size} y1={oy + size * 0.3} x2={360} y2={oy + size * 0.3} stroke={P.sub} strokeWidth="1" strokeDasharray="3 3" />
+            <text x={370} y={oy + size * 0.3 - 4} style={SK} fontSize="12" fill={P.ink}>a grid of pixels —</text>
+            <text x={370} y={oy + size * 0.3 + 12} style={SK} fontSize="12" fill={P.ink}>kept 2-D, never flattened</text>
+            <text x={370} y={oy + size * 0.3 + 36} style={SK} fontSize="11" fill={P.sub}>H × W × C</text>
+            <text x={370} y={oy + size * 0.3 + 54} style={SK} fontSize="14" fill={P.accent}>{IN} × {IN} × 3</text>
+            <text x={370} y={oy + size * 0.3 + 78} style={SK} fontSize="10" fontStyle="italic" fill={P.sub}>neighbours stay neighbours →</text>
+          </g>
+        );
+      case "conv": {
+        const gx = 40, gy = 74, gs = 150, gn = 8, gc = gs / gn, hx = 4, hy = 2;
+        const fx = 396, fy = 86, fs = 132, fn = 6, fc = fs / fn;
+        return (
+          <g>
+            <g filter="url(#rgh-cnn)">
+              <rect x={gx} y={gy} width={gs} height={gs} fill={P.accentSoft} stroke={P.ink} strokeWidth="1.3" />
+              {gridLines(gx, gy, gs, gn, "cv")}
+              <rect x={gx + hx * gc} y={gy + hy * gc} width={k * gc} height={k * gc} fill={P.accent} fillOpacity="0.22" stroke={P.accent} strokeWidth="1.8" />
+            </g>
+            <text x={gx + gs / 2} y={gy - 10} textAnchor="middle" style={SK} fontSize="10" fill={P.sub}>input · {IN}×{IN}</text>
+            <text x={gx + (hx + k / 2) * gc} y={gy + hy * gc - 5} textAnchor="middle" style={SK} fontSize="9" fill={P.accent}>{k}×{k} kernel</text>
+            <path d={`M${gx + gs + 8} ${gy + gs / 2} L${fx - 12} ${fy + fc * 1.5}`} stroke={P.accent} strokeWidth="1.3" fill="none" strokeDasharray="4 3" />
+            <path d={`M${fx - 20} ${fy + fc * 1.5 - 5} L${fx - 10} ${fy + fc * 1.5} L${fx - 20} ${fy + fc * 1.5 + 5}`} stroke={P.accent} strokeWidth="1.3" fill="none" />
+            <text x={(gx + gs + fx) / 2 + 4} y={gy + gs / 2 - 10} textAnchor="middle" style={{ fontFamily: "'IBM Plex Mono',monospace" }} fontSize="10" fill={P.sub}>Σ w·x</text>
+            <g filter="url(#rgh-cnn)">
+              <rect x={fx} y={fy} width={fs} height={fs} fill={P.paper2} stroke={P.ink} strokeWidth="1.3" />
+              {gridLines(fx, fy, fs, fn, "fm")}
+              <rect x={fx + fc} y={fy + fc} width={fc} height={fc} fill={P.accent} fillOpacity="0.85" stroke={P.ink} strokeWidth="0.8" />
+            </g>
+            <text x={fx + fs / 2} y={fy - 10} textAnchor="middle" style={SK} fontSize="10" fill={P.sub}>feature map · {convOut}×{convOut}</text>
+            <text x={fx + fs / 2} y={fy + fs + 16} textAnchor="middle" style={SK} fontSize="9" fontStyle="italic" fill={P.sub}>one window → one number</text>
+          </g>
+        );
+      }
+      case "relu": {
+        const pre = [-3, 2, -1, 5, 0, 4, -6, 1, 3];
+        const bs = 34, gap = 5, cols = 3, ay = 92, ax = 56, cx = 236;
+        const block = (x0, post) => pre.map((v, i) => {
+          const r = Math.floor(i / cols), c = i % cols;
+          const x = x0 + c * (bs + gap), y = ay + r * (bs + gap);
+          const neg = v < 0;
+          const fill = post ? (v <= 0 ? P.faint : P.accentSoft) : (neg ? "rgba(155,59,59,0.14)" : P.accentSoft);
+          const col = !post && neg ? P.red : (post && v <= 0 ? P.sub : P.ink);
+          return (
+            <g key={`${post ? "p" : "q"}${i}`}>
+              <rect x={x} y={y} width={bs} height={bs} fill={fill} stroke={P.line} strokeWidth="0.8" />
+              <text x={x + bs / 2} y={y + bs / 2 + 4} textAnchor="middle" style={SK} fontSize="11" fill={col}>{post ? Math.max(0, v) : v}</text>
+            </g>
+          );
+        });
+        const w = cols * (bs + gap) - gap, midY = ay + (3 * (bs + gap) - gap) / 2;
+        return (
+          <g>
+            <text x={ax + w / 2} y={ay - 10} textAnchor="middle" style={SK} fontSize="10" fill={P.sub}>pre-activation</text>
+            {block(ax, false)}
+            <path d={`M${ax + w + 6} ${midY} L${cx - 8} ${midY}`} stroke={P.accent} strokeWidth="1.3" fill="none" />
+            <path d={`M${cx - 16} ${midY - 5} L${cx - 6} ${midY} L${cx - 16} ${midY + 5}`} stroke={P.accent} strokeWidth="1.3" fill="none" />
+            <text x={(ax + w + cx) / 2} y={midY - 8} textAnchor="middle" style={SK} fontSize="9" fill={P.sub}>ReLU</text>
+            <text x={cx + w / 2} y={ay - 10} textAnchor="middle" style={SK} fontSize="10" fill={P.sub}>after ReLU</text>
+            {block(cx, true)}
+            <g filter="url(#rgh-cnn)" fill="none" strokeLinecap="round">
+              <path d={`M420 76 L420 176 L556 176`} stroke={P.sub} strokeWidth="1.2" />
+              <path d={`M420 176 L488 176 L544 96`} stroke={P.accent} strokeWidth="2.2" />
+            </g>
+            <text x={432} y={92} style={SK} fontSize="9" fill={P.sub}>max(0, x)</text>
+            <text x={470} y={192} textAnchor="middle" style={SK} fontSize="9" fill={P.sub}>negatives → 0</text>
+          </g>
+        );
+      }
+      case "pool": {
+        const m4 = [[1, 3, 2, 4], [0, 5, 1, 2], [6, 2, 3, 1], [0, 1, 4, 2]];
+        const gx = 56, gy = 78, gs = 148, gc = gs / 4;
+        const quadCol = [P.accent, P.green, P.red, P.yellow];
+        const cells = [];
+        m4.forEach((row, r) => row.forEach((v, c) => {
+          cells.push(
+            <g key={`m${r}-${c}`}>
+              <rect x={gx + c * gc} y={gy + r * gc} width={gc} height={gc} fill={P.accentSoft} stroke={P.line} strokeWidth="0.7" />
+              <text x={gx + (c + 0.5) * gc} y={gy + (r + 0.5) * gc + 4} textAnchor="middle" style={SK} fontSize="12" fill={P.ink}>{v}</text>
+            </g>
+          );
+        }));
+        const quads = [[0, 0], [0, 1], [1, 0], [1, 1]].map(([qr, qc], i) => (
+          <rect key={`q${i}`} x={gx + qc * 2 * gc} y={gy + qr * 2 * gc} width={2 * gc} height={2 * gc} fill="none" stroke={quadCol[i]} strokeWidth="1.8" />
+        ));
+        const maxes = [[5, 4], [6, 4]];
+        const ox2 = 392, oy2 = 100, oc = 46;
+        const outCells = [];
+        maxes.forEach((row, r) => row.forEach((v, c) => {
+          const idx = r * 2 + c;
+          outCells.push(
+            <g key={`o${r}-${c}`}>
+              <rect x={ox2 + c * oc} y={oy2 + r * oc} width={oc} height={oc} fill={P.accentSoft} stroke={quadCol[idx]} strokeWidth="1.8" />
+              <text x={ox2 + (c + 0.5) * oc} y={oy2 + (r + 0.5) * oc + 5} textAnchor="middle" style={SK} fontSize="15" fill={P.ink}>{v}</text>
+            </g>
+          );
+        }));
+        return (
+          <g>
+            <text x={gx + gs / 2} y={gy - 10} textAnchor="middle" style={SK} fontSize="10" fill={P.sub}>{convOut}×{convOut} · take the max of each 2×2</text>
+            {cells}{quads}
+            <path d={`M${gx + gs + 8} ${gy + gs / 2} L${ox2 - 10} ${oy2 + oc}`} stroke={P.accent} strokeWidth="1.3" fill="none" strokeDasharray="4 3" />
+            <path d={`M${ox2 - 18} ${oy2 + oc - 5} L${ox2 - 8} ${oy2 + oc} L${ox2 - 18} ${oy2 + oc + 5}`} stroke={P.accent} strokeWidth="1.3" fill="none" />
+            {outCells}
+            <text x={ox2 + oc} y={oy2 - 10} textAnchor="middle" style={SK} fontSize="10" fill={P.sub}>pooled · {poolOut}×{poolOut}</text>
+            <text x={ox2 + oc} y={oy2 + 2 * oc + 18} textAnchor="middle" style={SK} fontSize="9" fontStyle="italic" fill={P.sub}>half the size, the peaks kept</text>
+          </g>
+        );
+      }
+      case "stack": {
+        const blocks = [
+          { x: 70, s: 116, ch: "3", lbl: "32×32" },
+          { x: 250, s: 78, ch: "64", lbl: "16×16" },
+          { x: 400, s: 50, ch: "128", lbl: "8×8" },
+        ];
+        const baseY = 210;
+        const faces = blocks.map((b, i) => {
+          const y = baseY - b.s, depth = Math.min(5, 1 + i * 2), off = 5;
+          const shadow = [];
+          for (let d = depth; d >= 1; d--) shadow.push(<rect key={`s${i}-${d}`} x={b.x + d * off} y={y - d * off} width={b.s} height={b.s} fill={P.paper2} stroke={P.line} strokeWidth="0.8" />);
+          return (
+            <g key={`b${i}`} filter="url(#rgh-cnn)">
+              {shadow}
+              <rect x={b.x} y={y} width={b.s} height={b.s} fill={P.accentSoft} stroke={P.ink} strokeWidth="1.3" />
+              <text x={b.x + b.s / 2} y={baseY + 16} textAnchor="middle" style={SK} fontSize="10" fill={P.ink}>{b.lbl}</text>
+              <text x={b.x + b.s / 2} y={baseY + 30} textAnchor="middle" style={SK} fontSize="9" fill={P.accent}>{b.ch} ch</text>
+            </g>
+          );
+        });
+        // receptive-field cone: a cell in the deepest block back to a patch on the first
+        const dcx = 400 + 25, dcy = baseY - 25;
+        return (
+          <g>
+            {faces}
+            <path d={`M${70} ${baseY - 116} h116`} stroke="none" />
+            {blocks.slice(0, 2).map((b, i) => (
+              <g key={`ar${i}`}>
+                <path d={`M${b.x + b.s + 6} ${baseY - b.s / 2} L${blocks[i + 1].x - 8} ${baseY - blocks[i + 1].s / 2}`} stroke={P.sub} strokeWidth="1.2" fill="none" strokeDasharray="4 3" />
+                <text x={(b.x + b.s + blocks[i + 1].x) / 2} y={baseY - Math.max(b.s, blocks[i + 1].s) / 2 - 6} textAnchor="middle" style={SK} fontSize="8.5" fill={P.sub}>conv+pool</text>
+              </g>
+            ))}
+            <g stroke={P.accent} strokeWidth="1" fill="none" strokeDasharray="3 3">
+              <path d={`M${dcx} ${dcy} L96 74`} />
+              <path d={`M${dcx} ${dcy} L152 130`} />
+            </g>
+            <rect x={90} y={70} width={54} height={54} fill={P.accent} fillOpacity="0.12" stroke={P.accent} strokeWidth="1.4" />
+            <circle cx={dcx} cy={dcy} r="3.5" fill={P.accent} />
+            <text x={118} y={64} textAnchor="middle" style={SK} fontSize="9" fill={P.accent}>receptive field</text>
+            <text x={300} y={54} textAnchor="middle" style={SK} fontSize="10.5" fill={P.ink}>space ↓ · channels ↑ — the encoder funnel</text>
+          </g>
+        );
+      }
+      case "up": {
+        const yIn = 78, yUp = 150, x0 = 52, dx = 26;
+        const heights = [30, 46, 24, 40];
+        const inStems = heights.map((h, i) => {
+          const x = x0 + i * 2 * dx;
+          return <g key={`in${i}`}><line x1={x} y1={yIn} x2={x} y2={yIn - h} stroke={P.accent} strokeWidth="2" /><circle cx={x} cy={yIn - h} r="3.4" fill={P.accent} /></g>;
+        });
+        const upStems = [];
+        for (let i = 0; i < 8; i++) {
+          const x = x0 + i * dx;
+          if (i % 2 === 0) { const h = heights[i / 2]; upStems.push(<g key={`u${i}`}><line x1={x} y1={yUp} x2={x} y2={yUp - h} stroke={P.accent} strokeWidth="2" /><circle cx={x} cy={yUp - h} r="3.2" fill={P.accent} /></g>); }
+          else { upStems.push(<circle key={`u${i}`} cx={x} cy={yUp} r="3" fill="none" stroke={P.red} strokeWidth="1.3" />); }
+        }
+        const fx = 372, fy = 74, fs = 118, fn = 8, fc = fs / fn;
+        const checker = [];
+        for (let r = 0; r < fn; r++) for (let c = 0; c < fn; c++) if ((r + c) % 2 === 0) checker.push(<rect key={`ck${r}-${c}`} x={fx + c * fc} y={fy + r * fc} width={fc} height={fc} fill={P.red} fillOpacity="0.16" />);
+        return (
+          <g>
+            <line x1={x0 - 12} y1={yIn} x2={x0 + 6 * dx + 8} y2={yIn} stroke={P.line} strokeWidth="1" />
+            {inStems}
+            <text x={x0 + 3 * dx} y={yIn - 58} textAnchor="middle" style={SK} fontSize="10" fill={P.ink}>low-res feature map</text>
+            <text x={x0 + 6 * dx + 14} y={yIn + 4} style={SK} fontSize="9" fill={P.sub}>input</text>
+            <line x1={x0 - 12} y1={yUp} x2={x0 + 7 * dx + 8} y2={yUp} stroke={P.line} strokeWidth="1" />
+            {upStems}
+            <text x={x0 + 3.5 * dx} y={yUp + 22} textAnchor="middle" style={SK} fontSize="9" fill={P.red}>0 = inserted zeros</text>
+            <text x={x0 + 3.5 * dx} y={yUp + 36} textAnchor="middle" style={SK} fontSize="9" fontStyle="italic" fill={P.sub}>stuff zeros between samples, then convolve</text>
+            <path d={`M${x0 + 3 * dx} ${yIn + 6} L${x0 + 3.5 * dx} ${yUp - 52}`} stroke={P.accent} strokeWidth="1.2" fill="none" strokeDasharray="3 3" />
+            <g filter="url(#rgh-cnn)">
+              <rect x={fx} y={fy} width={fs} height={fs} fill={P.paper2} stroke={P.ink} strokeWidth="1.3" />
+              {checker}
+              {gridLines(fx, fy, fs, fn, "up")}
+            </g>
+            <text x={fx + fs / 2} y={fy - 10} textAnchor="middle" style={SK} fontSize="10" fill={P.sub}>upsampled output</text>
+            <text x={fx + fs / 2} y={fy + fs + 16} textAnchor="middle" style={SK} fontSize="9" fill={P.red}>periodic high-freq copy — the tell</text>
+            <text x={fx + fs / 2} y={fy + fs + 30} textAnchor="middle" style={SK} fontSize="8.5" fontStyle="italic" fill={P.sub}>Durall · Watch Your Up-Convolution</text>
+          </g>
+        );
+      }
+      default: return null;
+    }
+  })();
+
+  return (
+    <div>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 10, marginBottom: 10 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <span style={{ ...SK, fontSize: "0.6rem", color: P.sub, textTransform: "uppercase", letterSpacing: "0.08em" }}>kernel</span>
+          <div style={{ display: "flex", gap: 4 }}>
+            {[3, 5].map(ks => <button key={ks} onClick={() => setK(ks)} aria-pressed={k === ks} style={tog(k === ks)}>{ks}×{ks}</button>)}
+          </div>
+        </div>
+        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+          <span style={{ ...SK, fontSize: "0.62rem", color: P.sub, textTransform: "uppercase", letterSpacing: "0.06em" }}>step {step + 1} / {CNN_STEPS.length}</span>
+          <button onClick={() => setStep((step + CNN_STEPS.length - 1) % CNN_STEPS.length)} aria-label="Previous step" style={navBtn}>←</button>
+          <button onClick={() => setStep((step + 1) % CNN_STEPS.length)} aria-label="Next step" style={navBtn}>→</button>
+        </div>
+      </div>
+
+      <div style={{ border: `1px solid ${P.line}`, borderTop: `2px solid ${P.ink}`, background: P.paper2 }}>
+        <div style={{ background: "#fff" }}>
+          <div style={{ aspectRatio: "600 / 300" }}>
+            <svg viewBox="0 0 600 300" width="100%" height="100%" role="img" aria-label={`Convolutional neural network — step ${step + 1}, ${CNN_STEPS[step].label}`} style={{ display: "block" }}>
+              <defs>
+                <RoughDefs id="rgh-cnn" scale={1.1} seed={31} />
+                <clipPath id="cnn-clip"><rect x={ox} y={oy} width={size} height={size} /></clipPath>
+              </defs>
+              {right}
+            </svg>
+          </div>
+        </div>
+        <div style={{ padding: "0.9rem 1.1rem 1rem" }}>
+          <div style={{ ...DISP, fontWeight: 600, fontSize: "1rem", color: P.ink, marginBottom: 4 }}>{sc.title}</div>
+          <p style={{ ...BODY, fontSize: "0.88rem", color: P.sub, lineHeight: 1.65, textWrap: "pretty", margin: 0 }}>
+            <span style={{ ...SK, fontSize: "0.6rem", color: P.accent, textTransform: "uppercase", letterSpacing: "0.08em", marginRight: 6 }}>step {step + 1}</span>
+            {sc.body}
+          </p>
+          <div style={{ ...SK, fontSize: "0.66rem", color: P.ink, marginTop: 9, background: P.faint, padding: "6px 9px", display: "inline-block" }}>{sc.math}</div>
+        </div>
+      </div>
+
+      <div style={{ display: "flex", gap: 6, marginTop: 10, flexWrap: "wrap" }}>
+        {CNN_STEPS.map((s, j) => (
+          <button key={s.key} onClick={() => setStep(j)} style={{ ...SK, fontSize: "0.62rem", padding: "4px 9px", cursor: "pointer", border: `1px solid ${j === step ? P.accent : P.line}`, background: j === step ? P.accentSoft : "#fff", color: j === step ? P.accent : P.sub }}>{j + 1}. {s.label}</button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/* ════════════════════════════════════════
    DETECTION PARADIGMS — six lenses on a fake (learning in public)
    Companion to detection_paradigms.ipynb: the same hidden statistical
    difference between a real photo and an AI image, made visible six ways.

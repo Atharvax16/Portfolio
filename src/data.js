@@ -511,7 +511,7 @@ export const INSIGHTS = [
    ════════════════════════════════════════ */
 export const ARCHITECTURES = [
   { key: "vit", name: "Vision Transformer", status: "live", note: "patchify → embedding" },
-  { key: "cnn", name: "CNN", status: "coming", note: "convolution · pooling · receptive field" },
+  { key: "cnn", name: "CNN", status: "live", note: "convolution · pooling · receptive field" },
   { key: "encdec", name: "Encoder–Decoder", status: "coming", note: "seq-to-seq · cross-attention" },
 ];
 
