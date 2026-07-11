@@ -1284,6 +1284,243 @@ export function DetectionParadigms() {
 }
 
 /* ════════════════════════════════════════
+   DINOv2 + ML HEAD — self-supervised representation learning, then a
+   lightweight classifier on the frozen embedding. The route the
+   generative-image-forensics work actually leaned on (report §4.7).
+   ════════════════════════════════════════ */
+const DINOV2_STEPS = [
+  {
+    key: "views", label: "two views",
+    title: "One image, two eyes — and no labels",
+    body: "Self-supervised means no labels and no captions. Take a single image and make two random augmentations: one large global crop and one small local crop, each colour-jittered. The entire training signal is just “these two are the same scene.” Millions of images, zero annotation.",
+    math: "x → { global crop, local crop }  ·  no labels, no text",
+  },
+  {
+    key: "student", label: "student ↔ teacher",
+    title: "A student copying a slow teacher",
+    body: "Two networks share the same ViT architecture. The student sees the local crop; the teacher sees the global one. The teacher is never trained by gradients — its weights are an exponential moving average of the student's, so it drifts slowly and stays a step ahead, giving the student a stable target to chase.",
+    math: "θ_teacher ← m·θ_teacher + (1−m)·θ_student",
+  },
+  {
+    key: "distill", label: "self-distill",
+    title: "Match my output to yours — don't collapse",
+    body: "Self-distillation: soften both outputs with softmax and push the student's distribution onto the teacher's. Left alone, the network could cheat by mapping everything to one vector — so the teacher's output is centered then sharpened, which forbids that collapse. To satisfy the target across every crop, the network is forced to encode real structure.",
+    math: "min  H( sharpen·center(teacher) ,  student )",
+  },
+  {
+    key: "embed", label: "frozen embedding",
+    title: "Freeze it — now it's a feature extractor",
+    body: "After pre-training the backbone is frozen. One forward pass turns any image into a fixed 1,024-dim embedding (dinov2_vitl14), L2-normalised. Because it never saw a word of text, its features are structural rather than language-aligned — a genuinely complementary view to a CLIP embedding.",
+    math: "x → frozen DINOv2 → z ∈ ℝ¹⁰²⁴  (L2-norm)",
+  },
+  {
+    key: "head", label: "ML head",
+    title: "A small ML head does the deciding",
+    body: "The heavy network stays frozen; a lightweight learner classifies the embedding. Two heads on the same features: XGBoost (gradient-boosted trees) reached F1 0.786, but a small MLP reached 0.835. The MLP winning is the tell — DINOv2's forensic signal is non-linear, so trees split it less cleanly than a learned non-linear transform does.",
+    math: "z → { XGBoost 0.786 | MLP 0.835 } → P(AI)  ·  signal is non-linear",
+  },
+];
+
+export function Dinov2Walkthrough() {
+  const [step, setStep] = useState(0);
+  const dk = DINOV2_STEPS[step].key;
+  const sc = DINOV2_STEPS[step];
+
+  const Photo = ({ x, y, s, jitter }) => (
+    <g>
+      <clipPath id={`dv-${x}-${y}`}><rect x={x} y={y} width={s} height={s} /></clipPath>
+      <g clipPath={`url(#dv-${x}-${y})`}>
+        <rect x={x} y={y} width={s} height={s} fill={P.accentSoft} />
+        <path d={`M${x} ${y + s * 0.66} Q ${x + s * 0.28} ${y + s * 0.52}, ${x + s * 0.5} ${y + s * 0.62} T ${x + s} ${y + s * 0.6} L ${x + s} ${y + s} L ${x} ${y + s} Z`} fill={P.green} fillOpacity="0.3" />
+        <circle cx={x + s * 0.7} cy={y + s * 0.28} r={s * 0.1} fill="#E8C24C" />
+        {jitter && <rect x={x} y={y} width={s} height={s} fill={P.accent} fillOpacity="0.1" />}
+      </g>
+      <rect x={x} y={y} width={s} height={s} fill="none" stroke={P.ink} strokeWidth="1.4" />
+    </g>
+  );
+
+  // a little stacked-layer "network" glyph
+  const net = (x, y, w, h, label, frozen) => (
+    <g>
+      <rect x={x} y={y} width={w} height={h} fill={frozen ? "rgba(43,76,140,0.06)" : P.paper2} stroke={P.ink} strokeWidth="1.3" />
+      {[0.28, 0.5, 0.72].map((f, i) => <line key={i} x1={x + 6} y1={y + h * f} x2={x + w - 6} y2={y + h * f} stroke={P.sub} strokeWidth="0.8" strokeOpacity="0.5" />)}
+      <text x={x + w / 2} y={y + h + 13} textAnchor="middle" style={SK} fontSize="9" fill={P.sub}>{label}</text>
+      {frozen && <text x={x + w - 9} y={y + 13} textAnchor="middle" fontSize="11" fill={P.accent}>❄</text>}
+    </g>
+  );
+
+  // a 1024-dim embedding strip
+  const vec = (x, y, n, cw, h, active) => (
+    <g>
+      {Array.from({ length: n }).map((_, i) => (
+        <rect key={i} x={x + i * cw} y={y} width={cw - 1.5} height={h}
+          fill={active ? (i % 3 === 0 ? P.accent : i % 3 === 1 ? P.accentSoft : P.faint) : P.faint}
+          stroke={P.line} strokeWidth="0.5" />
+      ))}
+      <rect x={x} y={y} width={n * cw - 1.5} height={h} fill="none" stroke={P.ink} strokeWidth="1.2" />
+    </g>
+  );
+
+  const arrow = (x1, y1, x2, y2, dash) => (
+    <g stroke={P.accent} strokeWidth="1.3" fill="none">
+      <path d={`M${x1} ${y1} L${x2} ${y2}`} strokeDasharray={dash ? "4 3" : "none"} />
+      <path d={`M${x2 - 8} ${y2 - 4} L${x2} ${y2} L${x2 - 8} ${y2 + 4}`} />
+    </g>
+  );
+
+  const body = (() => {
+    switch (dk) {
+      case "views":
+        return (
+          <g>
+            <Photo x={54} y={104} s={104} />
+            <text x={106} y={96} textAnchor="middle" style={SK} fontSize="10" fill={P.sub}>one image · no label</text>
+            {arrow(166, 130, 322, 100)}
+            {arrow(166, 156, 356, 232)}
+            <Photo x={330} y={54} s={116} jitter />
+            <text x={388} y={44} textAnchor="middle" style={SK} fontSize="10" fill={P.sub}>global crop</text>
+            <Photo x={364} y={214} s={66} jitter />
+            <text x={397} y={206} textAnchor="middle" style={SK} fontSize="10" fill={P.sub}>local crop</text>
+            <text x={520} y={150} textAnchor="middle" style={SK} fontSize="10" fontStyle="italic" fill={P.accent}>same scene?</text>
+          </g>
+        );
+      case "student":
+        return (
+          <g>
+            <Photo x={40} y={44} s={70} jitter />
+            <text x={75} y={36} textAnchor="middle" style={SK} fontSize="9" fill={P.sub}>global</text>
+            <Photo x={48} y={196} s={56} jitter />
+            <text x={76} y={190} textAnchor="middle" style={SK} fontSize="9" fill={P.sub}>local</text>
+            {arrow(114, 79, 196, 79)}
+            {arrow(108, 224, 196, 224)}
+            {net(200, 40, 96, 80, "teacher (EMA)", true)}
+            {net(200, 188, 96, 80, "student (trained)", false)}
+            {/* EMA copy arrow student → teacher */}
+            <path d={`M248 188 Q 340 154, 340 120 Q 340 96, 300 88`} stroke={P.sub} strokeWidth="1.2" fill="none" strokeDasharray="4 3" />
+            <path d={`M308 92 L299 87 L305 96`} stroke={P.sub} strokeWidth="1.2" fill="none" />
+            <text x={372} y={150} style={SK} fontSize="9" fill={P.sub}>EMA — slow copy</text>
+            <text x={372} y={165} style={SK} fontSize="9" fill={P.sub}>of the student</text>
+            <text x={340} y={250} style={SK} fontSize="9" fontStyle="italic" fill={P.accent}>no gradients →</text>
+          </g>
+        );
+      case "distill": {
+        const bars = (x, vals, col) => vals.map((v, i) => (
+          <rect key={i} x={x + i * 15} y={150 - v} width={11} height={v} fill={col} stroke={P.ink} strokeWidth="0.6" />
+        ));
+        return (
+          <g>
+            <text x={118} y={44} textAnchor="middle" style={SK} fontSize="10" fill={P.sub}>teacher · centered + sharpened</text>
+            {bars(66, [16, 64, 20, 10, 30], P.accentSoft)}
+            <line x1={60} y1={150} x2={168} y2={150} stroke={P.ink} strokeWidth="1" />
+            <text x={472} y={44} textAnchor="middle" style={SK} fontSize="10" fill={P.sub}>student · pushed to match</text>
+            {bars(420, [24, 48, 30, 18, 26], P.faint)}
+            <line x1={414} y1={150} x2={522} y2={150} stroke={P.ink} strokeWidth="1" />
+            {arrow(340, 118, 250, 118, true)}
+            {arrow(260, 150, 350, 150, true)}
+            <text x={300} y={104} textAnchor="middle" style={SK} fontSize="11" fill={P.accent}>cross-entropy</text>
+            <text x={300} y={176} textAnchor="middle" style={SK} fontSize="9" fontStyle="italic" fill={P.sub}>collapse forbidden</text>
+            <text x={300} y={248} textAnchor="middle" style={SK} fontSize="10" fill={P.ink}>→ forced to encode real structure</text>
+          </g>
+        );
+      }
+      case "embed":
+        return (
+          <g>
+            <Photo x={44} y={100} s={96} />
+            {arrow(148, 148, 214, 148)}
+            {net(220, 96, 104, 104, "frozen DINOv2 ViT", true)}
+            {arrow(330, 148, 392, 148)}
+            {vec(398, 128, 12, 13, 40, true)}
+            <text x={476} y={120} textAnchor="middle" style={SK} fontSize="10" fill={P.sub}>1,024-dim z</text>
+            <text x={476} y={186} textAnchor="middle" style={SK} fontSize="9" fontStyle="italic" fill={P.accent}>structural, not</text>
+            <text x={476} y={200} textAnchor="middle" style={SK} fontSize="9" fontStyle="italic" fill={P.accent}>language-aligned</text>
+          </g>
+        );
+      case "head": {
+        // little decision-tree glyph
+        const tree = (
+          <g stroke={P.ink} strokeWidth="1.1" fill="none">
+            <line x1={430} y1={70} x2={408} y2={100} /><line x1={430} y1={70} x2={452} y2={100} />
+            <line x1={408} y1={100} x2={396} y2={126} /><line x1={408} y1={100} x2={420} y2={126} />
+            <line x1={452} y1={100} x2={440} y2={126} /><line x1={452} y1={100} x2={464} y2={126} />
+            {[[430, 70], [408, 100], [452, 100], [396, 126], [420, 126], [440, 126], [464, 126]].map(([cx, cy], i) => (
+              <circle key={i} cx={cx} cy={cy} r="4" fill={P.paper2} />
+            ))}
+          </g>
+        );
+        // 2-layer MLP glyph
+        const L = (n, x, y0, gap) => Array.from({ length: n }, (_, i) => ({ x, y: y0 + i * gap }));
+        const a = L(3, 400, 196, 22), b = L(4, 448, 185, 18), c = L(1, 496, 217, 0);
+        return (
+          <g>
+            {vec(40, 128, 12, 12, 44, true)}
+            <text x={112} y={120} textAnchor="middle" style={SK} fontSize="9" fill={P.sub}>frozen z (1,024-d)</text>
+            {arrow(190, 150, 250, 96, false)}
+            {arrow(190, 150, 250, 214, false)}
+            {/* XGBoost branch */}
+            <rect x={344} y={54} width={150} height={92} fill={P.paper2} stroke={P.line} strokeWidth="1" />
+            {tree}
+            <text x={419} y={162} textAnchor="middle" style={SK} fontSize="10" fill={P.sub}>XGBoost — trees</text>
+            <text x={419} y={44} textAnchor="middle" style={SK} fontSize="12" fill={P.sub}>F1 0.786</text>
+            {/* MLP branch */}
+            <rect x={344} y={172} width={190} height={94} fill={P.paper2} stroke={P.accent} strokeWidth="1.4" />
+            <g stroke={P.line} strokeWidth="0.7">
+              {a.map((p, i) => b.map((q, j) => <line key={`ab${i}${j}`} x1={p.x} y1={p.y} x2={q.x} y2={q.y} />))}
+              {b.map((q, j) => <line key={`bc${j}`} x1={q.x} y1={q.y} x2={c[0].x} y2={c[0].y} />)}
+            </g>
+            {[...a, ...b, ...c].map((p, i) => <circle key={i} cx={p.x} cy={p.y} r="3.4" fill={P.accent} />)}
+            <text x={439} y={286} textAnchor="middle" style={SK} fontSize="10" fill={P.accent}>MLP — non-linear</text>
+            <text x={556} y={221} textAnchor="middle" style={SK} fontSize="13" fill={P.accent}>0.835</text>
+            <text x={556} y={205} textAnchor="middle" fontSize="11" fill={P.accent}>★</text>
+          </g>
+        );
+      }
+      default: return null;
+    }
+  })();
+
+  const navBtn = { ...SK, fontSize: "0.8rem", padding: "2px 10px", border: `1px solid ${P.line}`, background: P.paper2, color: P.ink, cursor: "pointer" };
+  const N = DINOV2_STEPS.length;
+
+  return (
+    <div>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 10, marginBottom: 10 }}>
+        <span style={{ ...SK, fontSize: "0.6rem", color: P.sub, textTransform: "uppercase", letterSpacing: "0.08em" }}>no labels → frozen embedding → ML head</span>
+        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+          <span style={{ ...SK, fontSize: "0.62rem", color: P.sub, textTransform: "uppercase", letterSpacing: "0.06em" }}>step {step + 1} / {N}</span>
+          <button onClick={() => setStep((step + N - 1) % N)} aria-label="Previous step" style={navBtn}>←</button>
+          <button onClick={() => setStep((step + 1) % N)} aria-label="Next step" style={navBtn}>→</button>
+        </div>
+      </div>
+
+      <div style={{ border: `1px solid ${P.line}`, borderTop: `2px solid ${P.ink}`, background: P.paper2 }}>
+        <div style={{ background: "#fff" }}>
+          <div style={{ aspectRatio: "600 / 300" }}>
+            <svg viewBox="0 0 600 300" width="100%" height="100%" role="img" aria-label={`DINOv2 walkthrough step ${step + 1}: ${sc.label}`} style={{ display: "block" }} strokeLinecap="round" strokeLinejoin="round">
+              {body}
+            </svg>
+          </div>
+        </div>
+        <div style={{ padding: "0.9rem 1.1rem 1rem" }}>
+          <div style={{ ...DISP, fontWeight: 600, fontSize: "1rem", color: P.ink, marginBottom: 4 }}>{sc.title}</div>
+          <p style={{ ...BODY, fontSize: "0.88rem", color: P.sub, lineHeight: 1.65, textWrap: "pretty", margin: 0 }}>
+            <span style={{ ...SK, fontSize: "0.6rem", color: P.accent, textTransform: "uppercase", letterSpacing: "0.08em", marginRight: 6 }}>step {step + 1}</span>
+            {sc.body}
+          </p>
+          <div style={{ ...SK, fontSize: "0.66rem", color: P.ink, marginTop: 9, background: P.faint, padding: "6px 9px", display: "inline-block" }}>{sc.math}</div>
+        </div>
+      </div>
+
+      <div style={{ display: "flex", gap: 6, marginTop: 10, flexWrap: "wrap" }}>
+        {DINOV2_STEPS.map((s, j) => (
+          <button key={s.key} onClick={() => setStep(j)} style={{ ...SK, fontSize: "0.62rem", padding: "4px 9px", cursor: "pointer", border: `1px solid ${j === step ? P.accent : P.line}`, background: j === step ? P.accentSoft : "#fff", color: j === step ? P.accent : P.sub }}>{j + 1}. {s.label}</button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/* ════════════════════════════════════════
    INSIGHTS VIEWER — step through real figures + the observation each carries
    ════════════════════════════════════════ */
 export function InsightsViewer({ items }) {

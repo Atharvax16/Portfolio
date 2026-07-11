@@ -3,7 +3,7 @@ import {
   P, SECS, PAPER, RESEARCH_AREAS, READING_LOG, TIL_REPO, FROM_SCRATCH,
   METHODS, JOURNEY, ORDERED_PROJECTS, INSIGHTS, ARCHITECTURES,
 } from "./data.js";
-import { Rv, Radar, PhotoGallery, MatrixOverlay, ResearchModal, SketchFidelityAccuracy, SketchResearcherFrontier, SketchMolecule, SketchAttention, SketchFFT, SketchSpectral, SketchDCT, InsightsViewer, VitWalkthrough, CnnWalkthrough, DetectionParadigms } from "./ui.jsx";
+import { Rv, Radar, PhotoGallery, MatrixOverlay, ResearchModal, SketchFidelityAccuracy, SketchResearcherFrontier, SketchMolecule, SketchAttention, SketchFFT, SketchSpectral, SketchDCT, InsightsViewer, VitWalkthrough, CnnWalkthrough, DetectionParadigms, Dinov2Walkthrough } from "./ui.jsx";
 
 /* Type tokens */
 const DISP = { fontFamily: "'Spectral',Georgia,serif" };
@@ -283,6 +283,13 @@ export default function App() {
               <p style={{ ...BODY, fontSize: "0.95rem", lineHeight: 1.75, color: P.sub, marginBottom: "1.2rem", maxWidth: 600 }}>And the question behind my <b style={DISP}>generative-image forensics</b> work: an AI image and a real photo can look identical, yet differ in their <i>statistics</i>. Reading round the literature, I rebuilt six detection paradigms as one sketch — each a different lens on that hidden difference. Step through them.</p>
               <div style={{ ...MONO, fontSize: "0.62rem", color: P.sub, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 10 }}>Detecting AI images · six lenses on a fake</div>
               <DetectionParadigms />
+            </div>
+          </Rv>
+          <Rv delay={0.12}>
+            <div style={{ borderTop: `1px solid ${P.line}`, margin: "1.8rem 0 1.2rem", paddingTop: "1.4rem" }}>
+              <p style={{ ...BODY, fontSize: "0.95rem", lineHeight: 1.75, color: P.sub, marginBottom: "1.2rem", maxWidth: 600 }}>One route I leaned on in that forensics work flips the usual recipe: instead of <i>training</i> a detector, borrow a backbone that already learned what images look like — with <b>no labels at all</b> — then let a small ML head do the deciding. That's <b style={DISP}>DINOv2</b>: self-supervised representation learning via a student–teacher game, with <b style={DISP}>XGBoost</b> (or a tiny MLP) on top of the frozen embedding. Step from the label-free pre-training through to the classifier.</p>
+              <div style={{ ...MONO, fontSize: "0.62rem", color: P.sub, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 10 }}>DINOv2 + ML head · self-supervised → frozen embedding → XGBoost / MLP</div>
+              <Dinov2Walkthrough />
             </div>
           </Rv>
           <Rv delay={0.14}>

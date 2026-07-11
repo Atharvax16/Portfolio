@@ -522,6 +522,7 @@ export const INSIGHTS = [
 export const ARCHITECTURES = [
   { key: "vit", name: "Vision Transformer", status: "live", note: "patchify → embedding" },
   { key: "cnn", name: "CNN", status: "live", note: "convolution · pooling · receptive field" },
+  { key: "dinov2", name: "DINOv2 + ML head", status: "live", note: "self-supervised → frozen embedding → XGBoost/MLP" },
   { key: "encdec", name: "Encoder–Decoder", status: "coming", note: "seq-to-seq · cross-attention" },
 ];
 
