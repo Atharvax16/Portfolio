@@ -8,3 +8,8 @@ dist
 /*.jpeg
 /*.jpg
 /*.png
+
+# Raw screen recordings — source material for public/images/plots/, too large to commit
+/*.MP4
+/*.mp4
+/*.mov
