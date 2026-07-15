@@ -268,6 +268,41 @@ export const PROJECTS = [
     links: {},
   },
   {
+    id: "voxsight",
+    title: "VoxSight — Real-Time Accessibility Co-Pilot",
+    badge: "Cursor Hackathon → Product",
+    year: "2026",
+    role: "Solo · full-stack + agent design",
+    color: "#FB923C",
+    short: "A conversational AI agent that 'sees' for you — point a camera, hold a button, ask a question by voice, get a spoken answer describing your surroundings. Started as a one-night Cursor hackathon build in Dublin; still actively growing into a full product.",
+    tech: ["FastAPI + WebSocket", "Qwen-VL / Gemini", "ElevenLabs TTS", "Next.js", "OpenRouteService"],
+    keywords: ["accessibility", "multimodal LLM", "voice AI", "real-time systems"],
+    abstract: "VoxSight is a real-time accessibility co-pilot for visually impaired users: audio + a camera frame go in, a spoken answer describing the scene comes back, over a single WebSocket round-trip (STT → vision LLM → TTS). It began as a Cursor hackathon skeleton in Dublin, deliberately built to run end-to-end in one night with zero API keys — every AI service sits behind a swappable mock/live provider flag, so the pipeline could be demoed immediately and wired to real models the next morning without touching orchestration code. What started as a hackathon feature kept pulling at me after the event, and it's since grown intent-routed conversation, persistent memory, and deterministic turn-by-turn walking navigation — the shape of an actual product, not just a demo.",
+    architecture: "Browser (camera + mic) → WebSocket /ws → FastAPI orchestrator → STT (Wispr/Whisper) → intent routing → Vision LLM (Qwen-VL / Gemini) → ElevenLabs TTS → audio back; navigation runs on a deterministic routing engine, not model calls",
+    method: [
+      { p: "Hackathon night", i: "🌙", d: "Built the full pipeline to run end-to-end in mock mode with zero API keys — proving the round-trip before spending a single credit, then flipping provider flags to go live the next morning with no pipeline changes." },
+      { p: "Go live", i: "🔌", d: "Wired real providers behind the same interface: Qwen-VL / Gemini for vision, ElevenLabs for voice, Wispr/Whisper for speech-to-text." },
+      { p: "Demo-safe", i: "🎬", d: "Added a capture/replay mode — record real model responses once, then rehearse and present for free with zero live API calls and nothing that can fail on stage." },
+      { p: "Converse", i: "💬", d: "Phase 1: intent routing turns the single push-to-talk button into a real companion — it decides whether you're asking a question, giving a command, or starting navigation." },
+      { p: "Remember", i: "🧠", d: "Phase 2: persistent memory — VoxSight can remember and recall details across turns instead of treating every question as stateless." },
+      { p: "Navigate", i: "🧭", d: "Turn-by-turn walking navigation: geocodes a destination, routes on foot, and announces the next maneuver as you approach it via streamed device location — deterministic routing, so it costs no model calls per step." },
+    ],
+    metrics: null,
+    findings: [
+      { label: "Origin", value: "Cursor Hackathon", note: "Dublin — full round-trip built in one night, mock-mode, zero keys" },
+      { label: "Pipeline", value: "audio + frame → STT → Vision → TTS", note: "single WebSocket round-trip" },
+      { label: "Navigation", value: "deterministic", note: "routing engine announces maneuvers — no per-step model calls" },
+      { label: "Status", value: "active product", note: "hackathon feature → ongoing build" },
+    ],
+    plots: [
+      { src: "images/plots/voxsight/hero.jpg", caption: "VoxSight — point the camera, hold the button, ask about your surroundings" },
+      { src: "images/plots/voxsight/scene-description.jpg", caption: "Asking VoxSight to describe the room — spoken scene description in real time" },
+      { src: "images/plots/voxsight/hold-to-ask.jpg", caption: "Push-to-talk camera + mic UI, mid-question" },
+      { src: "images/plots/voxsight/hackathon-venue.jpg", caption: "Where it started — the Cursor hackathon venue in Dublin" },
+    ],
+    links: { github: "https://github.com/Atharvax16/voxsight-copilot" },
+  },
+  {
     id: "retinopathy-fl",
     title: "Federated Diabetic Retinopathy",
     badge: "3rd / 70 Teams",
@@ -473,7 +508,7 @@ export const PROJECTS = [
 ];
 
 /* Research-forward display order. */
-export const PROJECT_ORDER = ["dr-xai-thesis", "gen-image-detection", "retinopathy-fl", "catas", "research-companion", "venueflow", "cyberattack", "cc-fraud", "gait-parkinsons"];
+export const PROJECT_ORDER = ["dr-xai-thesis", "gen-image-detection", "voxsight", "retinopathy-fl", "catas", "research-companion", "venueflow", "cyberattack", "cc-fraud", "gait-parkinsons"];
 export const ORDERED_PROJECTS = PROJECT_ORDER.map((id) => PROJECTS.find((p) => p.id === id)).filter(Boolean);
 
 /* ════════════════════════════════════════
