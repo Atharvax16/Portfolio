@@ -188,6 +188,7 @@ export const JOURNEY = [
   { year: "2023", title: "First Impact", place: "Data Science Intern", text: "Built production-grade ML pipelines. Learned that clean data beats clever models.", mindset: "Ship things. Break things. Fix things.", icon: "▲", color: "#5BE0C9" },
   { year: "2024", title: "Going Global", place: "Dublin, Ireland", text: "MSc in Artificial Intelligence at DCU. Began an MSc thesis on robust, explainable diabetic-retinopathy screening.", mindset: "Read the source. Reproduce it.", icon: "●", color: "#4ADE80" },
   { year: "2025", title: "Research Mode", place: "Thesis · Image Forensics", text: "Diffusion-based restoration and a quantitative XAI benchmark for the thesis; a separate study on detecting AI-generated images. Reading and reproducing foundational papers in parallel.", mindset: "Build from first principles.", icon: "■", color: "#60A5FA" },
+  { year: "2026", title: "Etsy Recognition", place: "Etsy HQ, Dublin", text: "The generative-image detection research placed 2nd on Etsy's research leaderboard — earning an invitation to present the work in person at Etsy's Dublin office.", mindset: "Build from first principles, get recognised for it.", icon: "🏆", color: "#F5A524" },
   { year: "2026", title: "What's Next", place: "ML Research", text: "Pursuing ML / applied-research roles and collaborations — robustness, explainability, and generative-image forensics.", mindset: "Read deeply. Build from scratch.", icon: "✦", color: "#6AA9FF" },
 ];
 
@@ -234,19 +235,16 @@ export const PROJECTS = [
     links: { github: "https://github.com/Atharvax16/Comparative-Study-for-Diabetic-Retinopathy-Detection-and-Interpretability-methods" },
   },
   {
-    /* TODO (post-visit): add the Etsy framing ("invited to present to Etsy head office"),
-       the public GitHub link, and the result figures (confusion matrix, t-SNE, FFT/ELA).
-       Kept deliberately understated and un-named for now. */
     id: "gen-image-detection",
     title: "Generative-Image Detection",
-    badge: "Image Forensics · Research",
+    badge: "2nd Place · Etsy Research Challenge",
     year: "2025",
     role: "Solo · research",
     color: "#6AA9FF",
-    short: "Distinguishing authentic photographs from diffusion- and GAN-generated images using frequency artifacts and intermediate transformer features.",
+    short: "Distinguishing authentic photographs from diffusion- and GAN-generated images using frequency artifacts and intermediate transformer features — ranked 2nd on Etsy's research leaderboard and presented at Etsy HQ.",
     tech: ["PyTorch", "CLIP / DINOv2", "XGBoost", "Optuna"],
     keywords: ["image forensics", "AI-generated detection", "representation learning", "ensembling"],
-    abstract: "A study in detecting synthetic imagery on a marketplace-style dataset of ~4,340 photographs split across authentic and AI-generated (diffusion + GAN) sources. The work pits hand-crafted forensic signals (FFT frequency analysis, JPEG/ELA compression artifacts) against learned representations from vision transformers — and finds that intermediate CLIP layers, not the final embedding, carry the strongest discriminative signal for synthetic content.",
+    abstract: "A study in detecting synthetic imagery on a marketplace-style dataset of ~4,340 photographs split across authentic and AI-generated (diffusion + GAN) sources. The work pits hand-crafted forensic signals (FFT frequency analysis, JPEG/ELA compression artifacts) against learned representations from vision transformers — and finds that intermediate CLIP layers, not the final embedding, carry the strongest discriminative signal for synthetic content. The submission placed 2nd on Etsy's research leaderboard, earning an invitation to present the work in person at Etsy's Dublin office.",
     architecture: "Image → {FFT · ELA · CLIP(intermediate layers 18/20/22/23) · DINOv2} features → XGBoost heads → Optuna-weighted ensemble",
     method: [
       { p: "Frame", i: "🎯", d: "Binary authentic-vs-synthetic classification on a stratified marketplace-style image set (~4,340 images)." },
@@ -254,14 +252,19 @@ export const PROJECTS = [
       { p: "Represent", i: "🧠", d: "Fine-tuned DINOv2 / EfficientNet (F1 0.79–0.85); intermediate CLIP layers + XGBoost reach F1 0.92 — beating the final-layer embedding." },
       { p: "Fuse", i: "🧩", d: "A 6,018-dim feature fusion with 5-fold CV (0.87 ± 0.01), test-time augmentation, and pseudo-labeling of high-confidence predictions." },
       { p: "Ensemble", i: "📊", d: "An Optuna-optimised 4-model weighted ensemble lifts validation F1 to ≈ 0.94." },
+      { p: "Present", i: "🏆", d: "Placed 2nd on Etsy's research leaderboard; invited to present the findings in person at Etsy's Dublin office." },
     ],
     metrics: null,
     findings: [
       { label: "Best F1", value: "≈ 0.94", note: "Optuna-weighted 4-model ensemble (val)" },
       { label: "Key result", value: "mid > final", note: "intermediate CLIP layers beat the final embedding (0.92 vs 0.85)" },
       { label: "Dataset", value: "4,340", note: "authentic vs diffusion/GAN, stratified" },
+      { label: "Rank", value: "2nd place", note: "Etsy research leaderboard — presented at Etsy HQ, Dublin" },
     ],
-    plots: [],
+    plots: [
+      { src: "images/etsy-presentation-room.jpeg", caption: "Presenting the detection research at Etsy's Dublin office" },
+      { src: "images/etsy-hq-mural.jpeg", caption: "At Etsy HQ for the research presentation" },
+    ],
     links: {},
   },
   {
@@ -527,6 +530,9 @@ export const ARCHITECTURES = [
 ];
 
 export const GALLERY_PHOTOS = [
+  { src: "images/etsy-presentation-room.jpeg", caption: "2nd Place, Etsy Research Leaderboard — presenting the generative-image detection work at Etsy's Dublin office", category: "milestone", span: "wide" },
+  { src: "images/etsy-hq-mural.jpeg", caption: "At Etsy HQ, Dublin — invited to present after placing 2nd on the research leaderboard", category: "milestone", span: "tall" },
+  { src: "images/etsy-dcu-squad.jpeg", caption: "With the DCU crew after the Etsy presentation", category: "milestone" },
   { src: "images/hackathon-medtech-team.jpeg", caption: "3rd Place at AdvanceHealth MedTech Hackathon — Trinity College Dublin", category: "hackathon", span: "wide" },
   { src: "images/hackathon-medtech-solo.jpeg", caption: "Ireland's First MedTech Student-Led Ideathon — Day 2", category: "hackathon", span: "tall" },
   { src: "images/aws-cloudhight-event.jpeg", caption: "CloudHight AIOps Summit — Sponsored by AWS", category: "tech", span: "tall" },

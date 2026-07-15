@@ -1578,6 +1578,7 @@ export function PhotoGallery() {
   const [lightbox, setLightbox] = useState(null);
   const categories = [
     { key: "all", label: "All" },
+    { key: "milestone", label: "Milestones" },
     { key: "hackathon", label: "Hackathons" },
     { key: "tech", label: "Tech Events" },
     { key: "life", label: "Life" },

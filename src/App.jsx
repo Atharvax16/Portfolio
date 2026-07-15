@@ -440,7 +440,7 @@ export default function App() {
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(180px,1fr))", gap: "1rem", marginBottom: "1.8rem" }}>
               {[
                 { t: "Education", d: "MSc AI — Dublin City University\nB.E. AI & DS — TEC Mumbai" },
-                { t: "Selected awards", d: "MotivaLogic Hackathon Winner (AWS)\n3rd / 70 — AdvanceHealth MedTech\nIntl. Research Conference" },
+                { t: "Selected awards", d: "2nd Place — Etsy Research Leaderboard\nMotivaLogic Hackathon Winner (AWS)\n3rd / 70 — AdvanceHealth MedTech\nIntl. Research Conference" },
               ].map((c) => (
                 <div key={c.t} style={{ borderTop: `2px solid ${P.ink}`, paddingTop: 8 }}>
                   <div style={{ ...MONO, fontSize: "0.62rem", color: P.sub, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 6 }}>{c.t}</div>
