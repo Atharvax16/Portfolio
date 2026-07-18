@@ -142,6 +142,15 @@ export const READING_LOG = [
     link: "https://arxiv.org/abs/2509.21135",
     hasNotebook: false,
   },
+  {
+    paper: "Steerable Visual Representations",
+    authors: "Ruthardt et al.",
+    year: "2026",
+    area: "Representation Learning",
+    takeaway: "This one lands directly on a limitation I'd been working around. A frozen DINOv2 embedding — the backbone my own detection pipeline leans on — commits to whatever is most salient in the frame, and there is no handle to say 'attend to the thing in the corner instead'. CLIP doesn't fix it: fusing text after the visual encoder (late fusion) can only re-weight features that were already computed. The move here is to push the text in earlier, cross-attending it into the ViT's own layers so the prompt shapes what gets encoded rather than what gets selected afterwards — and, crucially, the features stay generic enough for ordinary downstream tasks instead of collapsing into the language-centric embeddings an MLLM gives you. The part I keep turning over is that anomaly detection falls out of it zero-shot: if you can steer a representation by prompt, 'what's unusual here' stops needing a task-specific model and becomes just another thing you ask for.",
+    link: "https://arxiv.org/abs/2604.02327",
+    hasNotebook: false,
+  },
 ];
 
 /* ════════════════════════════════════════
