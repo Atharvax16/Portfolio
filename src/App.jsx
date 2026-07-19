@@ -3,7 +3,7 @@ import {
   P, SECS, PAPER, RESEARCH_AREAS, READING_LOG, TIL_REPO, FROM_SCRATCH,
   METHODS, JOURNEY, ORDERED_PROJECTS, INSIGHTS, ARCHITECTURES,
 } from "./data.js";
-import { Rv, Radar, PhotoGallery, MatrixOverlay, ResearchModal, SketchFidelityAccuracy, SketchResearcherFrontier, SketchMolecule, SketchAttention, SketchFFT, SketchSpectral, SketchDCT, InsightsViewer, VitWalkthrough, CnnWalkthrough, DetectionParadigms, Dinov2Walkthrough } from "./ui.jsx";
+import { Rv, Radar, PhotoGallery, MatrixOverlay, ResearchModal, SketchFidelityAccuracy, SketchResearcherFrontier, SketchMolecule, SketchAttention, SketchFFT, SketchSpectral, SketchDCT, InsightsViewer, VitWalkthrough, CnnWalkthrough, DetectionParadigms, Dinov2Walkthrough, SteerVitWalkthrough } from "./ui.jsx";
 
 /* Type tokens */
 const DISP = { fontFamily: "'Spectral',Georgia,serif" };
@@ -42,8 +42,12 @@ function RefItem({ r, n }) {
         <div style={{ ...BODY, fontSize: "0.95rem", color: P.ink, lineHeight: 1.6 }}>
           {r.authors}. <i>{r.paper}</i>. {r.year}.
           {r.hasNotebook && <span style={{ ...MONO, fontSize: "0.58rem", color: P.accent, border: `1px solid ${P.accent}55`, padding: "0 6px", marginLeft: 8, verticalAlign: "middle" }}>+ notebook</span>}
+          {r.reproduced && <span style={{ ...MONO, fontSize: "0.58rem", color: P.red, border: `1px solid ${P.red}55`, padding: "0 6px", marginLeft: 8, verticalAlign: "middle" }}>+ reproduced</span>}
         </div>
         <p style={{ ...BODY, fontSize: "0.86rem", color: P.sub, lineHeight: 1.7, margin: "5px 0 6px", textWrap: "pretty" }}>{r.takeaway}</p>
+        {r.reproduced && (
+          <p style={{ ...MONO, fontSize: "0.7rem", color: P.ink, lineHeight: 1.6, margin: "0 0 6px", paddingLeft: 8, borderLeft: `2px solid ${P.red}66` }}>{r.reproduced}</p>
+        )}
         <a href={r.link} target="_blank" rel="noopener noreferrer" style={{ ...MONO, fontSize: "0.66rem", color: P.accent, textDecoration: "underline", textUnderlineOffset: 3 }}>notes — {r.area} ↗</a>
         {r.sketch === "attention" && (
           <figure style={{ margin: "0.7rem 0 0", maxWidth: 360, border: `1px solid ${P.line}`, background: P.paper2 }}>
@@ -290,6 +294,13 @@ export default function App() {
               <p style={{ ...BODY, fontSize: "0.95rem", lineHeight: 1.75, color: P.sub, marginBottom: "1.2rem", maxWidth: 600 }}>One route I leaned on in that forensics work flips the usual recipe: instead of <i>training</i> a detector, borrow a backbone that already learned what images look like — with <b>no labels at all</b> — then let a small ML head do the deciding. That's <b style={DISP}>DINOv2</b>: self-supervised representation learning via a student–teacher game, with <b style={DISP}>XGBoost</b> (or a tiny MLP) on top of the frozen embedding. Step from the label-free pre-training through to the classifier.</p>
               <div style={{ ...MONO, fontSize: "0.62rem", color: P.sub, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 10 }}>DINOv2 + ML head · self-supervised → frozen embedding → XGBoost / MLP</div>
               <Dinov2Walkthrough />
+            </div>
+          </Rv>
+          <Rv delay={0.13}>
+            <div style={{ borderTop: `1px solid ${P.line}`, margin: "1.8rem 0 1.2rem", paddingTop: "1.4rem" }}>
+              <p style={{ ...BODY, fontSize: "0.95rem", lineHeight: 1.75, color: P.sub, marginBottom: "1.2rem", maxWidth: 600 }}>That frozen embedding has a blind spot I kept running into: it commits to whatever is <i>salient</i>, and there's no handle to say <i>“no — the odd one, in the corner.”</i> <b style={DISP}>SteerViT</b> fixes it by cross-attending the text <i>inside</i> the ViT's blocks rather than scoring against it afterwards, behind a gate that starts at exactly zero. I rebuilt the mechanism at small scale to see if the steering was real — and the sketch ends on the sanity check that says it wasn't, at my scale. Step through it, and try the prompts.</p>
+              <div style={{ ...MONO, fontSize: "0.62rem", color: P.sub, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 10 }}>SteerViT · gated cross-attention → steering a frozen backbone by prompt</div>
+              <SteerVitWalkthrough />
             </div>
           </Rv>
           <Rv delay={0.14}>

@@ -1521,6 +1521,294 @@ export function Dinov2Walkthrough() {
 }
 
 /* ════════════════════════════════════════
+   STEERVIT — text steering a frozen backbone by cross-attention.
+   The question it answers: a frozen embedding commits to whatever is most
+   salient, so how do you ask it for the *unusual* item in a crowded scene?
+   Numbers in the last two steps are from my own small-scale reproduction
+   (RefCOCOg, 4.5k images, 3k steps) — including the check that failed.
+   ════════════════════════════════════════ */
+const STEER_PROMPTS = [
+  { key: "chip", label: "“the chipped one”", target: 27, note: "a defect, not a category" },
+  { key: "flip", label: "“the upside-down one”", target: 52, note: "an orientation, not an object" },
+  { key: "odd", label: "“anything that doesn’t belong”", target: 14, note: "no class name at all" },
+];
+
+const STEERVIT_STEPS = [
+  {
+    key: "blindspot", label: "the blind spot",
+    title: "A frozen backbone answers a question you didn't ask",
+    body: "DINOv2 encodes an image once, and that vector commits to whatever the network finds salient — usually the big, central, obvious thing. Show it a shelf of sixty near-identical cups and ask for the one with a chipped rim, and there is no handle to pull. The information may survive somewhere in the patch tokens, but nothing in the interface lets you request it.",
+    math: "x → frozen ViT → z    ·  no place to put a question",
+  },
+  {
+    key: "late", label: "late fusion",
+    title: "CLIP fuses too late to help",
+    body: "The obvious fix is to bring in text — but CLIP compares a finished image vector against a finished text vector. The fusion happens after the visual encoder has already decided what to keep. Re-weighting features that were computed without the prompt can only re-rank what survived; it cannot go back and encode the detail the backbone discarded.",
+    math: "sim( f_img(x), f_txt(t) )    ·  scoring, not steering",
+  },
+  {
+    key: "cross", label: "cross-attention",
+    title: "Push the text in early — inside the blocks",
+    body: "SteerViT's move is to inject the prompt into the ViT's own layers. Patch tokens become the queries; the adapted text tokens become keys and values. Every patch gets to ask “which word am I evidence for?” while the representation is still being built — so the prompt shapes what gets encoded, not merely what gets selected afterwards.",
+    math: "z ← z + CrossAttn( Q=z_patches, K,V = H_text )   · blocks 1,3,5,7,9,11",
+  },
+  {
+    key: "gate", label: "the gate",
+    title: "A gate that starts at exactly zero",
+    body: "Each injection site carries one learnable scalar α, initialised at 0 — and tanh(0) = 0, so at init the wrapped model is bit-identical to plain frozen DINOv2 no matter what text you feed it. Steering is something the model has to earn. At inference a scale ω rides on top, giving you a dial from “untouched backbone” to “fully steered” without retraining.",
+    math: "z ← z + tanh(α_l · ω) · CrossAttn(z, H_t)    ·  α=0 ⇒ identity",
+  },
+  {
+    key: "steer", label: "steer it",
+    title: "Now the prompt picks the needle",
+    body: "This is what the gate buys: the same frozen weights, the same image, and the attention lands somewhere else because the sentence changed. Note what the prompts are asking for — a defect, an orientation, an oddity. None of them name an object class, so no fixed-vocabulary detector could serve them. Pick a prompt below and watch the heatmap move.",
+    math: "in my repro: patch IoU 0.129 (no text) → 0.294 (correct prompt)",
+  },
+  {
+    key: "check", label: "the honest check",
+    title: "The check that decides whether any of it is real",
+    body: "A steered heatmap that looks right proves nothing — the model may simply have memorised where objects tend to sit. So you feed a prompt describing a different image entirely: localisation must collapse toward baseline. In my reproduction it didn't. 62.5% of the steering gain survived a mismatched prompt, against a 30% pass bar. At 4.5k images and 3k steps (the paper trains 20–50k) this is the image talking, not the text — and it's the one number worth reporting.",
+    math: "collapse_ratio = (wrong − base) / (correct − base) = 0.625    · FAIL (bar ≤ 0.30)",
+  },
+];
+
+export function SteerVitWalkthrough() {
+  const [step, setStep] = useState(0);
+  const [prompt, setPrompt] = useState(0);
+  const sk = STEERVIT_STEPS[step].key;
+  const sc = STEERVIT_STEPS[step];
+  const P_ = STEER_PROMPTS[prompt];
+
+  /* A "massive collection": 12 x 5 shelf of near-identical items.
+     Deterministic jitter so the sketch stays stable across renders. */
+  const COLS = 12, ROWS = 5, GX = 34, GY = 46, CW = 39, CH = 40;
+  const jit = (i) => ((Math.sin(i * 12.9898) * 43758.5453) % 1 + 1) % 1;
+
+  const Item = ({ i, lit, dim }) => {
+    const cx = GX + (i % COLS) * CW + CW / 2;
+    const cy = GY + Math.floor(i / COLS) * CH + CH / 2;
+    const r = 10 + jit(i) * 1.6;
+    const chipped = i === STEER_PROMPTS[0].target;
+    const flipped = i === STEER_PROMPTS[1].target;
+    const odd = i === STEER_PROMPTS[2].target;
+    const op = dim ? 0.28 : 1;
+    return (
+      <g opacity={op}>
+        {lit && <rect x={cx - CW / 2 + 2} y={cy - CH / 2 + 2} width={CW - 4} height={CH - 4} fill={P.accent} fillOpacity="0.16" stroke={P.accent} strokeWidth="1.3" />}
+        <g transform={flipped ? `rotate(180 ${cx} ${cy})` : undefined}>
+          {/* cup: body + handle */}
+          <path d={`M${cx - r} ${cy - r * 0.7} L${cx - r * 0.72} ${cy + r * 0.8} Q ${cx} ${cy + r * 1.05}, ${cx + r * 0.72} ${cy + r * 0.8} L${cx + r} ${cy - r * 0.7} Z`}
+            fill={odd ? P.green : P.paper2} fillOpacity={odd ? 0.34 : 1} stroke={P.ink} strokeWidth="1.1" />
+          <path d={`M${cx + r * 0.92} ${cy - r * 0.3} q ${r * 0.5} ${r * 0.2}, 0 ${r * 0.62}`} fill="none" stroke={P.ink} strokeWidth="1" />
+          {chipped
+            ? <path d={`M${cx - r} ${cy - r * 0.7} l ${r * 0.5} 0 l ${r * 0.26} ${-r * 0.34} l ${r * 0.3} ${r * 0.34} L${cx + r} ${cy - r * 0.7}`} fill="none" stroke={P.ink} strokeWidth="1.1" />
+            : <line x1={cx - r} y1={cy - r * 0.7} x2={cx + r} y2={cy - r * 0.7} stroke={P.ink} strokeWidth="1.1" />}
+        </g>
+      </g>
+    );
+  };
+
+  const shelf = (litIdx, dimRest) => (
+    <g>
+      {Array.from({ length: COLS * ROWS }).map((_, i) => (
+        <Item key={i} i={i} lit={litIdx != null && i === litIdx} dim={dimRest && litIdx !== i} />
+      ))}
+    </g>
+  );
+
+  const arrow = (x1, y1, x2, y2, dash, col) => (
+    <g stroke={col || P.accent} strokeWidth="1.3" fill="none">
+      <path d={`M${x1} ${y1} L${x2} ${y2}`} strokeDasharray={dash ? "4 3" : "none"} />
+      <path d={`M${x2 - 8} ${y2 - 4} L${x2} ${y2} L${x2 - 8} ${y2 + 4}`} />
+    </g>
+  );
+
+  const chip = (x, y, w, label, col) => (
+    <g>
+      <rect x={x} y={y} width={w} height={22} fill={P.paper2} stroke={col || P.ink} strokeWidth="1.2" />
+      <text x={x + w / 2} y={y + 15} textAnchor="middle" style={SK} fontSize="10.5" fill={col || P.ink}>{label}</text>
+    </g>
+  );
+
+  const body = (() => {
+    switch (sk) {
+      case "blindspot":
+        return (
+          <g>
+            <text x={300} y={26} textAnchor="middle" style={SK} fontSize="11" fill={P.sub}>sixty near-identical items · one frozen vector</text>
+            {shelf(null, false)}
+            {arrow(300, 254, 300, 274)}
+            <text x={300} y={292} textAnchor="middle" style={SK} fontSize="11" fontStyle="italic" fill={P.red}>“which one is chipped?” — nowhere to put the question</text>
+          </g>
+        );
+      case "late":
+        return (
+          <g>
+            {shelf(null, true)}
+            <g opacity="0.5">{chip(60, 250, 150, "f_img(x)  →  z", P.ink)}</g>
+            {chip(250, 250, 150, "f_txt(t)  →  t", P.accent)}
+            <text x={452} y={266} style={SK} fontSize="12" fill={P.sub}>cos(z, t)</text>
+            <path d="M212 261 L246 261" stroke={P.sub} strokeWidth="1.2" strokeDasharray="3 3" />
+            <path d="M404 261 L440 261" stroke={P.sub} strokeWidth="1.2" strokeDasharray="3 3" />
+            <text x={300} y={228} textAnchor="middle" style={SK} fontSize="11" fontStyle="italic" fill={P.red}>the image was already encoded before the text arrived</text>
+          </g>
+        );
+      case "cross":
+        return (
+          <g>
+            {/* stack of blocks with injection sites */}
+            {Array.from({ length: 12 }).map((_, i) => {
+              const inject = [1, 3, 5, 7, 9, 11].includes(i);
+              const y = 40 + i * 19;
+              return (
+                <g key={i}>
+                  <rect x={150} y={y} width={210} height={15} fill={inject ? P.accentSoft : "rgba(43,76,140,0.04)"} stroke={inject ? P.accent : P.line} strokeWidth={inject ? 1.2 : 0.9} />
+                  <text x={160} y={y + 11} style={SK} fontSize="8.5" fill={P.sub}>block {i}</text>
+                  {inject && <path d={`M470 ${y + 7} L366 ${y + 7}`} stroke={P.accent} strokeWidth="1.1" fill="none" />}
+                  {inject && <path d={`M374 ${y + 3} L366 ${y + 7} L374 ${y + 11}`} stroke={P.accent} strokeWidth="1.1" fill="none" />}
+                </g>
+              );
+            })}
+            <text x={255} y={30} textAnchor="middle" style={SK} fontSize="10" fill={P.ink}>frozen DINOv2 · ❄</text>
+            <rect x={476} y={92} width={104} height={64} fill={P.paper2} stroke={P.ink} strokeWidth="1.3" />
+            <text x={528} y={116} textAnchor="middle" style={SK} fontSize="10" fill={P.ink}>text tokens</text>
+            <text x={528} y={132} textAnchor="middle" style={SK} fontSize="9" fill={P.sub}>RoBERTa ❄</text>
+            <text x={528} y={147} textAnchor="middle" style={SK} fontSize="9" fill={P.accent}>+ adapter (trained)</text>
+            <text x={528} y={176} textAnchor="middle" style={SK} fontSize="9.5" fill={P.sub}>K, V</text>
+            <text x={410} y={176} textAnchor="middle" style={SK} fontSize="9.5" fill={P.sub}>Q = patches</text>
+            <text x={300} y={288} textAnchor="middle" style={SK} fontSize="10.5" fontStyle="italic" fill={P.accent}>the prompt is in the room while the features are being built</text>
+            <text x={70} y={140} textAnchor="middle" style={SK} fontSize="10" fill={P.sub}>image</text>
+            {arrow(70, 152, 70, 186)}
+            <path d="M70 186 L70 200 L150 200" stroke={P.accent} strokeWidth="1.3" fill="none" />
+          </g>
+        );
+      case "gate":
+        return (
+          <g>
+            {/* the residual add with a gate dial */}
+            <text x={300} y={30} textAnchor="middle" style={SK} fontSize="11" fill={P.sub}>one scalar per injection site · six sites</text>
+            <rect x={60} y={110} width={90} height={54} fill="rgba(43,76,140,0.06)" stroke={P.ink} strokeWidth="1.3" />
+            <text x={105} y={142} textAnchor="middle" style={SK} fontSize="10" fill={P.ink}>z (patches)</text>
+            <path d="M150 137 L232 137" stroke={P.ink} strokeWidth="1.3" fill="none" />
+            <circle cx={252} cy={137} r={15} fill={P.paper2} stroke={P.ink} strokeWidth="1.3" />
+            <text x={252} y={142} textAnchor="middle" style={SK} fontSize="14" fill={P.ink}>+</text>
+            <path d="M267 137 L372 137" stroke={P.ink} strokeWidth="1.3" fill="none" />
+            <path d="M364 133 L372 137 L364 141" stroke={P.ink} strokeWidth="1.3" fill="none" />
+            <text x={412} y={142} textAnchor="middle" style={SK} fontSize="10" fill={P.ink}>z (steered)</text>
+            {/* branch */}
+            <path d="M195 137 L195 224 L300 224" stroke={P.sub} strokeWidth="1.1" fill="none" strokeDasharray="4 3" />
+            {chip(300, 213, 108, "CrossAttn(z, H_t)", P.sub)}
+            <path d="M408 224 L470 224 L470 168" stroke={P.sub} strokeWidth="1.1" fill="none" strokeDasharray="4 3" />
+            {chip(416, 146, 108, "× tanh(α·ω)", P.accent)}
+            <path d="M470 146 L470 137 L390 137" stroke={P.accent} strokeWidth="1.3" fill="none" />
+            <path d="M398 133 L390 137 L398 141" stroke={P.accent} strokeWidth="1.3" fill="none" />
+            {/* dial */}
+            <text x={110} y={214} style={SK} fontSize="10" fill={P.sub}>ω = 0</text>
+            <text x={110} y={232} style={SK} fontSize="10" fill={P.sub}>ω = 1</text>
+            <text x={158} y={214} style={SK} fontSize="10" fill={P.ink}>IoU 0.129 · exactly frozen DINOv2</text>
+            <text x={158} y={232} style={SK} fontSize="10" fill={P.accent}>IoU 0.294 · fully steered</text>
+            <text x={300} y={276} textAnchor="middle" style={SK} fontSize="10.5" fontStyle="italic" fill={P.sub}>α starts at 0, so the model begins as the untouched backbone and earns its steering</text>
+          </g>
+        );
+      case "steer":
+        return (
+          <g>
+            {shelf(P_.target, true)}
+            <rect x={92} y={252} width={416} height={26} fill={P.accentSoft} stroke={P.accent} strokeWidth="1.2" />
+            <text x={300} y={269} textAnchor="middle" style={SK} fontSize="12" fill={P.accent}>{P_.label}</text>
+            <text x={300} y={292} textAnchor="middle" style={SK} fontSize="10" fontStyle="italic" fill={P.sub}>{P_.note} — same weights, same image, different answer</text>
+            <text x={300} y={26} textAnchor="middle" style={SK} fontSize="11" fill={P.sub}>the prompt reaches into the encoder and lights one patch</text>
+          </g>
+        );
+      case "check":
+        return (
+          <g>
+            <text x={300} y={26} textAnchor="middle" style={SK} fontSize="11" fill={P.sub}>same image · a prompt describing a different scene entirely</text>
+            {/* two bars: what should happen vs what did */}
+            <text x={64} y={86} style={SK} fontSize="10.5" fill={P.sub}>expected</text>
+            <rect x={150} y={72} width={330} height={20} fill="none" stroke={P.line} strokeWidth="1" />
+            <rect x={150} y={72} width={99} height={20} fill={P.green} fillOpacity="0.35" stroke={P.green} strokeWidth="1.2" />
+            <text x={262} y={87} style={SK} fontSize="10" fill={P.green}>≤ 0.30 · steering collapses → it was reading the text</text>
+
+            <text x={64} y={140} style={SK} fontSize="10.5" fill={P.sub}>measured</text>
+            <rect x={150} y={126} width={330} height={20} fill="none" stroke={P.line} strokeWidth="1" />
+            <rect x={150} y={126} width={206} height={20} fill={P.red} fillOpacity="0.3" stroke={P.red} strokeWidth="1.2" />
+            <text x={368} y={141} style={SK} fontSize="10" fill={P.red}>0.625 · the gain survives → it was reading the image</text>
+
+            {/* the two heatmaps, too similar */}
+            <text x={188} y={186} textAnchor="middle" style={SK} fontSize="10" fill={P.sub}>correct prompt</text>
+            <text x={412} y={186} textAnchor="middle" style={SK} fontSize="10" fill={P.sub}>wrong prompt</text>
+            {[0, 1].map((h) => (
+              <g key={h} transform={`translate(${h === 0 ? 128 : 352} 196)`}>
+                {Array.from({ length: 36 }).map((_, i) => {
+                  const c = i % 6, r = Math.floor(i / 6);
+                  const on = [14, 15, 20, 21].includes(i);
+                  const near = [8, 9, 13, 16, 19, 22, 26, 27].includes(i);
+                  return <rect key={i} x={c * 20} y={r * 12} width={19} height={11}
+                    fill={on ? P.red : near ? P.red : P.faint}
+                    fillOpacity={on ? (h === 0 ? 0.75 : 0.6) : near ? (h === 0 ? 0.3 : 0.26) : 1}
+                    stroke={P.line} strokeWidth="0.4" />;
+                })}
+              </g>
+            ))}
+            <text x={300} y={288} textAnchor="middle" style={SK} fontSize="10.5" fontStyle="italic" fill={P.ink}>they should look nothing alike — that they do is the result</text>
+          </g>
+        );
+      default: return null;
+    }
+  })();
+
+  const navBtn = { ...SK, fontSize: "0.8rem", padding: "2px 10px", border: `1px solid ${P.line}`, background: P.paper2, color: P.ink, cursor: "pointer" };
+  const N = STEERVIT_STEPS.length;
+
+  return (
+    <div>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 10, marginBottom: 10 }}>
+        <span style={{ ...SK, fontSize: "0.6rem", color: P.sub, textTransform: "uppercase", letterSpacing: "0.08em" }}>frozen backbone · text steers it · the check that failed</span>
+        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+          <span style={{ ...SK, fontSize: "0.62rem", color: P.sub, textTransform: "uppercase", letterSpacing: "0.06em" }}>step {step + 1} / {N}</span>
+          <button onClick={() => setStep((step + N - 1) % N)} aria-label="Previous step" style={navBtn}>←</button>
+          <button onClick={() => setStep((step + 1) % N)} aria-label="Next step" style={navBtn}>→</button>
+        </div>
+      </div>
+
+      {sk === "steer" && (
+        <div style={{ display: "flex", gap: 6, marginBottom: 10, flexWrap: "wrap", alignItems: "center" }}>
+          <span style={{ ...SK, fontSize: "0.62rem", color: P.sub }}>ask for:</span>
+          {STEER_PROMPTS.map((q, j) => (
+            <button key={q.key} onClick={() => setPrompt(j)} style={{ ...SK, fontSize: "0.7rem", padding: "2px 10px", cursor: "pointer", border: `1px solid ${j === prompt ? P.accent : P.line}`, background: j === prompt ? P.accentSoft : P.paper2, color: j === prompt ? P.accent : P.sub }}>{q.label}</button>
+          ))}
+        </div>
+      )}
+
+      <div style={{ border: `1px solid ${P.line}`, borderTop: `2px solid ${P.ink}`, background: P.paper2 }}>
+        <div style={{ background: "#fff" }}>
+          <div style={{ aspectRatio: "600 / 300" }}>
+            <svg viewBox="0 0 600 300" width="100%" height="100%" role="img" aria-label={`SteerViT walkthrough step ${step + 1}: ${sc.label}`} style={{ display: "block" }} strokeLinecap="round" strokeLinejoin="round">
+              {body}
+            </svg>
+          </div>
+        </div>
+        <div style={{ padding: "0.9rem 1.1rem 1rem" }}>
+          <div style={{ ...DISP, fontWeight: 600, fontSize: "1rem", color: P.ink, marginBottom: 4 }}>{sc.title}</div>
+          <p style={{ ...BODY, fontSize: "0.88rem", color: P.sub, lineHeight: 1.65, textWrap: "pretty", margin: 0 }}>
+            <span style={{ ...SK, fontSize: "0.6rem", color: P.accent, textTransform: "uppercase", letterSpacing: "0.08em", marginRight: 6 }}>step {step + 1}</span>
+            {sc.body}
+          </p>
+          <div style={{ ...SK, fontSize: "0.66rem", color: P.ink, marginTop: 9, background: P.faint, padding: "6px 9px", display: "inline-block" }}>{sc.math}</div>
+        </div>
+      </div>
+
+      <div style={{ display: "flex", gap: 6, marginTop: 10, flexWrap: "wrap" }}>
+        {STEERVIT_STEPS.map((s, j) => (
+          <button key={s.key} onClick={() => setStep(j)} style={{ ...SK, fontSize: "0.62rem", padding: "4px 9px", cursor: "pointer", border: `1px solid ${j === step ? P.accent : P.line}`, background: j === step ? P.accentSoft : "#fff", color: j === step ? P.accent : P.sub }}>{j + 1}. {s.label}</button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/* ════════════════════════════════════════
    INSIGHTS VIEWER — step through real figures + the observation each carries
    ════════════════════════════════════════ */
 export function InsightsViewer({ items }) {

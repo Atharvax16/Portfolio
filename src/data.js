@@ -150,6 +150,7 @@ export const READING_LOG = [
     takeaway: "This one lands directly on a limitation I'd been working around. A frozen DINOv2 embedding — the backbone my own detection pipeline leans on — commits to whatever is most salient in the frame, and there is no handle to say 'attend to the thing in the corner instead'. CLIP doesn't fix it: fusing text after the visual encoder (late fusion) can only re-weight features that were already computed. The move here is to push the text in earlier, cross-attending it into the ViT's own layers so the prompt shapes what gets encoded rather than what gets selected afterwards — and, crucially, the features stay generic enough for ordinary downstream tasks instead of collapsing into the language-centric embeddings an MLLM gives you. The part I keep turning over is that anomaly detection falls out of it zero-shot: if you can steer a representation by prompt, 'what's unusual here' stops needing a task-specific model and becomes just another thing you ask for.",
     link: "https://arxiv.org/abs/2604.02327",
     hasNotebook: false,
+    reproduced: "Rebuilt the mechanism at small scale (RefCOCOg, 4.5k images, 3k steps): steering emerges — IoU 0.129 → 0.294 — but the wrong-prompt check doesn't collapse, so at this scale it's reading the image, not the text. Walk the mechanism in §4, Architectures.",
   },
 ];
 
@@ -570,6 +571,7 @@ export const ARCHITECTURES = [
   { key: "vit", name: "Vision Transformer", status: "live", note: "patchify → embedding" },
   { key: "cnn", name: "CNN", status: "live", note: "convolution · pooling · receptive field" },
   { key: "dinov2", name: "DINOv2 + ML head", status: "live", note: "self-supervised → frozen embedding → XGBoost/MLP" },
+  { key: "steervit", name: "SteerViT", status: "live", note: "gated cross-attention · steering a frozen backbone by prompt" },
   { key: "encdec", name: "Encoder–Decoder", status: "coming", note: "seq-to-seq · cross-attention" },
 ];
 
