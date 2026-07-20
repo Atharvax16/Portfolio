@@ -217,10 +217,16 @@ export default function App() {
               <div style={{ marginBottom: "1.5rem" }}>
                 <h3 style={{ ...DISP, fontWeight: 600, fontSize: "1.05rem", color: P.ink, marginBottom: 5 }}>
                   <span style={{ ...MONO, fontSize: "0.8rem", color: P.accent, marginRight: 8 }}>1.{i + 1}</span>{a.title}
+                  {a.active && (
+                    <span style={{ display: "inline-flex", alignItems: "center", gap: 4, marginLeft: 10, verticalAlign: "middle" }}>
+                      <span style={{ width: 6, height: 6, borderRadius: "50%", background: P.green }} />
+                      <span style={{ ...MONO, fontSize: "0.54rem", color: P.green, textTransform: "uppercase", letterSpacing: "0.1em" }}>active · §2</span>
+                    </span>
+                  )}
                 </h3>
                 {a.thesis && (
                   <div style={{ borderLeft: `2px solid ${P.accent}`, paddingLeft: "0.75rem", margin: "0 0 8px" }}>
-                    <div style={{ ...MONO, fontSize: "0.56rem", color: P.sub, textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 2 }}>MSc thesis</div>
+                    <div style={{ ...MONO, fontSize: "0.56rem", color: P.sub, textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 2 }}>{a.active ? "current track" : "MSc thesis"}</div>
                     <div style={{ ...DISP, fontSize: "0.92rem", fontStyle: "italic", color: P.ink, lineHeight: 1.4 }}>“{a.thesis}”</div>
                   </div>
                 )}
@@ -242,7 +248,8 @@ export default function App() {
               </span>
               <span style={{ ...MONO, fontSize: "0.62rem", color: P.sub }}>started {CURRENT_TRACK.started} · {CURRENT_TRACK.stage}</span>
             </div>
-            <h3 style={{ ...DISP, fontWeight: 600, fontSize: "clamp(1.15rem,3vw,1.4rem)", color: P.ink, lineHeight: 1.2, marginBottom: 10 }}>{CURRENT_TRACK.title}</h3>
+            <h3 style={{ ...DISP, fontWeight: 600, fontSize: "clamp(1.3rem,3.4vw,1.6rem)", color: P.ink, lineHeight: 1.15, marginBottom: 4 }}>{CURRENT_TRACK.name}</h3>
+            <div style={{ ...BODY, fontSize: "1rem", fontStyle: "italic", color: P.sub, marginBottom: 10 }}>{CURRENT_TRACK.title}</div>
           </Rv>
           <Rv delay={0.04}>
             <div style={{ borderLeft: `2px solid ${P.accent}`, paddingLeft: "0.85rem", margin: "0 0 1.1rem" }}>
