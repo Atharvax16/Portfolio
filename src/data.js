@@ -30,7 +30,65 @@ export const PAPER = {
 
 /* Nav + scroll-tracked sections (paper running order).
    The gallery "Appendix" is intentionally NOT here — it stays out of nav. */
-export const SECS = ["Abstract", "Research", "Work", "Findings", "Architectures", "Reading", "Foundations", "Methods", "About", "Contact"];
+export const SECS = ["Abstract", "Research", "Track", "Work", "Findings", "Architectures", "Reading", "Foundations", "Methods", "About", "Contact"];
+
+/* ════════════════════════════════════════
+   CURRENT TRACK — the live thread, updated as it moves.
+   Unlike PROJECTS (finished, written up as case studies), this section is
+   deliberately unfinished: a dated research log. `arc` entries carry a
+   status of "done" | "active" | "queued".
+   ════════════════════════════════════════ */
+export const CURRENT_TRACK = {
+  name: "VoxSight Recall",
+  title: "Episodic Memory for Vision-Language Agents",
+  status: "active",
+  started: "July 2026",
+  updated: "20 July 2026",
+  stage: "reading + reproducing",
+  question:
+    "VoxSight can describe what the camera sees right now. It cannot answer “where did I leave my keys?” — because nothing it saw an hour ago survives the turn it was seen in. That gap is what pulled me into the literature: an agent that perceives continuously but remembers nothing has no episodic memory, only perception. So what would it actually take to give a vision-language agent a memory of its own past — one you can write to as it looks around, query in natural language, and inspect afterwards to see why it answered the way it did?",
+  premise:
+    "The working hypothesis is that this is a memory-architecture problem before it is a model problem. Rather than fine-tune a bigger VLM and hope recall emerges from scale, the track follows the differentiable-memory literature from its origin — reading each paper, then rebuilding the mechanism small enough to watch it work — on the bet that the right external, addressable, inspectable memory beats a larger set of weights for this task.",
+  spine:
+    "One idea connects everything on the list: you cannot hard-pick one memory slot, because a hard pick has no gradient — so you softly blend several. NTM blends notebook rows; RAG blends Wikipedia passages. Same trick, different scale.",
+  arc: [
+    {
+      status: "done",
+      paper: "Neural Turing Machines",
+      authors: "Graves et al.",
+      year: "2014",
+      label: "read · notes written",
+      takeaway:
+        "The origin of learnable external memory. Read = a soft, weighted blend of every memory row, not “fetch row 5”; write = erase then add, borrowed straight from LSTM gates; addressing combines content (emit a key, cosine-match every row) with location (interpolate, circularly shift, then sharpen) so the head can iterate. The result that matters: trained to copy sequences of ≤20, it still copies 100+ — evidence it learned an algorithm, not a lookup table. The price of differentiability is blur, and the sharpening step is there to pay it back.",
+    },
+    {
+      status: "active",
+      paper: "Retrieval-Augmented Generation for Knowledge-Intensive NLP Tasks",
+      authors: "Lewis et al.",
+      year: "2020",
+      label: "reproducing — retriever + trust weighting in NumPy",
+      takeaway:
+        "The same trick grown up: the notebook is now 21M Wikipedia passages. The axis the paper turns on is parametric vs non-parametric memory — BART's weights hold fluency but can't be edited, inspected, or pointed at, while the passage index holds facts as real text you can swap out with zero retraining. The part I keep returning to is that nobody ever labels which passage was correct: retrieval is a latent variable, so you take the top-K, weight them by trust p(z|x), blend the generator's answers, and grade only the final answer — the credit leaks backward onto the retriever on its own. That leak is the whole mechanism.",
+      progress:
+        "Rebuilding it bottom-up in NumPy rather than calling a library — fingerprint vectors, dot-product vs cosine scoring, top-K search over a toy library, then softmax with a temperature knob to watch trust sharpen from near-uniform into a near-hard pick. Next: the blend step and a deliberate reproduction of retrieval collapse (Appendix H), where a retriever stops varying with the query and the whole system silently degrades to plain BART — the failure mode most likely to bite an episodic-memory build.",
+    },
+    {
+      status: "queued",
+      paper: "Toward an episodic-memory layer for VoxSight",
+      authors: "the build this is all pointed at",
+      year: "—",
+      label: "queued — design, once the reading lands",
+      takeaway:
+        "Where the reading is meant to arrive: a memory layer that writes what VoxSight sees as it sees it, retrieves against a spoken question, and keeps every recall traceable to the moment it came from. The open questions are the interesting ones — what a “memory” is when the input is a video stream rather than a passage, how to forget, and whether recall can stay inspectable enough that a user can ask the system why it thinks it saw that.",
+    },
+  ],
+  reproductions: [
+    { name: "RAG — retriever & trust weighting", detail: "NumPy from scratch: fingerprints → dot-product / cosine scoring → top-K → temperature-softmax trust", state: "in progress" },
+    { name: "NTM & RAG — study notes", detail: "The full walkthrough in my own words, with a worked end-to-end example", state: "written" },
+  ],
+  tags: ["episodic memory", "retrieval", "vision-language agents", "differentiable memory"],
+  origin: "voxsight",
+};
 
 /* ════════════════════════════════════════
    RESEARCH FOCUS — the threads that define the work
@@ -51,6 +109,13 @@ export const RESEARCH_AREAS = [
     title: "Foundations, From Scratch",
     blurb: "Reproducing the building blocks — RNNs and BPTT, transformers, GANs — in raw NumPy. Reading the original papers, then rebuilding them to understand the mechanics rather than calling an API.",
     tags: ["transformers", "RNNs", "GANs", "NumPy"],
+  },
+  {
+    title: "Episodic Memory for Vision-Language Agents",
+    thesis: "VoxSight Recall — giving a vision-language agent a memory of its own past: written as it looks around, queried in natural language, inspectable after the fact.",
+    blurb: "My current thread (§2). VoxSight can describe what the camera sees now but forgets it the instant the turn ends — perception without memory. I'm following the differentiable-memory literature from Neural Turing Machines to retrieval-augmented generation, reading each paper then rebuilding the mechanism small enough to watch it work, on the bet that the right external, addressable, inspectable memory beats a larger set of weights for recall.",
+    tags: ["episodic memory", "retrieval", "vision-language agents", "differentiable memory"],
+    active: true,
   },
   {
     title: "Multi-Agent & Applied ML",

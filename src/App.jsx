@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import {
   P, SECS, PAPER, RESEARCH_AREAS, READING_LOG, TIL_REPO, FROM_SCRATCH,
-  METHODS, JOURNEY, ORDERED_PROJECTS, INSIGHTS, ARCHITECTURES,
+  METHODS, JOURNEY, ORDERED_PROJECTS, INSIGHTS, ARCHITECTURES, CURRENT_TRACK,
 } from "./data.js";
 import { Rv, Radar, PhotoGallery, MatrixOverlay, ResearchModal, SketchFidelityAccuracy, SketchResearcherFrontier, SketchMolecule, SketchAttention, SketchFFT, SketchSpectral, SketchDCT, InsightsViewer, VitWalkthrough, CnnWalkthrough, DetectionParadigms, Dinov2Walkthrough, SteerVitWalkthrough } from "./ui.jsx";
 
@@ -187,7 +187,7 @@ export default function App() {
               <Rv delay={0.12}>
                 <div style={{ borderTop: `1px solid ${P.line}`, borderBottom: `1px solid ${P.line}`, padding: "1.1rem 0", margin: "1.4rem 0" }}>
                   <p style={{ ...BODY, fontSize: "1rem", lineHeight: 1.78, color: P.ink, textAlign: "justify", hyphens: "auto", textWrap: "pretty" }}>
-                    <b style={{ ...DISP }}>Abstract.</b> This portfolio documents my work toward machine learning that can be trusted where the stakes are real — models that stay accurate on messy inputs and can explain themselves when it counts. My MSc thesis examines how diabetic-retinopathy classifiers degrade under blur, exposure error, and sensor noise, and whether diffusion-based restoration can recover the diagnostic signal <i>without hallucinating pathology</i>. In parallel I read and reproduce the field's foundational results — attention <Cite n={1} />, adversarial generation <Cite n={2} />, and equivariant graph networks <Cite n={3} /> — and extend them across generative-image forensics, federated medical imaging, and multi-agent systems grounded in deterministic ML.
+                    <b style={{ ...DISP }}>Abstract.</b> This portfolio documents my work toward machine learning that can be trusted where the stakes are real — models that stay accurate on messy inputs and can explain themselves when it counts. My MSc thesis examines how diabetic-retinopathy classifiers degrade under blur, exposure error, and sensor noise, and whether diffusion-based restoration can recover the diagnostic signal <i>without hallucinating pathology</i>. In parallel I read and reproduce the field's foundational results — attention <Cite n={1} />, adversarial generation <Cite n={2} />, and equivariant graph networks <Cite n={3} /> — and extend them across generative-image forensics, federated medical imaging, and multi-agent systems grounded in deterministic ML. My current thread (§2) follows the differentiable-memory literature from Neural Turing Machines to retrieval-augmented generation, toward an <i>episodic memory</i> for vision-language agents that can recall what they saw, not just describe what they see.
                   </p>
                   <p style={{ ...MONO, fontSize: "0.66rem", color: P.sub, marginTop: "0.9rem", lineHeight: 1.7 }}>
                     <span style={{ color: P.ink }}>Keywords —</span> {PAPER.keywords.join(" · ")}
@@ -231,8 +231,91 @@ export default function App() {
           ))}
         </Section>
 
-        {/* ═══ 2 · SELECTED WORK ═══ */}
-        <Section id="Work" num="2">
+        {/* ═══ 2 · CURRENT TRACK (the live thread) ═══ */}
+        <Section id="Track" num="2" note={<p style={noteTxt}>The thread I'm inside right now — a dated log, not a finished write-up. Updated {CURRENT_TRACK.updated}.</p>}>
+          <SecTitle>Current Track</SecTitle>
+          <Rv>
+            <div style={{ display: "flex", alignItems: "baseline", gap: 10, flexWrap: "wrap", marginBottom: 6 }}>
+              <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+                <span style={{ width: 7, height: 7, borderRadius: "50%", background: P.green, boxShadow: `0 0 0 3px ${P.accentSoft}` }} />
+                <span style={{ ...MONO, fontSize: "0.6rem", textTransform: "uppercase", letterSpacing: "0.12em", color: P.green }}>active</span>
+              </span>
+              <span style={{ ...MONO, fontSize: "0.62rem", color: P.sub }}>started {CURRENT_TRACK.started} · {CURRENT_TRACK.stage}</span>
+            </div>
+            <h3 style={{ ...DISP, fontWeight: 600, fontSize: "clamp(1.15rem,3vw,1.4rem)", color: P.ink, lineHeight: 1.2, marginBottom: 10 }}>{CURRENT_TRACK.title}</h3>
+          </Rv>
+          <Rv delay={0.04}>
+            <div style={{ borderLeft: `2px solid ${P.accent}`, paddingLeft: "0.85rem", margin: "0 0 1.1rem" }}>
+              <div style={{ ...MONO, fontSize: "0.56rem", color: P.sub, textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 4 }}>the question</div>
+              <p style={{ ...BODY, fontSize: "0.96rem", lineHeight: 1.75, color: P.ink, textWrap: "pretty" }}>{CURRENT_TRACK.question}</p>
+            </div>
+          </Rv>
+          <Rv delay={0.06}>
+            <p style={{ ...BODY, fontSize: "0.92rem", lineHeight: 1.74, color: P.sub, marginBottom: "0.8rem", textWrap: "pretty" }}>{CURRENT_TRACK.premise}</p>
+          </Rv>
+          <Rv delay={0.08}>
+            <p style={{ ...BODY, fontSize: "0.9rem", lineHeight: 1.7, color: P.ink, marginBottom: "1.5rem", background: P.faint, borderLeft: `2px solid ${P.line}`, padding: "0.7rem 0.9rem", textWrap: "pretty" }}>
+              <span style={{ ...MONO, fontSize: "0.56rem", color: P.sub, textTransform: "uppercase", letterSpacing: "0.1em", display: "block", marginBottom: 4 }}>the shared spine</span>
+              {CURRENT_TRACK.spine}
+            </p>
+          </Rv>
+
+          {/* The reading arc as a progress spine */}
+          <Rv delay={0.1}>
+            <div style={{ ...MONO, fontSize: "0.62rem", color: P.sub, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: "0.9rem" }}>The arc — read → reproduce → build</div>
+          </Rv>
+          <div style={{ position: "relative" }}>
+            {CURRENT_TRACK.arc.map((a, i) => {
+              const done = a.status === "done", active = a.status === "active";
+              const dot = done ? P.green : active ? P.accent : P.line;
+              const glyph = done ? "✓" : active ? "▸" : "○";
+              return (
+                <Rv key={a.paper} delay={0.12 + i * 0.05}>
+                  <div style={{ display: "grid", gridTemplateColumns: "1.6rem 1fr", gap: "0.7rem", position: "relative", paddingBottom: i < CURRENT_TRACK.arc.length - 1 ? "1.3rem" : 0 }}>
+                    {i < CURRENT_TRACK.arc.length - 1 && (
+                      <span style={{ position: "absolute", left: "0.75rem", top: "1.4rem", bottom: 0, width: 1, background: P.line }} />
+                    )}
+                    <div style={{ ...MONO, fontSize: "0.9rem", color: dot, textAlign: "center", lineHeight: 1.5, zIndex: 1, background: P.paper }}>{glyph}</div>
+                    <div style={{ opacity: a.status === "queued" ? 0.72 : 1 }}>
+                      <div style={{ display: "flex", alignItems: "baseline", gap: 8, flexWrap: "wrap" }}>
+                        <span style={{ ...DISP, fontWeight: 600, fontSize: "0.98rem", color: P.ink }}>{a.paper}</span>
+                        {a.year !== "—" && <span style={{ ...MONO, fontSize: "0.62rem", color: P.sub }}>{a.authors}, {a.year}</span>}
+                      </div>
+                      <div style={{ ...MONO, fontSize: "0.58rem", color: dot, textTransform: "uppercase", letterSpacing: "0.08em", margin: "3px 0 6px" }}>{a.label}</div>
+                      <p style={{ ...BODY, fontSize: "0.88rem", lineHeight: 1.72, color: P.sub, textWrap: "pretty" }}>{a.takeaway}</p>
+                      {a.progress && (
+                        <p style={{ ...MONO, fontSize: "0.7rem", lineHeight: 1.65, color: P.ink, margin: "8px 0 0", paddingLeft: 8, borderLeft: `2px solid ${P.accent}66` }}>{a.progress}</p>
+                      )}
+                    </div>
+                  </div>
+                </Rv>
+              );
+            })}
+          </div>
+
+          {/* Reproductions + link back to VoxSight */}
+          <Rv delay={0.28}>
+            <div style={{ marginTop: "1.6rem", borderTop: `2px solid ${P.ink}`, paddingTop: "1rem" }}>
+              <div style={{ ...MONO, fontSize: "0.62rem", color: P.sub, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: "0.7rem" }}>Reproductions in flight</div>
+              {CURRENT_TRACK.reproductions.map((r) => (
+                <div key={r.name} style={{ display: "flex", gap: "0.7rem", alignItems: "baseline", borderTop: `1px solid ${P.faint}`, padding: "0.55rem 0" }}>
+                  <span style={{ ...MONO, fontSize: "0.56rem", color: r.state === "in progress" ? P.accent : P.green, border: `1px solid ${r.state === "in progress" ? P.accent : P.green}55`, padding: "1px 6px", flexShrink: 0, textTransform: "uppercase", letterSpacing: "0.06em" }}>{r.state}</span>
+                  <div>
+                    <div style={{ ...BODY, fontSize: "0.9rem", color: P.ink, fontWeight: 600 }}>{r.name}</div>
+                    <div style={{ ...MONO, fontSize: "0.66rem", color: P.sub, lineHeight: 1.55, marginTop: 2 }}>{r.detail}</div>
+                  </div>
+                </div>
+              ))}
+              <p style={{ ...BODY, fontSize: "0.84rem", color: P.sub, lineHeight: 1.65, marginTop: "0.9rem", fontStyle: "italic" }}>
+                The thread traces back to <button onClick={() => { const vp = ORDERED_PROJECTS.find(p => p.id === CURRENT_TRACK.origin); if (vp) setOpenProject(vp); }} style={{ ...MONO, fontSize: "0.82em", color: P.accent, background: "transparent", border: "none", padding: 0, cursor: "pointer", textDecoration: "underline", textUnderlineOffset: 3, fontStyle: "normal" }}>VoxSight</button> — the accessibility co-pilot that could see but not remember. This is the reading it set off.
+              </p>
+              <div style={{ display: "flex", gap: 5, flexWrap: "wrap", marginTop: "1rem" }}>{CURRENT_TRACK.tags.map(t => <span key={t} style={chip}>{t}</span>)}</div>
+            </div>
+          </Rv>
+        </Section>
+
+        {/* ═══ 3 · SELECTED WORK ═══ */}
+        <Section id="Work" num="3">
           <SecTitle>Selected Work</SecTitle>
           <Rv><p style={{ ...BODY, fontSize: "0.95rem", lineHeight: 1.75, color: P.sub, marginBottom: "1.4rem", maxWidth: 600 }}>Each entry opens as a short case study — abstract, method, results.</p></Rv>
           <div className="worklist">
@@ -260,15 +343,15 @@ export default function App() {
           </div>
         </Section>
 
-        {/* ═══ 3 · FINDINGS (interactive figure explorer) ═══ */}
-        <Section id="Findings" num="3" note={<p style={noteTxt}>For the visiting researcher — step through the figures and the observation each one carries.</p>}>
+        {/* ═══ 4 · FINDINGS (interactive figure explorer) ═══ */}
+        <Section id="Findings" num="4" note={<p style={noteTxt}>For the visiting researcher — step through the figures and the observation each one carries.</p>}>
           <SecTitle>Findings &amp; Figures</SecTitle>
           <Rv><p style={{ ...BODY, fontSize: "0.95rem", lineHeight: 1.75, color: P.sub, marginBottom: "1.4rem", maxWidth: 600 }}>Real plots from the work, annotated. Click through, or pick a thumbnail — from the thesis's fidelity-vs-accuracy crossing to the non-saturating GAN trick.</p></Rv>
           <Rv delay={0.06}><InsightsViewer items={INSIGHTS} /></Rv>
         </Section>
 
-        {/* ═══ 4 · ARCHITECTURES (interactive walkthroughs) ═══ */}
-        <Section id="Architectures" num="4" note={<p style={noteTxt}>Learning in public — each architecture I study, rebuilt as an interactive sketch. Step through it; turn the knobs.</p>}>
+        {/* ═══ 5 · ARCHITECTURES (interactive walkthroughs) ═══ */}
+        <Section id="Architectures" num="5" note={<p style={noteTxt}>Learning in public — each architecture I study, rebuilt as an interactive sketch. Step through it; turn the knobs.</p>}>
           <SecTitle>Architectures, Visualised</SecTitle>
           <Rv><p style={{ ...BODY, fontSize: "0.95rem", lineHeight: 1.75, color: P.sub, marginBottom: "1.4rem", maxWidth: 600 }}>How a model actually <i>sees</i> — each idea I study, rebuilt as an interactive sketch you can step through. Start with the Vision Transformer: how one image becomes the sequence of tokens a transformer can attend over. Toggle the patch size and walk the pipeline end to end.</p></Rv>
           <Rv delay={0.06}>
@@ -313,8 +396,8 @@ export default function App() {
           </Rv>
         </Section>
 
-        {/* ═══ 5 · READING & REPRODUCTIONS (references) ═══ */}
-        <Section id="Reading" num="5" note={<p style={noteTxt}>The <a href={TIL_REPO} target="_blank" rel="noopener noreferrer" className="body-link">til</a> journal — papers read in my own words, with notebooks where the idea needs to be felt.</p>}>
+        {/* ═══ 6 · READING & REPRODUCTIONS (references) ═══ */}
+        <Section id="Reading" num="6" note={<p style={noteTxt}>The <a href={TIL_REPO} target="_blank" rel="noopener noreferrer" className="body-link">til</a> journal — papers read in my own words, with notebooks where the idea needs to be felt.</p>}>
           <SecTitle>Reading &amp; Reproductions</SecTitle>
           <div style={{ display: "flex", flexDirection: "column", gap: "1.2rem" }}>
             {foundationalReading.map((r, i) => (
@@ -368,8 +451,8 @@ export default function App() {
           </Rv>
         </Section>
 
-        {/* ═══ 6 · FOUNDATIONS ═══ */}
-        <Section id="Foundations" num="6" note={<p style={noteTxt}>Not to reinvent the framework — to understand the mechanics it hides.</p>}>
+        {/* ═══ 7 · FOUNDATIONS ═══ */}
+        <Section id="Foundations" num="7" note={<p style={noteTxt}>Not to reinvent the framework — to understand the mechanics it hides.</p>}>
           <SecTitle>Foundations, From Scratch</SecTitle>
           <div>
             {FROM_SCRATCH.map((f, i) => (
@@ -391,8 +474,8 @@ export default function App() {
           </div>
         </Section>
 
-        {/* ═══ 6 · METHODS ═══ */}
-        <Section id="Methods" num="7">
+        {/* ═══ 8 · METHODS ═══ */}
+        <Section id="Methods" num="8">
           <SecTitle>Methods &amp; Tools</SecTitle>
           <div>
             {METHODS.map((m, i) => (
@@ -419,8 +502,8 @@ export default function App() {
           </Rv>
         </Section>
 
-        {/* ═══ 7 · ABOUT ═══ */}
-        <Section id="About" num="8">
+        {/* ═══ 9 · ABOUT ═══ */}
+        <Section id="About" num="9">
           <SecTitle>About</SecTitle>
           <Rv>
             <div style={{ display: "flex", gap: "1.3rem", alignItems: "flex-start", marginBottom: "1.4rem", flexWrap: "wrap" }}>
