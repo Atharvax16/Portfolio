@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from "react";
-import { P, GALLERY_PHOTOS } from "./data.js";
+import { P, GALLERY_PHOTOS, ARCHITECTURES, LIVE_ARCHITECTURES } from "./data.js";
 
 /* Type tokens */
 const DISP = { fontFamily: "'Spectral',Georgia,serif" };
@@ -455,6 +455,161 @@ export function SketchDCT() {
       {/* ── bottom: the takeaway line ── */}
       <text x={220} y={ry + s + 38} textAnchor="middle" style={{ fontFamily: "'IBM Plex Mono',monospace" }} fontSize="9.5" fill={P.ink}>real, energy-compacting basis → up-sampling grid stands out</text>
     </svg>
+  );
+}
+
+/* ════════════════════════════════════════
+   LAB GATEWAY — the door on the paper's §5.
+   The walkthroughs used to sit inline here and ran to most of a screen each.
+   They live in the Lab (#/lab) now; what stays behind is a display case that
+   rotates through what's inside, so the section reads as an invitation
+   rather than a wall. Each name deep-links straight to its own bench.
+   ════════════════════════════════════════ */
+const GLYPHS = {
+  /* One 40×40 mark per architecture — the idea at a glance, in the same
+     hand as the sketches inside. */
+  vit: (c) => (
+    <g stroke={c} strokeWidth="1.3" fill="none">
+      <rect x="6" y="6" width="28" height="28" />
+      <line x1="15.3" y1="6" x2="15.3" y2="34" /><line x1="24.6" y1="6" x2="24.6" y2="34" />
+      <line x1="6" y1="15.3" x2="34" y2="15.3" /><line x1="6" y1="24.6" x2="34" y2="24.6" />
+      <rect x="24.6" y="6" width="9.4" height="9.3" fill={c} fillOpacity="0.3" stroke="none" />
+    </g>
+  ),
+  cnn: (c) => (
+    <g stroke={c} strokeWidth="1.3" fill="none">
+      <rect x="4" y="8" width="22" height="22" />
+      <rect x="9" y="13" width="8" height="8" fill={c} fillOpacity="0.28" />
+      <path d="M27 19 L33 19" /><path d="M30 16 L33 19 L30 22" />
+      <rect x="30" y="14" width="6" height="10" fillOpacity="0" />
+    </g>
+  ),
+  dinov2: (c) => (
+    <g stroke={c} strokeWidth="1.3" fill="none">
+      <circle cx="12" cy="14" r="7" /><circle cx="28" cy="26" r="7" fill={c} fillOpacity="0.22" />
+      <path d="M18 18 Q24 20 23 21" strokeDasharray="2.5 2.5" />
+      <path d="M21 22 L23 21 L22.5 18.6" />
+    </g>
+  ),
+  steervit: (c) => (
+    <g stroke={c} strokeWidth="1.3" fill="none">
+      <rect x="13" y="6" width="14" height="8" /><rect x="13" y="16" width="14" height="8" fill={c} fillOpacity="0.25" />
+      <rect x="13" y="26" width="14" height="8" />
+      <path d="M4 20 L11 20" /><path d="M8 17 L11 20 L8 23" />
+    </g>
+  ),
+  detection: (c) => (
+    <g stroke={c} strokeWidth="1.3" fill="none">
+      <path d="M4 26 Q9 14 13 22 T22 20 T33 25" />
+      <circle cx="24" cy="14" r="7.5" fill={c} fillOpacity="0.12" />
+      <path d="M29.4 19.4 L35 25" strokeWidth="1.8" />
+    </g>
+  ),
+};
+
+function ArchGlyph({ k, color, size = 40 }) {
+  const draw = GLYPHS[k];
+  return (
+    <svg viewBox="0 0 40 40" width={size} height={size} aria-hidden="true" style={{ display: "block", flexShrink: 0 }}>
+      <defs><RoughDefs id={`rgh-g-${k}`} scale={0.7} seed={11} /></defs>
+      <g filter={`url(#rgh-g-${k})`}>{draw ? draw(color) : null}</g>
+    </svg>
+  );
+}
+
+export function LabGateway() {
+  const live = LIVE_ARCHITECTURES;
+  const planned = ARCHITECTURES.filter((a) => a.status === "planned");
+  const [i, setI] = useState(0);
+  const [hover, setHover] = useState(false);
+
+  /* The case rotates on its own so a passing eye catches movement — but it
+     holds still on hover (you're reading it) and for reduced-motion users. */
+  useEffect(() => {
+    if (hover) return;
+    if (window.matchMedia?.("(prefers-reduced-motion: reduce)").matches) return;
+    const t = setInterval(() => setI((n) => (n + 1) % live.length), 3200);
+    return () => clearInterval(t);
+  }, [hover, live.length]);
+
+  const cur = live[i];
+
+  return (
+    <>
+      <style>{`
+        .gate{display:block;width:100%;text-align:left;cursor:pointer;background:${P.paper2};
+          border:1px solid ${P.line};border-top:2px solid ${P.ink};padding:0;
+          transition:transform .18s ease,box-shadow .18s ease}
+        .gate:hover{transform:translateY(-2px);box-shadow:4px 4px 0 ${P.line}}
+        .gate:hover .gate-cta{gap:12px}
+        .gate-cta{display:inline-flex;align-items:center;gap:7px;transition:gap .18s ease}
+        .gate-names{display:flex;flex-wrap:wrap;gap:5px}
+        .gate-name{background:transparent;border:1px solid ${P.line};cursor:pointer;
+          padding:3px 9px;transition:border-color .15s,color .15s,background .15s}
+        .gate-name:hover{border-color:${P.accent};color:${P.accent};background:${P.accentSoft}}
+        @keyframes gatePulse{0%,100%{opacity:.35}50%{opacity:1}}
+        .gate-live{animation:gatePulse 2.4s ease-in-out infinite}
+        @media(prefers-reduced-motion:reduce){.gate,.gate-cta,.gate-live{transition:none;animation:none}}
+      `}</style>
+
+      <div
+        className="gate"
+        role="link"
+        tabIndex={0}
+        onMouseEnter={() => setHover(true)}
+        onMouseLeave={() => setHover(false)}
+        onClick={() => { window.location.hash = `#/lab/${cur.key}`; }}
+        onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); window.location.hash = `#/lab/${cur.key}`; } }}
+        aria-label={`Enter the Architecture Lab — ${live.length} interactive walkthroughs`}
+      >
+        {/* the case window — one architecture at a time */}
+        <div style={{ display: "flex", alignItems: "center", gap: "1rem", padding: "1.1rem 1.2rem", borderBottom: `1px solid ${P.faint}`, minHeight: 96 }}>
+          <ArchGlyph k={cur.key} color={P.accent} size={46} />
+          <div style={{ minWidth: 0, flex: 1 }}>
+            <div style={{ ...MONO, fontSize: "0.55rem", textTransform: "uppercase", letterSpacing: "0.13em", color: P.sub, marginBottom: 3 }}>{cur.family}</div>
+            <div style={{ ...DISP, fontWeight: 600, fontSize: "1.12rem", color: P.ink, lineHeight: 1.2 }}>{cur.name}</div>
+            <div style={{ ...MONO, fontSize: "0.63rem", color: P.accent, marginTop: 4, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{cur.steps}</div>
+          </div>
+          {/* which slide of the case we're on */}
+          <div style={{ display: "flex", flexDirection: "column", gap: 4, flexShrink: 0 }}>
+            {live.map((a, j) => (
+              <span key={a.key} style={{ width: 5, height: 5, borderRadius: "50%", background: j === i ? P.accent : P.line }} />
+            ))}
+          </div>
+        </div>
+
+        <div style={{ padding: "0.85rem 1.2rem 1rem", display: "flex", justifyContent: "space-between", alignItems: "center", gap: "1rem", flexWrap: "wrap" }}>
+          <span style={{ ...MONO, fontSize: "0.62rem", color: P.sub, display: "inline-flex", alignItems: "center", gap: 6 }}>
+            <span className="gate-live" style={{ width: 6, height: 6, borderRadius: "50%", background: P.green }} />
+            {live.length} interactive walkthroughs · {planned.length} on the bench
+          </span>
+          <span className="gate-cta" style={{ ...MONO, fontSize: "0.76rem", color: P.accent, borderBottom: `1.5px solid ${P.accent}`, paddingBottom: 1 }}>
+            Enter the Lab <span aria-hidden="true">→</span>
+          </span>
+        </div>
+      </div>
+
+      {/* jump straight to any bench, without waiting for the case to come round */}
+      <div style={{ marginTop: "0.9rem" }}>
+        <div className="gate-names">
+          {live.map((a, j) => (
+            <button
+              key={a.key}
+              className="gate-name"
+              onMouseEnter={() => { setHover(true); setI(j); }}
+              onMouseLeave={() => setHover(false)}
+              onClick={() => { window.location.hash = `#/lab/${a.key}`; }}
+              style={{ ...MONO, fontSize: "0.66rem", color: j === i ? P.accent : P.sub, borderColor: j === i ? P.accent : P.line }}
+            >
+              {a.short}
+            </button>
+          ))}
+        </div>
+        <div style={{ ...MONO, fontSize: "0.6rem", color: P.sub, marginTop: 9, lineHeight: 1.7 }}>
+          <span style={{ color: P.ink }}>on the bench —</span> {planned.map((a) => a.short).join(" · ")}
+        </div>
+      </div>
+    </>
   );
 }
 

@@ -1,9 +1,9 @@
 import { useState, useEffect } from "react";
 import {
   P, SECS, PAPER, RESEARCH_AREAS, READING_LOG, TIL_REPO, FROM_SCRATCH,
-  METHODS, JOURNEY, ORDERED_PROJECTS, INSIGHTS, ARCHITECTURES, CURRENT_TRACK,
+  METHODS, JOURNEY, ORDERED_PROJECTS, INSIGHTS, CURRENT_TRACK,
 } from "./data.js";
-import { Rv, Radar, PhotoGallery, MatrixOverlay, ResearchModal, SketchFidelityAccuracy, SketchResearcherFrontier, SketchMolecule, SketchAttention, SketchFFT, SketchSpectral, SketchDCT, InsightsViewer, VitWalkthrough, CnnWalkthrough, DetectionParadigms, Dinov2Walkthrough, SteerVitWalkthrough } from "./ui.jsx";
+import { Rv, Radar, PhotoGallery, MatrixOverlay, ResearchModal, SketchFidelityAccuracy, SketchResearcherFrontier, SketchMolecule, SketchAttention, SketchFFT, SketchSpectral, SketchDCT, InsightsViewer, LabGateway } from "./ui.jsx";
 
 /* Type tokens */
 const DISP = { fontFamily: "'Spectral',Georgia,serif" };
@@ -357,50 +357,14 @@ export default function App() {
           <Rv delay={0.06}><InsightsViewer items={INSIGHTS} /></Rv>
         </Section>
 
-        {/* ═══ 5 · ARCHITECTURES (interactive walkthroughs) ═══ */}
-        <Section id="Architectures" num="5" note={<p style={noteTxt}>Learning in public — each architecture I study, rebuilt as an interactive sketch. Step through it; turn the knobs.</p>}>
+        {/* ═══ 5 · ARCHITECTURES (the door to the Lab) ═══
+            The walkthroughs themselves live at #/lab now — five full-height
+            interactive sketches were swallowing the paper. What's left here is
+            the invitation; LabGateway rotates through what's inside. */}
+        <Section id="Architectures" num="5" note={<p style={noteTxt}>Learning in public — each architecture I study, rebuilt as an interactive sketch. This one opens into its own room.</p>}>
           <SecTitle>Architectures, Visualised</SecTitle>
-          <Rv><p style={{ ...BODY, fontSize: "0.95rem", lineHeight: 1.75, color: P.sub, marginBottom: "1.4rem", maxWidth: 600 }}>How a model actually <i>sees</i> — each idea I study, rebuilt as an interactive sketch you can step through. Start with the Vision Transformer: how one image becomes the sequence of tokens a transformer can attend over. Toggle the patch size and walk the pipeline end to end.</p></Rv>
-          <Rv delay={0.06}>
-            <div style={{ ...MONO, fontSize: "0.62rem", color: P.sub, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 10 }}>Vision Transformer · patchify → embedding</div>
-            <VitWalkthrough />
-          </Rv>
-          <Rv delay={0.08}>
-            <div style={{ borderTop: `1px solid ${P.line}`, margin: "1.8rem 0 1.2rem", paddingTop: "1.4rem" }}>
-              <p style={{ ...BODY, fontSize: "0.95rem", lineHeight: 1.75, color: P.sub, marginBottom: "1.2rem", maxWidth: 600 }}>Then the <b style={DISP}>CNN</b> — the workhorse I keep circling back to brush up on. Convolution, activation and pooling funnel an image down into features; then a transposed convolution climbs back up by <i>inserting zeros</i> between samples — and that's the exact step the <b style={DISP}>Watch Your Up-Convolution</b> paper turns into an AI-image detector. Step down the encoder, then back up.</p>
-              <div style={{ ...MONO, fontSize: "0.62rem", color: P.sub, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 10 }}>Convolutional Neural Network · convolve → pool → receptive field → transpose ↑</div>
-              <CnnWalkthrough />
-            </div>
-          </Rv>
-          <Rv delay={0.1}>
-            <div style={{ borderTop: `1px solid ${P.line}`, margin: "1.8rem 0 1.2rem", paddingTop: "1.4rem" }}>
-              <p style={{ ...BODY, fontSize: "0.95rem", lineHeight: 1.75, color: P.sub, marginBottom: "1.2rem", maxWidth: 600 }}>And the question behind my <b style={DISP}>generative-image forensics</b> work: an AI image and a real photo can look identical, yet differ in their <i>statistics</i>. Reading round the literature, I rebuilt six detection paradigms as one sketch — each a different lens on that hidden difference. Step through them.</p>
-              <div style={{ ...MONO, fontSize: "0.62rem", color: P.sub, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 10 }}>Detecting AI images · six lenses on a fake</div>
-              <DetectionParadigms />
-            </div>
-          </Rv>
-          <Rv delay={0.12}>
-            <div style={{ borderTop: `1px solid ${P.line}`, margin: "1.8rem 0 1.2rem", paddingTop: "1.4rem" }}>
-              <p style={{ ...BODY, fontSize: "0.95rem", lineHeight: 1.75, color: P.sub, marginBottom: "1.2rem", maxWidth: 600 }}>One route I leaned on in that forensics work flips the usual recipe: instead of <i>training</i> a detector, borrow a backbone that already learned what images look like — with <b>no labels at all</b> — then let a small ML head do the deciding. That's <b style={DISP}>DINOv2</b>: self-supervised representation learning via a student–teacher game, with <b style={DISP}>XGBoost</b> (or a tiny MLP) on top of the frozen embedding. Step from the label-free pre-training through to the classifier.</p>
-              <div style={{ ...MONO, fontSize: "0.62rem", color: P.sub, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 10 }}>DINOv2 + ML head · self-supervised → frozen embedding → XGBoost / MLP</div>
-              <Dinov2Walkthrough />
-            </div>
-          </Rv>
-          <Rv delay={0.13}>
-            <div style={{ borderTop: `1px solid ${P.line}`, margin: "1.8rem 0 1.2rem", paddingTop: "1.4rem" }}>
-              <p style={{ ...BODY, fontSize: "0.95rem", lineHeight: 1.75, color: P.sub, marginBottom: "1.2rem", maxWidth: 600 }}>That frozen embedding has a blind spot I kept running into: it commits to whatever is <i>salient</i>, and there's no handle to say <i>“no — the odd one, in the corner.”</i> <b style={DISP}>SteerViT</b> fixes it by cross-attending the text <i>inside</i> the ViT's blocks rather than scoring against it afterwards, behind a gate that starts at exactly zero. I rebuilt the mechanism at small scale to see if the steering was real — and the sketch ends on the sanity check that says it wasn't, at my scale. Step through it, and try the prompts.</p>
-              <div style={{ ...MONO, fontSize: "0.62rem", color: P.sub, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 10 }}>SteerViT · gated cross-attention → steering a frozen backbone by prompt</div>
-              <SteerVitWalkthrough />
-            </div>
-          </Rv>
-          <Rv delay={0.14}>
-            <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center", marginTop: "1.5rem", borderTop: `1px solid ${P.line}`, paddingTop: "1rem" }}>
-              <span style={{ ...MONO, fontSize: "0.62rem", color: P.sub }}>next in the series:</span>
-              {ARCHITECTURES.filter(a => a.status !== "live").map(a => (
-                <span key={a.key} style={{ ...MONO, fontSize: "0.66rem", color: P.sub, border: `1px dashed ${P.line}`, padding: "4px 10px", background: P.paper2 }}>{a.name} · {a.note} <span style={{ color: P.accent }}>soon</span></span>
-              ))}
-            </div>
-          </Rv>
+          <Rv><p style={{ ...BODY, fontSize: "0.95rem", lineHeight: 1.75, color: P.sub, marginBottom: "1.4rem", maxWidth: 600 }}>How a model actually <i>sees</i>. Every architecture I study gets rebuilt as a hand-drawn sketch you can step through and turn the knobs on — patch size, kernel size, the prompt you steer with. They outgrew this page, so they have their own: <b style={DISP}>the Architecture Lab</b>, where nothing lives but the mechanisms.</p></Rv>
+          <Rv delay={0.06}><LabGateway /></Rv>
         </Section>
 
         {/* ═══ 6 · READING & REPRODUCTIONS (references) ═══ */}

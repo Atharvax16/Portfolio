@@ -628,17 +628,92 @@ export const INSIGHTS = [
 ];
 
 /* ════════════════════════════════════════
-   ARCHITECTURES — interactive walkthroughs, "learning in public".
-   Each entry I study gets rebuilt as a hand-drawn, steppable sketch.
-   ViT is live; the rest are placeholders that surface as "coming next".
+   ARCHITECTURES — the Lab's registry, "learning in public".
+   Each entry I study gets rebuilt as a hand-drawn, steppable sketch, and
+   the Lab (#/lab) is the room where they all live.
+
+   status "live"    → has a real sketch; `component` names the export in ui.jsx
+                      and the entry is routable at #/lab/<key>.
+   status "planned" → a slot on the roadmap. Shown in the rail, deliberately
+                      NOT clickable — an empty room is worse than an honest gap.
+
+   `family` groups the rail; `intro` is the copy that sits above the sketch
+   (it moved here out of App.jsx when the Lab took over from the inline section).
    ════════════════════════════════════════ */
 export const ARCHITECTURES = [
-  { key: "vit", name: "Vision Transformer", status: "live", note: "patchify → embedding" },
-  { key: "cnn", name: "CNN", status: "live", note: "convolution · pooling · receptive field" },
-  { key: "dinov2", name: "DINOv2 + ML head", status: "live", note: "self-supervised → frozen embedding → XGBoost/MLP" },
-  { key: "steervit", name: "SteerViT", status: "live", note: "gated cross-attention · steering a frozen backbone by prompt" },
-  { key: "encdec", name: "Encoder–Decoder", status: "coming", note: "seq-to-seq · cross-attention" },
+  {
+    key: "vit", name: "Vision Transformer", short: "ViT", family: "Vision backbones",
+    status: "live", component: "VitWalkthrough", year: 2020,
+    note: "patchify → embedding",
+    steps: "image → patchify → flatten → project → +CLS/pos",
+    intro: "How a model actually *sees*. Start here: how one image becomes the sequence of tokens a transformer can attend over. Toggle the patch size and walk the pipeline end to end.",
+  },
+  {
+    key: "cnn", name: "Convolutional Neural Network", short: "CNN", family: "Vision backbones",
+    status: "live", component: "CnnWalkthrough", year: 1998,
+    note: "convolve · pool · receptive field · transpose ↑",
+    steps: "image → convolve → activate → pool → receptive field → transpose ↑",
+    intro: "The workhorse I keep circling back to brush up on. Convolution, activation and pooling funnel an image down into features; then a transposed convolution climbs back up by *inserting zeros* between samples — and that's the exact step the **Watch Your Up-Convolution** paper turns into an AI-image detector.",
+  },
+  {
+    key: "dinov2", name: "DINOv2 + ML head", short: "DINOv2", family: "Self-supervised",
+    status: "live", component: "Dinov2Walkthrough", year: 2023,
+    note: "self-supervised → frozen embedding → XGBoost / MLP",
+    steps: "student–teacher → EMA → frozen embedding → classifier head",
+    intro: "Instead of *training* a detector, borrow a backbone that already learned what images look like — with **no labels at all** — then let a small ML head do the deciding. Student–teacher self-supervision, with XGBoost (or a tiny MLP) on top of the frozen embedding.",
+  },
+  {
+    key: "steervit", name: "SteerViT", short: "SteerViT", family: "Multimodal",
+    status: "live", component: "SteerVitWalkthrough", year: 2025,
+    note: "gated cross-attention · steering a frozen backbone by prompt",
+    steps: "frozen ViT → gated cross-attention → prompt-steered features → the sanity check",
+    intro: "A frozen embedding commits to whatever is *salient* — there's no handle to say “no — the odd one, in the corner.” SteerViT cross-attends the text **inside** the ViT's blocks rather than scoring against it afterwards, behind a gate that starts at exactly zero. I rebuilt it at small scale, and the sketch ends on the sanity check that says the steering wasn't real at my scale.",
+  },
+  {
+    key: "detection", name: "Detecting AI Images", short: "AI-image forensics", family: "Generative & forensics",
+    status: "live", component: "DetectionParadigms", year: 2024,
+    note: "six lenses on a fake",
+    steps: "FFT · ELA · up-convolution · CLIP · DINOv2 · learned artifacts",
+    intro: "An AI image and a real photo can look identical, yet differ in their *statistics*. Reading round the literature, I rebuilt six detection paradigms as one sketch — each a different lens on that hidden difference.",
+  },
+
+  /* ── the roadmap: slots, not empty rooms ── */
+  {
+    key: "jepa", name: "JEPA", short: "JEPA", family: "Self-supervised",
+    status: "planned", note: "predict in latent space, not pixels",
+  },
+  {
+    key: "embed", name: "Embedding Space", short: "Embedding space", family: "Self-supervised",
+    status: "planned", note: "an interactive projector — what the model's map looks like",
+  },
+  {
+    key: "vlm", name: "Vision-Language Model", short: "VLM", family: "Multimodal",
+    status: "planned", note: "vision encoder → projector → LM",
+  },
+  {
+    key: "ntm", name: "Neural Turing Machine", short: "NTM", family: "Memory & retrieval",
+    status: "planned", note: "content + location addressing · read/write heads",
+  },
+  {
+    key: "rag", name: "Retrieval-Augmented Generation", short: "RAG", family: "Memory & retrieval",
+    status: "planned", note: "retrieve → ground → generate",
+  },
+  {
+    key: "encdec", name: "Encoder–Decoder", short: "Encoder–Decoder", family: "Sequence",
+    status: "planned", note: "seq-to-seq · cross-attention",
+  },
+  {
+    key: "diffusion", name: "Diffusion", short: "Diffusion", family: "Generative & forensics",
+    status: "planned", note: "forward noise → learned reversal (DDPM · Cold Diffusion)",
+  },
 ];
+
+/* Rail order. Anything whose family isn't listed falls to the end. */
+export const ARCH_FAMILIES = [
+  "Vision backbones", "Self-supervised", "Multimodal", "Memory & retrieval", "Sequence", "Generative & forensics",
+];
+
+export const LIVE_ARCHITECTURES = ARCHITECTURES.filter((a) => a.status === "live");
 
 export const GALLERY_PHOTOS = [
   { src: "images/etsy-presentation-room.jpeg", caption: "2nd Place, Etsy Research Leaderboard — presenting the generative-image detection work at Etsy's Dublin office", category: "milestone", span: "wide" },
