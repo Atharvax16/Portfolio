@@ -50,7 +50,7 @@ export const CURRENT_TRACK = {
   premise:
     "The working hypothesis is that this is a memory-architecture problem before it is a model problem. Rather than fine-tune a bigger VLM and hope recall emerges from scale, the track follows the differentiable-memory literature from its origin — reading each paper, then rebuilding the mechanism small enough to watch it work — on the bet that the right external, addressable, inspectable memory beats a larger set of weights for this task.",
   spine:
-    "One idea connects everything on the list: you cannot hard-pick one memory slot, because a hard pick has no gradient — so you softly blend several. NTM blends notebook rows; RAG blends Wikipedia passages. Same trick, different scale.",
+    "One idea connects everything on the list: you cannot hard-pick one memory slot, because a hard pick has no gradient — so you softly blend several. NTM blends notebook rows; RAG blends Wikipedia passages. Same trick, different scale. MemGPT then breaks the pattern in the useful direction — it gives up the gradient entirely and lets the model hard-pick at runtime by calling a function — and in doing so makes the premise underneath explicit: the bottleneck was never capacity, it was allocation.",
   arc: [
     {
       status: "done",
@@ -73,6 +73,17 @@ export const CURRENT_TRACK = {
         "Rebuilding it bottom-up in NumPy rather than calling a library — fingerprint vectors, dot-product vs cosine scoring, top-K search over a toy library, then softmax with a temperature knob to watch trust sharpen from near-uniform into a near-hard pick. Next: the blend step and a deliberate reproduction of retrieval collapse (Appendix H), where a retriever stops varying with the query and the whole system silently degrades to plain BART — the failure mode most likely to bite an episodic-memory build.",
     },
     {
+      status: "done",
+      paper: "MemGPT: Towards LLMs as Operating Systems",
+      authors: "Packer et al.",
+      year: "2023",
+      label: "read · notes written",
+      takeaway:
+        "The paper that reframed the problem for me. Everyone else answers “the context window is too small” with “make it bigger” — and that path is quadratically expensive and still doesn't work, because accuracy sags in the middle of a long window (Liu et al.'s U-shape). So MemGPT stops treating it as a capacity problem and treats it as an allocation one: context is RAM, a database is disk, and the model itself is the pager — it emits function calls that edit the very prompt it is reading from. Three mechanisms carry it: a soft memory-pressure warning at ~70% before a hard flush at 100%, a heartbeat flag that hands control back to the model instead of the user so it can chain multiple lookups, and errors fed back into context so a failed write can be recovered from. Nested key-value retrieval is where it shows: GPT-4 collapses to 0% at three levels of indirection, MemGPT stays flat.",
+      progress:
+        "Where it breaks is exactly where my own thread starts. The whole memory policy is prose in a system prompt — no learned eviction, no learned stopping rule, so the agent quietly gives up paging through results before it has exhausted the store, and swapping the base model moves accuracy from 66.9% to 93.4% with everything else held fixed. And every write is treated as equally authoritative: no source, no timestamp, no confidence, no record of what it overwrote. For a user who can't see, a confidently wrong memory is worse than an absent one — so provenance over episodic memory is the gap I'm aiming at, and it's orthogonal to the paging mechanism.",
+    },
+    {
       status: "queued",
       paper: "Toward an episodic-memory layer for VoxSight",
       authors: "the build this is all pointed at",
@@ -85,6 +96,7 @@ export const CURRENT_TRACK = {
   reproductions: [
     { name: "RAG — retriever & trust weighting", detail: "NumPy from scratch: fingerprints → dot-product / cosine scoring → top-K → temperature-softmax trust", state: "in progress" },
     { name: "NTM & RAG — study notes", detail: "The full walkthrough in my own words, with a worked end-to-end example", state: "written" },
+    { name: "MemGPT — study notes", detail: "The OS analogy pulled apart: paging, the pressure/flush split, heartbeat chaining — and where the missing provenance layer sits", state: "written" },
   ],
   tags: ["episodic memory", "retrieval", "vision-language agents", "differentiable memory"],
   origin: "voxsight",
@@ -205,6 +217,15 @@ export const READING_LOG = [
     area: "Image Forensics",
     takeaway: "I'd wondered if you could just 'reverse the GAN' — keep penalising the discriminator until it reliably beats the generator. But that is the detector's whole problem restated: a discriminator overfits to the generator it trained against, and the next generator lands off-distribution again. This paper makes the structural case — detectability tracks dataset complexity, not detector cleverness: simple scenes a generator learns perfectly and complex scenes that mask its slips both collapse the signal. The race is unwinnable by design, not for lack of tuning.",
     link: "https://arxiv.org/abs/2509.21135",
+    hasNotebook: false,
+  },
+  {
+    paper: "MemGPT: Towards LLMs as Operating Systems",
+    authors: "Packer et al.",
+    year: "2023",
+    area: "Memory & Retrieval",
+    takeaway: "The idea I keep exporting to other problems. Faced with a context window that's too small, the field's reflex is to buy a bigger one — but attention is quadratic, so 8k → 128k is 16× the tokens and 256× the compute, and you don't even get what you paid for, since accuracy sags in the middle of a long window. MemGPT takes the other road: keep the window fixed and small, and be deliberate about what occupies it right now. Context becomes RAM, a database becomes disk, and — the actual contribution — the model becomes its own pager, calling functions that rewrite the prompt it is currently reading. What makes it work isn't cleverness but plumbing: a soft pressure warning before the hard eviction, so there's a chance to save something first; a heartbeat flag so the model keeps the floor across a multi-hop lookup; and errors returned into context so a bad write can be retried rather than ending the run. The generalisation is the part that stays with me — virtual memory never argued for more RAM, it argued that a good allocation policy over a small fast tier serves a working set far larger than itself. Scale is one lever; allocation is the other, and it's the cheaper one almost everywhere. What MemGPT doesn't do is ask whether a memory can be trusted: every self-edit lands with no source, no timestamp, no confidence, and recursive summarisation compounds the error with no path back to the original observation. That gap is the one my current track (§2) is pointed at.",
+    link: "https://arxiv.org/abs/2310.08560",
     hasNotebook: false,
   },
   {
@@ -697,6 +718,10 @@ export const ARCHITECTURES = [
   {
     key: "rag", name: "Retrieval-Augmented Generation", short: "RAG", family: "Memory & retrieval",
     status: "planned", note: "retrieve → ground → generate",
+  },
+  {
+    key: "memgpt", name: "MemGPT — the LLM as its own pager", short: "MemGPT", family: "Memory & retrieval",
+    status: "planned", note: "context as RAM · pressure → flush · the model pages for itself",
   },
   {
     key: "encdec", name: "Encoder–Decoder", short: "Encoder–Decoder", family: "Sequence",
