@@ -118,21 +118,11 @@ export const RESEARCH_AREAS = [
     tags: ["AI-image detection", "CLIP", "representation learning"],
   },
   {
-    title: "Foundations, From Scratch",
-    blurb: "Reproducing the building blocks — RNNs and BPTT, transformers, GANs — in raw NumPy. Reading the original papers, then rebuilding them to understand the mechanics rather than calling an API.",
-    tags: ["transformers", "RNNs", "GANs", "NumPy"],
-  },
-  {
     title: "Episodic Memory for Vision-Language Agents",
     thesis: "VoxSight Recall — giving a vision-language agent a memory of its own past: written as it looks around, queried in natural language, inspectable after the fact.",
-    blurb: "My current thread (§2). VoxSight can describe what the camera sees now but forgets it the instant the turn ends — perception without memory. I'm following the differentiable-memory literature from Neural Turing Machines to retrieval-augmented generation, reading each paper then rebuilding the mechanism small enough to watch it work, on the bet that the right external, addressable, inspectable memory beats a larger set of weights for recall.",
+    blurb: "My current thread (§2). VoxSight can describe what the camera sees now but forgets it the instant the turn ends — perception without memory. I'm following the differentiable-memory literature from Neural Turing Machines through retrieval-augmented generation to MemGPT, reading each paper then rebuilding the mechanism small enough to watch it work, on the bet that the right external, addressable, inspectable memory beats a larger set of weights for recall.",
     tags: ["episodic memory", "retrieval", "vision-language agents", "differentiable memory"],
     active: true,
-  },
-  {
-    title: "Multi-Agent & Applied ML",
-    blurb: "Grounding LLM agents in deterministic ML so their decisions stay auditable — across treasury, compliance, and research-tracking tooling.",
-    tags: ["multi-agent", "LLM grounding", "RegTech"],
   },
 ];
 

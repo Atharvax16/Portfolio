@@ -211,7 +211,7 @@ export default function App() {
         {/* ═══ 1 · RESEARCH ═══ */}
         <Section id="Research" num="1">
           <SecTitle>Research</SecTitle>
-          <Rv><p style={{ ...BODY, fontSize: "0.95rem", lineHeight: 1.75, color: P.sub, marginBottom: "1.5rem", maxWidth: 600 }}>Four threads, one habit: read the source paper, reproduce it, then probe where it breaks.</p></Rv>
+          <Rv><p style={{ ...BODY, fontSize: "0.95rem", lineHeight: 1.75, color: P.sub, marginBottom: "1.5rem", maxWidth: 600 }}>Three threads, one habit: read the source paper, reproduce it, then probe where it breaks.</p></Rv>
           {RESEARCH_AREAS.map((a, i) => (
             <Rv key={a.title} delay={i * 0.05}>
               <div style={{ marginBottom: "1.5rem" }}>
