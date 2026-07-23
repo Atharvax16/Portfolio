@@ -681,6 +681,13 @@ export const ARCHITECTURES = [
     intro: "A frozen embedding commits to whatever is *salient* — there's no handle to say “no — the odd one, in the corner.” SteerViT cross-attends the text **inside** the ViT's blocks rather than scoring against it afterwards, behind a gate that starts at exactly zero. I rebuilt it at small scale, and the sketch ends on the sanity check that says the steering wasn't real at my scale.",
   },
   {
+    key: "rag", name: "Retrieval-Augmented Generation", short: "RAG", family: "Memory & retrieval",
+    status: "live", component: "RagWalkthrough", year: 2020,
+    note: "retrieve → ground → generate",
+    steps: "index → MIPS → concatenate → marginalise → the gradient that reaches the retriever",
+    intro: "Stop cramming knowledge into weights: bolt on a searchable index of *literal text*, retrieve into the prompt, and marginalise over what came back so the retriever trains by gradient descent **without a single labelled passage**. I rebuilt the whole system end to end on a laptop — 15,077 passages, both equations written from scratch, every number in this sketch measured rather than quoted. Including the one that went the wrong way.",
+  },
+  {
     key: "detection", name: "Detecting AI Images", short: "AI-image forensics", family: "Generative & forensics",
     status: "live", component: "DetectionParadigms", year: 2024,
     note: "six lenses on a fake",
@@ -704,10 +711,6 @@ export const ARCHITECTURES = [
   {
     key: "ntm", name: "Neural Turing Machine", short: "NTM", family: "Memory & retrieval",
     status: "planned", note: "content + location addressing · read/write heads",
-  },
-  {
-    key: "rag", name: "Retrieval-Augmented Generation", short: "RAG", family: "Memory & retrieval",
-    status: "planned", note: "retrieve → ground → generate",
   },
   {
     key: "memgpt", name: "MemGPT — the LLM as its own pager", short: "MemGPT", family: "Memory & retrieval",

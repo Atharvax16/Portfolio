@@ -498,6 +498,18 @@ const GLYPHS = {
       <path d="M4 20 L11 20" /><path d="M8 17 L11 20 L8 23" />
     </g>
   ),
+  rag: (c) => (
+    /* an index of passages, one of them pulled into the generator */
+    <g stroke={c} strokeWidth="1.3" fill="none">
+      <rect x="4" y="7" width="13" height="5" />
+      <rect x="4" y="14.5" width="13" height="5" fill={c} fillOpacity="0.3" />
+      <rect x="4" y="22" width="13" height="5" />
+      <rect x="4" y="29.5" width="13" height="5" />
+      <path d="M17 17 Q24 17 24 20" />
+      <path d="M21.5 14.6 L24.4 17.2 L21 18.4" />
+      <rect x="24" y="20" width="12" height="12" fill={c} fillOpacity="0.12" />
+    </g>
+  ),
   detection: (c) => (
     <g stroke={c} strokeWidth="1.3" fill="none">
       <path d="M4 26 Q9 14 13 22 T22 20 T33 25" />
@@ -1956,6 +1968,519 @@ export function SteerVitWalkthrough() {
 
       <div style={{ display: "flex", gap: 6, marginTop: 10, flexWrap: "wrap" }}>
         {STEERVIT_STEPS.map((s, j) => (
+          <button key={s.key} onClick={() => setStep(j)} style={{ ...SK, fontSize: "0.62rem", padding: "4px 9px", cursor: "pointer", border: `1px solid ${j === step ? P.accent : P.line}`, background: j === step ? P.accentSoft : "#fff", color: j === step ? P.accent : P.sub }}>{j + 1}. {s.label}</button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/* ════════════════════════════════════════
+   RAG — Lewis et al. 2020, rebuilt on a laptop (RAG_repro.ipynb).
+   Every number below is measured in that notebook, not quoted from the paper:
+   15,077-passage index, 96 SQuAD-dev questions asked open-domain, k=5.
+   ════════════════════════════════════════ */
+
+/* The demo retrieval, verbatim from §2 of the notebook. Kept as-is including
+   the fact that it is *bad* — a 15k index has nothing about Hemingway, and the
+   near-flat scores are the honest picture of what a tiny corpus does. */
+const RAG_TOPK = [
+  { score: 59.26, trust: 0.297, title: "John Kerry", text: "Kerry's commanding officer, Lieutenant Commander George Elliott…", says: "2018" },
+  { score: 59.18, trust: 0.275, title: "Queen (band)", text: "who had been nominated for Oscars for his screenplays The Queen…", says: "—" },
+  { score: 58.64, trust: 0.159, title: "The Blitz", text: "In recent years a large number of wartime recordings relating to…", says: "julius caesar" },
+  { score: 58.60, trust: 0.153, title: "Queen (band)", text: "The band, now revitalised by the response to Live Aid – a \"shot…", says: "—" },
+  { score: 58.32, trust: 0.116, title: "Queen (band)", text: "Queen contributed music directly to the films Flash Gordon (1980)…", says: "2018" },
+];
+
+/* §7 sweep. em/recall are RAG-Token over the full n=96 eval set. */
+const RAG_KSWEEP = [
+  { k: 1, em: 13.5, se: 3.5, rec: 26.0 },
+  { k: 2, em: 19.8, se: 4.1, rec: 36.5 },
+  { k: 5, em: 24.0, se: 4.4, rec: 50.0 },
+  { k: 10, em: 21.9, se: 4.2, rec: 61.5 },
+  { k: 20, em: 20.8, se: 4.1, rec: 70.8 },
+];
+
+/* §11 — 25 steps of end-to-end training on 8 questions, answer strings only. */
+const RAG_TRUST_CURVE = [
+  [0, 0.097], [5, 0.245], [10, 0.305], [15, 0.341], [20, 0.321], [25, 0.354],
+];
+
+const RAG_STEPS = [
+  {
+    key: "store", label: "the store",
+    title: "Knowledge that lives outside the weights",
+    body: "The paper's move is to stop cramming facts into parameters and keep them as literal text you can point at and edit. Wikipedia is cut into disjoint 100-word chunks, and each chunk is pushed once through a frozen BERT tower into a single 768-d vector. The paper does this for 21M passages; I did it for 15,077 and cached the result as a 46 MB array. The vectors are a catalogue, not the knowledge — d(z) tells you where the passage is, and the text itself is fetched afterwards.",
+    math: "d(z) = BERT_d(z) ∈ R^768   ·   D = 15,077 × 768   ·   46 MB on disk",
+  },
+  {
+    key: "retrieve", label: "retrieve",
+    title: "One dot product is the whole retriever",
+    body: "A second BERT tower encodes the question into the same 768-d space, and relevance is nothing but d(z)ᵀq(x). At 21M passages you need FAISS/HNSW to approximate the top-k; at 15k the exact thing is a 1×768 by 768×15077 matmul, sub-millisecond, which removes approximation error as a confound. Then softmax over the top-k turns unbounded reals into p_η(z|x) — the “trust” each passage gets. Look at the raw scores: 59.3 down to 58.3, nearly flat. Nobody assessed these passages; trust is vector-closeness pushed through exp.",
+    math: "p_η(z|x) = softmax( d(z)ᵀ q(x) )   ·   exact MIPS, no FAISS needed at 15k",
+  },
+  {
+    key: "prompt", label: "the prompt",
+    title: "The passage is glued on as a string",
+    body: "No fusion module, no cross-attention trick — §2.2 says “we simply concatenate.” The retrieved text is pasted in front of the question with the checkpoint's own separators and handed to BART's encoder, and p_θ(y|x,z) is just ordinary autoregressive probability. That is why passage quality shows up as the size of a number: when the passage names the answer, copying it is cheap; when it is irrelevant, BART's mass spreads out and the probability collapses. Each of the five documents answers on its own here, and none of them knows about Hemingway.",
+    math: "{title} / {passage text} // {question}   →   BART   →   p_θ(y | x, z)",
+  },
+  {
+    key: "marginalise", label: "marginalise",
+    title: "Two ways to sum over what you retrieved",
+    body: "The retrieved document is a latent variable, so it gets summed out — and where you put that sum is the only difference between the paper's two models. RAG-Sequence commits to one document for the whole answer and blends finished answers (Σ outside the product). RAG-Token re-decides at every token, which lets it braid facts from two passages into one sentence (Σ inside). I implemented both from scratch in log-space; Eq (2) matches the `transformers` reference to |Δ| = 0.0e+00.",
+    math: "Eq(1)  log Σ_z p(z|x)·Π_i p(y_i|·)  =  −51.02        Eq(2)  log Π_i Σ_z p(z|x)·p(y_i|·)  =  −55.45",
+  },
+  {
+    key: "sweep", label: "how many docs",
+    title: "Recall keeps climbing; accuracy does not",
+    body: "Retrieving more documents strictly helps the retriever — answer-recall@k rises monotonically 26 → 71 as k goes 1 → 20. Exact-match does not follow it. The softmax is peaky, so a 20th document arrives carrying almost no weight while still adding noise for the generator to sift; EM peaks at k=5 and then drifts down. Worth reading the error bars before believing the shape: at n=96 every point carries ±4 EM, and the paper's own k effect is only 2–4 EM. Recall reproduces cleanly; the EM curve is under-powered here and I report it as untested rather than reproduced.",
+    math: "answer-recall@k  26 → 36 → 50 → 61 → 71   ·   EM peaks at k=5, inside the noise",
+  },
+  {
+    key: "gradient", label: "the leak",
+    title: "The answer label trains the retriever",
+    body: "This is the claim that makes RAG a model rather than a pipeline. p_η(z|x) is a factor in the output probability, so grading the answer sends gradient straight through the trust score and into the query encoder — no one ever labels a passage as relevant. I trained 25 steps on eight questions, supervising nothing but the answer strings, and watched trust in the passage that actually contains the answer climb from 0.097 to 0.354. Only the query tower moves; the document tower and the index stay frozen, which is exactly why this is affordable.",
+    math: "‖∂ loss / ∂(query encoder)‖ = 6.6e+01   ·   gold-passage trust 0.097 → 0.354",
+  },
+  {
+    key: "swap", label: "hot-swap",
+    title: "Edit the world without retraining",
+    body: "Because the memory is text, you can replace it. I built two three-passage indices — one saying the world of 2016, one saying 2020 — and swapped the array between queries with the model untouched. The answers change. Nothing was fine-tuned, no weight moved, no gradient was computed; the only thing that differs between these two columns is a 3×768 float array. A parametric model would need retraining to learn that a head of state changed.",
+    math: "same θ, same η — swap D   ·   “barack obama” → “donald trump”",
+  },
+  {
+    key: "verdict", label: "the verdict",
+    title: "What actually held up at 1/1400th scale",
+    body: "The mechanism reproduces: retrieval beats closed-book by 23 EM, the hand-written marginalisation matches the reference exactly, the gradient reaches the retriever, recall is monotone in k, hot-swapping works. One result went the other way and is worth more than the ones that agreed — BM25 beat the learned DPR retriever, 44.8 to 24.0 EM, the reverse of the paper's 43.5 vs 29.7. That is a corpus-size artifact, not a refutation: DPR's query tower was fine-tuned on NaturalQuestions, my questions are SQuAD, and word overlap is unusually strong when the haystack is 15k passages. RAG-Sequence scoring 0.0 is a decoding-config bug in my repro, and I've left it in the table rather than hiding it.",
+    math: "✓ 8 claims reproduced · ~ 3 inside the noise · ✗ 2 did not — see results.md",
+  },
+];
+
+export function RagWalkthrough() {
+  const [step, setStep] = useState(0);
+  const [variant, setVariant] = useState("token");   // marginalisation step
+  const [ki, setKi] = useState(2);                   // sweep step — defaults to k=5
+  const sc = RAG_STEPS[step];
+  const sk = sc.key;
+
+  const arrow = (x1, y1, x2, y2, col, dash) => (
+    <g stroke={col || P.accent} strokeWidth="1.3" fill="none">
+      <path d={`M${x1} ${y1} L${x2} ${y2}`} strokeDasharray={dash ? "4 3" : "none"} />
+      <path d={`M${x2 - 7} ${y2 - 4} L${x2} ${y2} L${x2 - 7} ${y2 + 4}`} />
+    </g>
+  );
+
+  const box = (x, y, w, h, label, sub, col, soft) => (
+    <g>
+      <rect x={x} y={y} width={w} height={h} fill={soft ? P.accentSoft : P.paper2} stroke={col || P.ink} strokeWidth="1.2" />
+      <text x={x + w / 2} y={y + (sub ? h / 2 - 1 : h / 2 + 4)} textAnchor="middle" style={SK} fontSize="10" fill={col || P.ink}>{label}</text>
+      {sub && <text x={x + w / 2} y={y + h / 2 + 12} textAnchor="middle" style={SK} fontSize="8.5" fill={P.sub}>{sub}</text>}
+    </g>
+  );
+
+  /* A 768-d vector, drawn as a strip of cells with deterministic "values". */
+  const vec = (x, y, n, seed, col, w = 5, h = 13) => (
+    <g>
+      {Array.from({ length: n }).map((_, i) => {
+        const v = ((Math.sin((i + seed) * 12.9898) * 43758.5453) % 1 + 1) % 1;
+        return <rect key={i} x={x + i * w} y={y} width={w - 0.8} height={h}
+          fill={col} fillOpacity={0.12 + v * 0.72} stroke={P.line} strokeWidth="0.3" />;
+      })}
+    </g>
+  );
+
+  const body = (() => {
+    switch (sk) {
+      case "store":
+        return (
+          <g>
+            <text x={300} y={24} textAnchor="middle" style={SK} fontSize="11" fill={P.sub}>non-parametric memory — text you can point at, and edit</text>
+            {/* passage cards */}
+            {[0, 1, 2].map((i) => (
+              <g key={i} transform={`translate(${28 + i * 5} ${52 + i * 9})`} opacity={1 - i * 0.22}>
+                <rect x={0} y={0} width={132} height={74} fill={P.paper2} stroke={P.ink} strokeWidth="1.1" />
+                <text x={7} y={15} style={SK} fontSize="8.5" fill={P.accent}>Super Bowl 50</text>
+                <line x1={7} y1={20} x2={125} y2={20} stroke={P.line} strokeWidth="0.8" />
+                {[0, 1, 2, 3, 4].map((r) => (
+                  <line key={r} x1={7} y1={30 + r * 9} x2={r === 4 ? 86 : 125} y2={30 + r * 9} stroke={P.sub} strokeWidth="2.6" strokeOpacity="0.2" />
+                ))}
+              </g>
+            ))}
+            <text x={94} y={164} textAnchor="middle" style={SK} fontSize="9" fill={P.sub}>disjoint 100-word chunks</text>
+            <text x={94} y={179} textAnchor="middle" style={SK} fontSize="9.5" fill={P.ink}>15,077 passages</text>
+            <text x={94} y={193} textAnchor="middle" style={SK} fontSize="8.5" fill={P.red}>(paper: 21,000,000)</text>
+
+            {arrow(172, 88, 218, 88)}
+            {box(220, 68, 96, 42, "BERT_d  ❄", "frozen, encoded once", P.ink)}
+            <text x={268} y={128} textAnchor="middle" style={SK} fontSize="8.5" fontStyle="italic" fill={P.sub}>never re-encoded during training</text>
+            {arrow(320, 88, 366, 88)}
+
+            {/* the index matrix */}
+            <text x={368} y={44} style={SK} fontSize="9" fill={P.sub}>d(z) ∈ R⁷⁶⁸, one row per passage</text>
+            {Array.from({ length: 9 }).map((_, r) => vec(368, 54 + r * 15, 32, r * 17 + 3, P.accent, 5.6, 12))}
+            <rect x={366} y={52} width={182} height={137} fill="none" stroke={P.accent} strokeWidth="1.3" />
+            <text x={457} y={204} textAnchor="middle" style={SK} fontSize="10" fill={P.accent}>D  ·  15,077 × 768  ·  46 MB</text>
+
+            <text x={300} y={236} textAnchor="middle" style={SK} fontSize="10.5" fill={P.ink}>the vectors are the catalogue — the text is what the generator will actually read</text>
+            <text x={300} y={258} textAnchor="middle" style={SK} fontSize="10" fontStyle="italic" fill={P.green}>swap this file and the model's world knowledge changes · see step 7</text>
+            <text x={300} y={282} textAnchor="middle" style={SK} fontSize="9.5" fill={P.sub}>SQuAD paragraphs are Wikipedia prose · 3,077 answerable + 12,000 distractors</text>
+          </g>
+        );
+
+      case "retrieve":
+        return (
+          <g>
+            <text x={16} y={26} style={SK} fontSize="9.5" fill={P.sub}>x =</text>
+            <rect x={42} y={14} width={214} height={20} fill={P.faint} stroke={P.line} strokeWidth="1" />
+            <text x={149} y={28} textAnchor="middle" style={SK} fontSize="10" fill={P.ink}>“who wrote a farewell to arms”</text>
+            {arrow(149, 36, 149, 52)}
+            {box(88, 54, 122, 34, "BERT_q  ✎ trainable", null, P.accent)}
+            <text x={149} y={104} textAnchor="middle" style={SK} fontSize="9" fill={P.sub}>q(x) ∈ R⁷⁶⁸</text>
+            {vec(50, 110, 34, 91, P.accent, 5.8, 14)}
+
+            <rect x={252} y={106} width={128} height={22} fill={P.accentSoft} stroke={P.accent} strokeWidth="1.2" />
+            <text x={316} y={121} textAnchor="middle" style={SK} fontSize="10" fill={P.accent}>D · q(x)  →  top-5</text>
+            <path d="M232 124 L248 118" stroke={P.accent} strokeWidth="1.2" fill="none" />
+            <text x={466} y={26} textAnchor="middle" style={SK} fontSize="9" fill={P.sub}>D — the index, 15,077 rows</text>
+            {vec(392, 34, 26, 5, P.ink, 5.6, 11)}
+            <text x={466} y={64} textAnchor="middle" style={SK} fontSize="9" fill={P.sub}>exact MIPS: one 1×768 @ 768×15,077</text>
+            <text x={466} y={78} textAnchor="middle" style={SK} fontSize="9" fill={P.sub}>matmul — sub-millisecond, no FAISS</text>
+            <path d="M466 86 L400 106" stroke={P.line} strokeWidth="1.1" fill="none" strokeDasharray="3 3" />
+
+            {/* the ranked list, with score and softmax bar */}
+            <text x={22} y={158} style={SK} fontSize="8.5" fill={P.sub}>rank</text>
+            <text x={58} y={158} style={SK} fontSize="8.5" fill={P.sub}>d(z)ᵀq(x)</text>
+            <text x={124} y={158} style={SK} fontSize="8.5" fill={P.sub}>p_η(z|x)</text>
+            <text x={266} y={158} style={SK} fontSize="8.5" fill={P.sub}>passage</text>
+            {RAG_TOPK.map((d, i) => (
+              <g key={i} transform={`translate(0 ${166 + i * 19})`}>
+                <text x={26} y={11} style={SK} fontSize="9.5" fill={P.sub}>#{i + 1}</text>
+                <text x={86} y={11} textAnchor="end" style={SK} fontSize="9.5" fill={P.ink}>{d.score.toFixed(2)}</text>
+                <rect x={124} y={2} width={132} height={12} fill="none" stroke={P.line} strokeWidth="0.7" />
+                <rect x={124} y={2} width={132 * (d.trust / 0.32)} height={12} fill={P.accent} fillOpacity="0.32" stroke={P.accent} strokeWidth="0.9" />
+                <text x={130} y={11.5} style={SK} fontSize="8.5" fill={P.accent}>{d.trust.toFixed(3)}</text>
+                <text x={266} y={11} style={SK} fontSize="9" fill={P.sub}>[{d.title}] {d.text.slice(0, 34)}…</text>
+              </g>
+            ))}
+            <text x={300} y={288} textAnchor="middle" style={SK} fontSize="10" fontStyle="italic" fill={P.red}>59.26 vs 58.32 — nearly flat. Nothing in a 15k index is about Hemingway.</text>
+          </g>
+        );
+
+      case "prompt":
+        return (
+          <g>
+            <text x={300} y={22} textAnchor="middle" style={SK} fontSize="11" fill={P.sub}>“we simply concatenate the retrieved content with the input” — §2.2</text>
+            {/* the template */}
+            <rect x={40} y={38} width={520} height={30} fill={P.paper2} stroke={P.ink} strokeWidth="1.2" />
+            <rect x={44} y={42} width={124} height={22} fill={P.green} fillOpacity="0.14" stroke={P.green} strokeWidth="0.9" />
+            <text x={106} y={57} textAnchor="middle" style={SK} fontSize="9.5" fill={P.green}>John Kerry</text>
+            <text x={176} y={57} style={SK} fontSize="11" fill={P.sub}>/</text>
+            <rect x={190} y={42} width={228} height={22} fill={P.accent} fillOpacity="0.10" stroke={P.accent} strokeWidth="0.9" />
+            <text x={304} y={57} textAnchor="middle" style={SK} fontSize="9.5" fill={P.accent}>Kerry's commanding officer, Lt Cdr…</text>
+            <text x={426} y={57} style={SK} fontSize="11" fill={P.sub}>//</text>
+            <rect x={444} y={42} width={112} height={22} fill={P.faint} stroke={P.line} strokeWidth="0.9" />
+            <text x={500} y={57} textAnchor="middle" style={SK} fontSize="9.5" fill={P.ink}>who wrote a…</text>
+            <text x={106} y={82} textAnchor="middle" style={SK} fontSize="8" fill={P.sub}>title</text>
+            <text x={304} y={82} textAnchor="middle" style={SK} fontSize="8" fill={P.sub}>retrieved passage z</text>
+            <text x={500} y={82} textAnchor="middle" style={SK} fontSize="8" fill={P.sub}>question x</text>
+
+            {arrow(300, 90, 300, 108)}
+            {box(214, 110, 172, 30, "BART encoder–decoder", null, P.ink)}
+            <text x={300} y={158} textAnchor="middle" style={SK} fontSize="10" fill={P.accent}>p_θ(y | x, z)  —  ordinary autoregressive probability</text>
+
+            {/* each doc answers alone */}
+            <text x={24} y={186} style={SK} fontSize="8.5" fill={P.sub}>doc</text>
+            <text x={62} y={186} style={SK} fontSize="8.5" fill={P.sub}>p_η(z|x)</text>
+            <text x={152} y={186} style={SK} fontSize="8.5" fill={P.sub}>what BART says from that passage alone</text>
+            {RAG_TOPK.map((d, i) => (
+              <g key={i} transform={`translate(0 ${192 + i * 17})`}>
+                <text x={28} y={11} style={SK} fontSize="9.5" fill={P.sub}>{i + 1}</text>
+                <rect x={62} y={2} width={72} height={11} fill="none" stroke={P.line} strokeWidth="0.7" />
+                <rect x={62} y={2} width={72 * (d.trust / 0.32)} height={11} fill={P.accent} fillOpacity="0.3" />
+                <text x={140} y={11} style={SK} fontSize="8.5" fill={P.sub}>{d.trust.toFixed(3)}</text>
+                <text x={190} y={11} style={SK} fontSize="9.5" fill={d.says === "—" ? P.line : P.red}>{d.says === "—" ? "(empty)" : d.says}</text>
+                <text x={300} y={11} style={SK} fontSize="8.5" fill={P.sub}>[{d.title}]</text>
+              </g>
+            ))}
+            <text x={300} y={292} textAnchor="middle" style={SK} fontSize="10" fontStyle="italic" fill={P.sub}>irrelevant passage ⇒ BART's mass spreads out ⇒ small p_θ — that is what makes the sum work</text>
+          </g>
+        );
+
+      case "marginalise": {
+        const tok = variant === "token";
+        return (
+          <g>
+            <text x={300} y={22} textAnchor="middle" style={SK} fontSize="11" fill={P.sub}>
+              the retrieved document is a latent variable — sum it out
+            </text>
+            {/* k chains of tokens */}
+            {RAG_TOPK.map((d, i) => (
+              <g key={i} transform={`translate(70 ${44 + i * 30})`}>
+                <text x={-46} y={14} style={SK} fontSize="9" fill={P.sub}>z{i + 1}</text>
+                <rect x={-26} y={4} width={20} height={13} fill={P.accent} fillOpacity={d.trust * 2.4} stroke={P.accent} strokeWidth="0.8" />
+                {[0, 1, 2, 3].map((t) => (
+                  <g key={t}>
+                    <rect x={8 + t * 54} y={2} width={42} height={17} fill={P.paper2} stroke={tok ? P.accent : P.line} strokeWidth={tok ? 1.1 : 0.9} />
+                    <text x={29 + t * 54} y={14.5} textAnchor="middle" style={SK} fontSize="8" fill={P.sub}>p(y{t + 1}|z{i + 1})</text>
+                    {tok && <path d={`M${29 + t * 54} 21 L${29 + t * 54} ${(4 - i) * 30 + 34}`} stroke={P.accent} strokeWidth="0.7" strokeOpacity="0.35" strokeDasharray="2 3" fill="none" />}
+                  </g>
+                ))}
+                {!tok && (
+                  <>
+                    <path d="M216 10.5 L232 10.5" stroke={P.accent} strokeWidth="1" fill="none" strokeDasharray="3 2" />
+                    <rect x={236} y={2} width={80} height={17} fill={P.accentSoft} stroke={P.accent} strokeWidth="1.1" />
+                    <text x={276} y={14.5} textAnchor="middle" style={SK} fontSize="8" fill={P.accent}>Π_i → one answer</text>
+                    <path d="M316 10.5 L334 10.5" stroke={P.accent} strokeWidth="1" fill="none" />
+                    <path d="M328 6.5 L334 10.5 L328 14.5" stroke={P.accent} strokeWidth="1" fill="none" />
+                  </>
+                )}
+              </g>
+            ))}
+            {/* where the sum happens */}
+            {tok ? (
+              <g>
+                <rect x={70} y={198} width={230} height={22} fill={P.accentSoft} stroke={P.accent} strokeWidth="1.3" />
+                <text x={185} y={213} textAnchor="middle" style={SK} fontSize="10" fill={P.accent}>Σ_z at every token — then multiply</text>
+                <text x={318} y={213} style={SK} fontSize="10" fill={P.ink}>= −55.45</text>
+              </g>
+            ) : (
+              <g>
+                <rect x={410} y={44} width={124} height={176} fill={P.accentSoft} stroke={P.accent} strokeWidth="1.3" />
+                <text x={472} y={126} textAnchor="middle" style={SK} fontSize="10.5" fill={P.accent}>Σ_z over the</text>
+                <text x={472} y={142} textAnchor="middle" style={SK} fontSize="10.5" fill={P.accent}>5 finished answers</text>
+                <text x={472} y={238} textAnchor="middle" style={SK} fontSize="10" fill={P.ink}>= −51.02</text>
+              </g>
+            )}
+            <text x={300} y={252} textAnchor="middle" style={SK} fontSize="10" fill={P.ink}>
+              {tok
+                ? "Eq (2)   log Π_i Σ_z p_η(z|x) · p_θ(y_i | x, z, y_<i)     — Σ INSIDE the Π"
+                : "Eq (1)   log Σ_z p_η(z|x) · Π_i p_θ(y_i | x, z, y_<i)     — Σ OUTSIDE the Π"}
+            </text>
+            <text x={300} y={272} textAnchor="middle" style={SK} fontSize="9.5" fontStyle="italic" fill={P.sub}>
+              {tok
+                ? "re-picks a document at every token — can braid two passages into one sentence"
+                : "one document carries the whole answer — blend the finished candidates"}
+            </text>
+            <text x={300} y={291} textAnchor="middle" style={SK} fontSize="9.5" fill={P.green}>written from scratch in log-space · matches `transformers` to |Δ| = 0.0e+00</text>
+          </g>
+        );
+      }
+
+      case "sweep": {
+        const cur = RAG_KSWEEP[ki];
+        /* One shared 0–80% scale for both series — they are both percentages, and
+           putting them on separate axes would fake a crossover that isn't there. */
+        const X = (i) => 96 + i * 96, Y = (v) => 214 - v * 1.95;
+        return (
+          <g>
+            <text x={300} y={22} textAnchor="middle" style={SK} fontSize="11" fill={P.sub}>retrieve more documents · n = 96 questions, RAG-Token · both axes are %</text>
+            {/* axes */}
+            <line x1={80} y1={214} x2={532} y2={214} stroke={P.ink} strokeWidth="1.1" />
+            <line x1={80} y1={52} x2={80} y2={214} stroke={P.ink} strokeWidth="1.1" />
+            {[0, 20, 40, 60, 80].map((g) => (
+              <g key={g}>
+                <line x1={80} y1={Y(g)} x2={532} y2={Y(g)} stroke={P.line} strokeWidth="0.6" strokeDasharray="2 4" />
+                <text x={74} y={Y(g) + 3} textAnchor="end" style={SK} fontSize="8" fill={P.sub}>{g}</text>
+              </g>
+            ))}
+            {/* recall line */}
+            <path d={`M${RAG_KSWEEP.map((d, i) => `${X(i)} ${Y(d.rec)}`).join(" L")}`} fill="none" stroke={P.green} strokeWidth="1.6" />
+            {RAG_KSWEEP.map((d, i) => <circle key={i} cx={X(i)} cy={Y(d.rec)} r={i === ki ? 5 : 3} fill={P.green} />)}
+            {/* EM line with error bars */}
+            <path d={`M${RAG_KSWEEP.map((d, i) => `${X(i)} ${Y(d.em)}`).join(" L")}`} fill="none" stroke={P.accent} strokeWidth="1.6" />
+            {RAG_KSWEEP.map((d, i) => (
+              <g key={i}>
+                <line x1={X(i)} y1={Y(d.em - d.se)} x2={X(i)} y2={Y(d.em + d.se)} stroke={P.accent} strokeWidth="1" />
+                <line x1={X(i) - 4} y1={Y(d.em + d.se)} x2={X(i) + 4} y2={Y(d.em + d.se)} stroke={P.accent} strokeWidth="1" />
+                <line x1={X(i) - 4} y1={Y(d.em - d.se)} x2={X(i) + 4} y2={Y(d.em - d.se)} stroke={P.accent} strokeWidth="1" />
+                <circle cx={X(i)} cy={Y(d.em)} r={i === ki ? 5 : 3} fill={P.accent} />
+                <text x={X(i)} y={230} textAnchor="middle" style={SK} fontSize="9.5" fill={i === ki ? P.ink : P.sub}>k={d.k}</text>
+              </g>
+            ))}
+            <text x={352} y={Y(74)} style={SK} fontSize="9.5" fill={P.green}>answer-recall@k — the retriever alone</text>
+            <text x={92} y={Y(4)} style={SK} fontSize="9.5" fill={P.accent}>exact match — end to end, ±1 SE</text>
+            {/* callout for the selected k */}
+            <rect x={352} y={244} width={180} height={44} fill={P.paper2} stroke={P.accent} strokeWidth="1.2" />
+            <text x={362} y={260} style={SK} fontSize="9.5" fill={P.accent}>k = {cur.k}</text>
+            <text x={362} y={274} style={SK} fontSize="9" fill={P.ink}>EM {cur.em.toFixed(1)} ± {cur.se.toFixed(1)}  ·  recall {cur.rec.toFixed(1)}</text>
+            <text x={80} y={260} style={SK} fontSize="9.5" fill={P.sub}>recall is monotone — more documents always help the retriever.</text>
+            <text x={80} y={276} style={SK} fontSize="9.5" fill={P.red}>EM is not: every point carries ±4, and the paper's effect is 2–4 EM.</text>
+            <text x={80} y={290} style={SK} fontSize="9" fontStyle="italic" fill={P.sub}>so the shape is reported as untested at this n, not as reproduced.</text>
+          </g>
+        );
+      }
+
+      case "gradient": {
+        const GX0 = 330, GY0 = 250, GW = 200, GH = 88;
+        const tx = (s) => GX0 + (s / 25) * GW, ty = (v) => GY0 - (v / 0.4) * GH;
+        return (
+          <g>
+            <text x={300} y={22} textAnchor="middle" style={SK} fontSize="11" fill={P.sub}>the label is on the answer · the credit leaks backwards onto the passage</text>
+            {/* forward chain */}
+            {box(24, 48, 84, 34, "BERT_q  ✎", "trainable", P.accent)}
+            {arrow(108, 65, 138, 65)}
+            {box(140, 48, 76, 34, "p_η(z|x)", "trust", P.accent)}
+            {arrow(216, 65, 246, 65)}
+            {box(248, 48, 60, 34, "z₁…z_k", null, P.ink)}
+            {arrow(308, 65, 338, 65)}
+            {box(340, 48, 68, 34, "BART", "p_θ(y|x,z)", P.ink)}
+            {arrow(408, 65, 438, 65)}
+            <rect x={440} y={48} width={104} height={34} fill={P.faint} stroke={P.ink} strokeWidth="1.2" />
+            <text x={492} y={62} textAnchor="middle" style={SK} fontSize="9.5" fill={P.ink}>loss on y only</text>
+            <text x={492} y={75} textAnchor="middle" style={SK} fontSize="8.5" fill={P.red}>“Ernest Hemingway”</text>
+            {/* backward path */}
+            <path d="M492 88 L492 108 L66 108 L66 86" stroke={P.red} strokeWidth="1.4" fill="none" strokeDasharray="5 3" />
+            <path d="M62 94 L66 86 L70 94" stroke={P.red} strokeWidth="1.4" fill="none" />
+            <text x={280} y={122} textAnchor="middle" style={SK} fontSize="9.5" fill={P.red}>∂loss/∂η ≠ 0 — because p_η is a factor in p(y|x)</text>
+            <text x={280} y={136} textAnchor="middle" style={SK} fontSize="9" fontStyle="italic" fill={P.sub}>no passage was ever labelled relevant</text>
+            <line x1={24} y1={150} x2={576} y2={150} stroke={P.line} strokeWidth="0.8" />
+            <text x={24} y={172} style={SK} fontSize="10" fill={P.ink}>‖∂ loss / ∂(query encoder)‖ = 6.6e+01</text>
+            <text x={24} y={192} style={SK} fontSize="9.5" fill={P.sub}>25 steps · 8 questions · answer</text>
+            <text x={24} y={205} style={SK} fontSize="9.5" fill={P.sub}>strings are the only supervision</text>
+            <text x={24} y={228} style={SK} fontSize="9.5" fill={P.green}>❄ document tower and index</text>
+            <text x={24} y={241} style={SK} fontSize="9.5" fill={P.green}>stay frozen — that is what makes</text>
+            <text x={24} y={254} style={SK} fontSize="9.5" fill={P.green}>this affordable (REALM re-indexed)</text>
+            {/* trust curve */}
+            <line x1={GX0} y1={GY0} x2={GX0 + GW} y2={GY0} stroke={P.ink} strokeWidth="1" />
+            <line x1={GX0} y1={GY0 - GH} x2={GX0} y2={GY0} stroke={P.ink} strokeWidth="1" />
+            <text x={GX0 - 6} y={ty(0.4) + 3} textAnchor="end" style={SK} fontSize="8" fill={P.sub}>0.40</text>
+            <text x={GX0 - 6} y={GY0 + 3} textAnchor="end" style={SK} fontSize="8" fill={P.sub}>0</text>
+            <path d={`M${RAG_TRUST_CURVE.map(([s, v]) => `${tx(s)} ${ty(v)}`).join(" L")}`} fill="none" stroke={P.accent} strokeWidth="1.8" />
+            {RAG_TRUST_CURVE.map(([s, v], i) => <circle key={i} cx={tx(s)} cy={ty(v)} r="3" fill={P.accent} />)}
+            <text x={tx(0) + 6} y={ty(0.097) + 14} style={SK} fontSize="9" fill={P.sub}>0.097</text>
+            <text x={tx(25) - 6} y={ty(0.354) - 8} textAnchor="end" style={SK} fontSize="9" fill={P.accent}>0.354</text>
+            <text x={GX0 + GW / 2} y={GY0 + 14} textAnchor="middle" style={SK} fontSize="8.5" fill={P.sub}>training step  0 → 25</text>
+            <text x={GX0 + GW / 2} y={GY0 + 30} textAnchor="middle" style={SK} fontSize="9.5" fill={P.ink}>trust in the passage that holds the answer</text>
+            <text x={GX0 + GW / 2} y={GY0 + 44} textAnchor="middle" style={SK} fontSize="9" fontStyle="italic" fill={P.accent}>it rose without anyone saying which passage was right</text>
+          </g>
+        );
+      }
+
+      case "swap":
+        return (
+          <g>
+            <text x={300} y={24} textAnchor="middle" style={SK} fontSize="11" fill={P.sub}>same weights in both columns · the only difference is a 3 × 768 array</text>
+            {[0, 1].map((c) => {
+              const x = c === 0 ? 40 : 320;
+              const yr = c === 0 ? "2016 index" : "2020 index";
+              const ans = c === 0
+                ? ["barack obama", "theresa may", "angela merkel"]
+                : ["donald trump", "boris johnson", "angela merkel"];
+              return (
+                <g key={c}>
+                  <rect x={x} y={44} width={240} height={196} fill={P.paper2} stroke={c === 0 ? P.line : P.accent} strokeWidth="1.3" />
+                  <rect x={x} y={44} width={240} height={22} fill={c === 0 ? P.faint : P.accentSoft} />
+                  <text x={x + 120} y={59} textAnchor="middle" style={SK} fontSize="10" fill={c === 0 ? P.sub : P.accent}>{yr}</text>
+                  {vec(x + 16, 76, 34, c * 40 + 7, c === 0 ? P.sub : P.accent, 6, 12)}
+                  <text x={x + 120} y={104} textAnchor="middle" style={SK} fontSize="8.5" fill={P.sub}>D — 3 passages of text</text>
+                  {["US President?", "UK Prime Minister?", "German Chancellor?"].map((q, i) => (
+                    <g key={i} transform={`translate(${x + 16} ${122 + i * 38})`}>
+                      <text x={0} y={10} style={SK} fontSize="8.5" fill={P.sub}>{q}</text>
+                      <rect x={0} y={16} width={208} height={18} fill={i === 2 ? P.faint : (c === 0 ? P.faint : P.accentSoft)} stroke={i === 2 ? P.line : (c === 0 ? P.line : P.accent)} strokeWidth="0.9" />
+                      <text x={8} y={29} style={SK} fontSize="9.5" fill={i === 2 ? P.sub : (c === 0 ? P.ink : P.accent)}>{ans[i]}</text>
+                      {i !== 2 && c === 1 && <text x={150} y={29} style={SK} fontSize="8" fill={P.green}>changed</text>}
+                    </g>
+                  ))}
+                </g>
+              );
+            })}
+            {arrow(284, 142, 314, 142)}
+            <text x={299} y={132} textAnchor="middle" style={SK} fontSize="8.5" fill={P.sub}>swap</text>
+            <text x={300} y={262} textAnchor="middle" style={SK} fontSize="10.5" fill={P.ink}>no fine-tuning · no gradient · no weight moved</text>
+            <text x={300} y={283} textAnchor="middle" style={SK} fontSize="10" fontStyle="italic" fill={P.green}>a parametric model would need retraining to learn that a head of state changed</text>
+          </g>
+        );
+
+      case "verdict": {
+        const rows = [
+          ["Eq (1) & (2) from scratch match `transformers`", "|Δ| = 0.0e+00", "ok"],
+          ["retrieval beats closed book (same generator)", "1.0 ± 1.0  →  24.0 ± 4.4 EM", "ok"],
+          ["retrieval beats *random* passages", "2.1 ± 1.5  →  24.0 ± 4.4 EM", "ok"],
+          ["answer-recall@k rises monotonically with k", "26 → 36 → 50 → 61 → 71", "ok"],
+          ["answer-only loss moves the retriever", "‖g‖ = 6.6e+01 · trust 0.097 → 0.354", "ok"],
+          ["index hot-swap changes knowledge, no retraining", "2016 → 2020, weights untouched", "ok"],
+          ["retriever has not collapsed (Appendix H)", "427 distinct docs / 480 slots", "ok"],
+          ["learned DPR > frozen DPR (paper 43.5 vs 37.8)", "24.0 ± 4.4  vs  22.9 ± 4.3 EM", "mid"],
+          ["EM shape differs between the variants (Fig 3)", "tok peaks k=5, seq peaks k=1", "mid"],
+          ["learned DPR > BM25 (paper 43.5 vs 29.7)", "24.0 ± 4.4  vs  44.8 ± 5.1 EM", "bad"],
+          ["RAG-Sequence ≥ RAG-Token on short factoids", "0.0 ± 0.0  vs  22.9 ± 6.1 EM", "bad"],
+        ];
+        const col = { ok: P.green, mid: P.yellow, bad: P.red };
+        const mark = { ok: "✓", mid: "~", bad: "✗" };
+        return (
+          <g>
+            <text x={300} y={20} textAnchor="middle" style={SK} fontSize="11" fill={P.sub}>13 claims from the paper, checked against my own measurements</text>
+            {rows.map((r, i) => (
+              <g key={i} transform={`translate(0 ${32 + i * 20})`}>
+                <rect x={24} y={0} width={552} height={18} fill={i % 2 ? P.faint : "transparent"} fillOpacity="0.6" />
+                <text x={34} y={13} style={SK} fontSize="11" fill={col[r[2]]}>{mark[r[2]]}</text>
+                <text x={52} y={13} style={SK} fontSize="9.5" fill={P.ink}>{r[0]}</text>
+                <text x={568} y={13} textAnchor="end" style={SK} fontSize="9.5" fill={col[r[2]]}>{r[1]}</text>
+              </g>
+            ))}
+            <line x1={24} y1={258} x2={576} y2={258} stroke={P.line} strokeWidth="0.8" />
+            <text x={24} y={274} style={SK} fontSize="9.5" fill={P.red}>BM25 winning is the interesting one: DPR was fine-tuned on NaturalQuestions,</text>
+            <text x={24} y={288} style={SK} fontSize="9.5" fill={P.sub}>my questions are SQuAD, and word overlap is strong when the haystack is only 15k.</text>
+          </g>
+        );
+      }
+      default: return null;
+    }
+  })();
+
+  const navBtn = { ...SK, fontSize: "0.8rem", padding: "2px 10px", border: `1px solid ${P.line}`, background: P.paper2, color: P.ink, cursor: "pointer" };
+  const N = RAG_STEPS.length;
+  const pill = (on) => ({ ...SK, fontSize: "0.7rem", padding: "2px 10px", cursor: "pointer", border: `1px solid ${on ? P.accent : P.line}`, background: on ? P.accentSoft : P.paper2, color: on ? P.accent : P.sub });
+
+  return (
+    <div>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 10, marginBottom: 10 }}>
+        <span style={{ ...SK, fontSize: "0.6rem", color: P.sub, textTransform: "uppercase", letterSpacing: "0.08em" }}>rebuilt on a laptop · 15,077 passages · every number measured</span>
+        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+          <span style={{ ...SK, fontSize: "0.62rem", color: P.sub, textTransform: "uppercase", letterSpacing: "0.06em" }}>step {step + 1} / {N}</span>
+          <button onClick={() => setStep((step + N - 1) % N)} aria-label="Previous step" style={navBtn}>←</button>
+          <button onClick={() => setStep((step + 1) % N)} aria-label="Next step" style={navBtn}>→</button>
+        </div>
+      </div>
+
+      {sk === "marginalise" && (
+        <div style={{ display: "flex", gap: 6, marginBottom: 10, flexWrap: "wrap", alignItems: "center" }}>
+          <span style={{ ...SK, fontSize: "0.62rem", color: P.sub }}>variant:</span>
+          <button onClick={() => setVariant("token")} style={pill(variant === "token")}>RAG-Token — Eq (2)</button>
+          <button onClick={() => setVariant("sequence")} style={pill(variant === "sequence")}>RAG-Sequence — Eq (1)</button>
+        </div>
+      )}
+
+      {sk === "sweep" && (
+        <div style={{ display: "flex", gap: 6, marginBottom: 10, flexWrap: "wrap", alignItems: "center" }}>
+          <span style={{ ...SK, fontSize: "0.62rem", color: P.sub }}>documents retrieved:</span>
+          {RAG_KSWEEP.map((d, j) => (
+            <button key={d.k} onClick={() => setKi(j)} style={pill(j === ki)}>k = {d.k}</button>
+          ))}
+        </div>
+      )}
+
+      <div style={{ border: `1px solid ${P.line}`, borderTop: `2px solid ${P.ink}`, background: P.paper2 }}>
+        <div style={{ background: "#fff" }}>
+          <div style={{ aspectRatio: "600 / 300" }}>
+            <svg viewBox="0 0 600 300" width="100%" height="100%" role="img" aria-label={`RAG walkthrough step ${step + 1}: ${sc.label}`} style={{ display: "block" }} strokeLinecap="round" strokeLinejoin="round">
+              {body}
+            </svg>
+          </div>
+        </div>
+        <div style={{ padding: "0.9rem 1.1rem 1rem" }}>
+          <div style={{ ...DISP, fontWeight: 600, fontSize: "1rem", color: P.ink, marginBottom: 4 }}>{sc.title}</div>
+          <p style={{ ...BODY, fontSize: "0.88rem", color: P.sub, lineHeight: 1.65, textWrap: "pretty", margin: 0 }}>
+            <span style={{ ...SK, fontSize: "0.6rem", color: P.accent, textTransform: "uppercase", letterSpacing: "0.08em", marginRight: 6 }}>step {step + 1}</span>
+            {sc.body}
+          </p>
+          <div style={{ ...SK, fontSize: "0.66rem", color: P.ink, marginTop: 9, background: P.faint, padding: "6px 9px", display: "inline-block" }}>{sc.math}</div>
+        </div>
+      </div>
+
+      <div style={{ display: "flex", gap: 6, marginTop: 10, flexWrap: "wrap" }}>
+        {RAG_STEPS.map((s, j) => (
           <button key={s.key} onClick={() => setStep(j)} style={{ ...SK, fontSize: "0.62rem", padding: "4px 9px", cursor: "pointer", border: `1px solid ${j === step ? P.accent : P.line}`, background: j === step ? P.accentSoft : "#fff", color: j === step ? P.accent : P.sub }}>{j + 1}. {s.label}</button>
         ))}
       </div>
