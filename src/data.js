@@ -84,6 +84,15 @@ export const CURRENT_TRACK = {
         "Where it breaks is exactly where my own thread starts. The whole memory policy is prose in a system prompt — no learned eviction, no learned stopping rule, so the agent quietly gives up paging through results before it has exhausted the store, and swapping the base model moves accuracy from 66.9% to 93.4% with everything else held fixed. And every write is treated as equally authoritative: no source, no timestamp, no confidence, no record of what it overwrote. For a user who can't see, a confidently wrong memory is worse than an absent one — so provenance over episodic memory is the gap I'm aiming at, and it's orthogonal to the paging mechanism.",
     },
     {
+      status: "active",
+      paper: "MemoryBank: Enhancing LLMs with Long-Term Memory",
+      authors: "Zhong et al.",
+      year: "2023",
+      label: "reading — forgetting as a first-class mechanism",
+      takeaway:
+        "The paper that picks up the two things MemGPT left on the floor — when to forget, and whether a memory should still be trusted — and makes them mechanical. Storage is three tiers rather than one flat log: timestamped turn-by-turn dialogue, a hierarchical event summary that distils each day's turns into a daily event and then a global one, and a user portrait that keeps getting rebuilt from past interactions. Retrieval is deliberately ordinary — dual-tower dense search (DPR-style) over a FAISS index, the same hard top-K RAG uses. The part I came for is the updater: it borrows Ebbinghaus' forgetting curve, R = e^(−t/S) — retention decays with the time t since a memory was last touched, but every recall bumps that memory's strength S by one and resets t to zero, so what gets used survives and what doesn't quietly fades. That's the first mechanism on this line where forgetting is a design choice instead of an accident of a full context window — and every memory now carries a timestamp, the provenance MemGPT never wrote down. Where it stops short is exactly my angle: the decay law is hand-set, not learned, there's still no confidence or source on any single memory, and it's tuned for a text companion (SiliconFriend), not a vision stream where a “memory” is a moment the camera saw.",
+    },
+    {
       status: "queued",
       paper: "Toward an episodic-memory layer for VoxSight",
       authors: "the build this is all pointed at",
@@ -216,6 +225,15 @@ export const READING_LOG = [
     area: "Memory & Retrieval",
     takeaway: "The idea I keep exporting to other problems. Faced with a context window that's too small, the field's reflex is to buy a bigger one — but attention is quadratic, so 8k → 128k is 16× the tokens and 256× the compute, and you don't even get what you paid for, since accuracy sags in the middle of a long window. MemGPT takes the other road: keep the window fixed and small, and be deliberate about what occupies it right now. Context becomes RAM, a database becomes disk, and — the actual contribution — the model becomes its own pager, calling functions that rewrite the prompt it is currently reading. What makes it work isn't cleverness but plumbing: a soft pressure warning before the hard eviction, so there's a chance to save something first; a heartbeat flag so the model keeps the floor across a multi-hop lookup; and errors returned into context so a bad write can be retried rather than ending the run. The generalisation is the part that stays with me — virtual memory never argued for more RAM, it argued that a good allocation policy over a small fast tier serves a working set far larger than itself. Scale is one lever; allocation is the other, and it's the cheaper one almost everywhere. What MemGPT doesn't do is ask whether a memory can be trusted: every self-edit lands with no source, no timestamp, no confidence, and recursive summarisation compounds the error with no path back to the original observation. That gap is the one my current track (§2) is pointed at.",
     link: "https://arxiv.org/abs/2310.08560",
+    hasNotebook: false,
+  },
+  {
+    paper: "MemoryBank: Enhancing LLMs with Long-Term Memory",
+    authors: "Zhong et al.",
+    year: "2023",
+    area: "Memory & Retrieval",
+    takeaway: "Where MemGPT pages a working set in and out, MemoryBank asks the quieter question — what should stay, and for how long. It gives an LLM three memory tiers instead of one flat log: timestamped raw dialogue, a hierarchical summary that distils each day's turns into a daily event and then a global one, and a running user portrait rebuilt from past interactions. Retrieval is unremarkable on purpose — dual-tower dense search (DPR-style) over a FAISS index, the same trick RAG leans on. The idea I keep is the updater. It borrows the Ebbinghaus forgetting curve, R = e^(−t/S): a memory's retention decays exponentially with the time t since it was last touched, but each recall increments its strength S and resets t, so frequently used memories flatten their own decay while unused ones fade out. It's the first paper on my memory line where forgetting is engineered rather than incidental, and where every memory lands with a timestamp — the start of the provenance MemGPT never records. What it isn't is learned: the decay law is set by hand, there's still no confidence or source attached to any one memory, and it's tuned for a text companion (SiliconFriend), not an agent whose memories are things a camera saw. That last gap is the one VoxSight Recall (§2) walks into.",
+    link: "https://arxiv.org/abs/2305.10250",
     hasNotebook: false,
   },
   {
