@@ -706,6 +706,13 @@ export const ARCHITECTURES = [
     intro: "Stop cramming knowledge into weights: bolt on a searchable index of *literal text*, retrieve into the prompt, and marginalise over what came back so the retriever trains by gradient descent **without a single labelled passage**. I rebuilt the whole system end to end on a laptop — 15,077 passages, both equations written from scratch, every number in this sketch measured rather than quoted. Including the one that went the wrong way.",
   },
   {
+    key: "memorybank", name: "MemoryBank — the forgetting curve", short: "MemoryBank", family: "Memory & retrieval",
+    status: "live", component: "MemoryBankWalkthrough", year: 2023,
+    note: "Ebbinghaus decay · a recall firms a memory up",
+    steps: "three-tier storage → dense retrieval → R = e^(−t/S), and what recall does to it",
+    intro: "NTM and RAG *blend* memories; MemGPT *pages* them. None of them ever **forget**. MemoryBank borrows a 140-year-old result from psychology — the Ebbinghaus forgetting curve — and makes decay a design choice: a memory's retention falls off as e^(−t/S) with the time since it was last touched, and every recall bumps its strength *S* and resets the clock, so what you use survives and what you don't fades. Turn the knobs — let time pass, then hit *recall* — and watch an unused memory slip under the threshold while a recalled one flattens its own decay.",
+  },
+  {
     key: "detection", name: "Detecting AI Images", short: "AI-image forensics", family: "Generative & forensics",
     status: "live", component: "DetectionParadigms", year: 2024,
     note: "six lenses on a fake",

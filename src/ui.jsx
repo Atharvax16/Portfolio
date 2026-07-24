@@ -517,6 +517,15 @@ const GLYPHS = {
       <path d="M29.4 19.4 L35 25" strokeWidth="1.8" />
     </g>
   ),
+  memorybank: (c) => (
+    /* the Ebbinghaus forgetting curve — retention decaying, a recall dot on it */
+    <g stroke={c} strokeWidth="1.3" fill="none">
+      <path d="M6 6 L6 33" /><path d="M6 33 L35 33" />
+      <path d="M7 9 Q13 29 34 31" />
+      <circle cx="13" cy="20" r="2.6" fill={c} fillOpacity="0.3" stroke="none" />
+      <path d="M13 20 L13 33" strokeWidth="0.9" strokeDasharray="2 2" />
+    </g>
+  ),
 };
 
 function ArchGlyph({ k, color, size = 40 }) {
@@ -2481,6 +2490,222 @@ export function RagWalkthrough() {
 
       <div style={{ display: "flex", gap: 6, marginTop: 10, flexWrap: "wrap" }}>
         {RAG_STEPS.map((s, j) => (
+          <button key={s.key} onClick={() => setStep(j)} style={{ ...SK, fontSize: "0.62rem", padding: "4px 9px", cursor: "pointer", border: `1px solid ${j === step ? P.accent : P.line}`, background: j === step ? P.accentSoft : "#fff", color: j === step ? P.accent : P.sub }}>{j + 1}. {s.label}</button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/* ════════════════════════════════════════
+   MEMORYBANK — the memory that forgets.
+   NTM and RAG blend memories, MemGPT pages them; none of them ever let one
+   go. MemoryBank's novelty is a forgetting policy borrowed from psychology —
+   the Ebbinghaus curve — so the whole sketch builds to an interactive R = e^(−t/S).
+   ════════════════════════════════════════ */
+const MB_STEPS = [
+  {
+    key: "store",
+    label: "three-tier storage",
+    title: "Memory kept at three levels of abstraction",
+    body: "Before anything can be recalled it has to be stored — and MemoryBank stores more than a flat transcript. Every turn is written verbatim with a timestamp; those turns are distilled into a daily event summary and then a global one (a hierarchy — the way you keep the gist of a day, not every sentence); and a running user portrait is re-summarised from the whole history. Retrieval and forgetting both act on these pieces.",
+    math: "M = { timestamped dialogue · event summary: daily → global · user portrait }",
+  },
+  {
+    key: "retrieve",
+    label: "dense retrieval",
+    title: "Recall is nearest-neighbour search",
+    body: "The mechanism here is deliberately ordinary — the same dual-tower dense retrieval RAG uses. Every memory piece m is pre-encoded once into a vector hₘ and indexed with FAISS. The current conversation is encoded into a query h_c, and the closest memories are pulled back into the prompt. Nothing novel yet; the novelty is what happens to a memory between recalls.",
+    math: "h_c = E(context) ·  recall = argmaxₘ  h_cᵀ hₘ   (FAISS index)",
+  },
+  {
+    key: "forget",
+    label: "the forgetting curve",
+    title: "The novelty — memory that decays, and firms up when used",
+    body: "This is what sets MemoryBank apart from everything else on this shelf. It borrows Ebbinghaus' forgetting curve: a memory's retention R falls off exponentially with the time t since it was last touched, governed by a strength S. Each time a memory is recalled, S goes up by one and t resets to zero — so a memory you keep using flattens its own decay and persists, while one you never revisit slides under the threshold and is let go. Forgetting stops being an accident of a full context window and becomes a deliberate, human-like policy. Drag the clock forward, then hit recall, and watch it happen.",
+    math: "R = e^(−t / S)      on recall:  S ← S + 1,  t ← 0",
+  },
+];
+
+export function MemoryBankWalkthrough() {
+  const [step, setStep] = useState(0);
+  const [S, setS] = useState(1);      // memory strength — bumped on each recall
+  const [t, setT] = useState(6);      // days elapsed since last recall
+  const sc = MB_STEPS[step];
+  const sk = sc.key;
+
+  const arrow = (x1, y1, x2, y2, col, dash) => (
+    <g stroke={col || P.accent} strokeWidth="1.3" fill="none">
+      <path d={`M${x1} ${y1} L${x2} ${y2}`} strokeDasharray={dash ? "4 3" : "none"} />
+      <path d={`M${x2 - 7} ${y2 - 4} L${x2} ${y2} L${x2 - 7} ${y2 + 4}`} />
+    </g>
+  );
+  const box = (x, y, w, h, label, sub, col) => (
+    <g>
+      <rect x={x} y={y} width={w} height={h} fill={P.paper2} stroke={col || P.ink} strokeWidth="1.2" />
+      <text x={x + w / 2} y={y + (sub ? h / 2 - 1 : h / 2 + 4)} textAnchor="middle" style={SK} fontSize="10" fill={col || P.ink}>{label}</text>
+      {sub && <text x={x + w / 2} y={y + h / 2 + 12} textAnchor="middle" style={SK} fontSize="8.5" fill={P.sub}>{sub}</text>}
+    </g>
+  );
+  const vec = (x, y, n, seed, col, w = 5, h = 13) => (
+    <g>
+      {Array.from({ length: n }).map((_, i) => {
+        const v = ((Math.sin((i + seed) * 12.9898) * 43758.5453) % 1 + 1) % 1;
+        return <rect key={i} x={x + i * w} y={y} width={w - 0.8} height={h} fill={col} fillOpacity={0.12 + v * 0.72} stroke={P.line} strokeWidth="0.3" />;
+      })}
+    </g>
+  );
+
+  /* forgetting-curve plot transforms */
+  const PX0 = 92, PX1 = 560, PY0 = 250, PY1 = 44, TMAX = 15;
+  const X = (tt) => PX0 + (tt / TMAX) * (PX1 - PX0);
+  const Y = (R) => PY0 - R * (PY0 - PY1);
+  const curveOf = (s) => Array.from({ length: 61 }, (_, i) => { const tt = (i / 60) * TMAX; return `${X(tt)} ${Y(Math.exp(-tt / s))}`; }).join(" L");
+  const Rnow = Math.exp(-t / S);
+  const THR = 0.3;
+
+  const body = (() => {
+    switch (sk) {
+      case "store":
+        return (
+          <g>
+            <text x={300} y={20} textAnchor="middle" style={SK} fontSize="11" fill={P.sub}>past interactions, kept at three levels of abstraction</text>
+            {[
+              { y: 40, t: "raw dialogue · timestamped", a: "04-28  “tomorrow is my GF's birthday”", b: "04-29  “she likes art books and parks”" },
+              { y: 112, t: "event summary · daily → global", a: "gift & book ideas · a visit to the park", b: "condensed nightly, then rolled up" },
+              { y: 184, t: "user portrait", a: "open-minded, curious,", b: "receptive to advice" },
+            ].map((r, i) => (
+              <g key={i}>
+                <rect x={26} y={r.y} width={232} height={60} fill={P.paper2} stroke={P.ink} strokeWidth="1.1" />
+                <rect x={26} y={r.y} width={232} height={18} fill={P.accentSoft} />
+                <text x={34} y={r.y + 13} style={SK} fontSize="9.3" fill={P.accent}>{r.t}</text>
+                <text x={34} y={r.y + 34} style={SK} fontSize="8.6" fill={P.ink}>{r.a}</text>
+                <text x={34} y={r.y + 50} style={SK} fontSize="8.6" fill={P.sub}>{r.b}</text>
+                {arrow(262, r.y + 30, 422, 140, P.line, true)}
+              </g>
+            ))}
+            <rect x={426} y={52} width={148} height={188} fill={P.paper2} stroke={P.accent} strokeWidth="1.3" />
+            <rect x={426} y={52} width={148} height={22} fill={P.accentSoft} />
+            <text x={500} y={67} textAnchor="middle" style={SK} fontSize="10" fill={P.accent}>Memory Storage  M</text>
+            {Array.from({ length: 7 }).map((_, r) => (
+              <g key={r}>{Array.from({ length: 14 }).map((_, c2) => {
+                const v = ((Math.sin((r * 14 + c2 + 3) * 12.9898) * 43758.5453) % 1 + 1) % 1;
+                return <rect key={c2} x={440 + c2 * 8.4} y={86 + r * 20} width={7.4} height={13} fill={P.accent} fillOpacity={0.12 + v * 0.6} stroke={P.line} strokeWidth="0.3" />;
+              })}</g>
+            ))}
+            <text x={500} y={232} textAnchor="middle" style={SK} fontSize="8.3" fill={P.sub}>each piece pre-encoded to a vector</text>
+          </g>
+        );
+
+      case "retrieve":
+        return (
+          <g>
+            <text x={300} y={20} textAnchor="middle" style={SK} fontSize="11" fill={P.sub}>“do you remember the gifts she likes?”  —  recall = nearest neighbour</text>
+            <rect x={28} y={48} width={196} height={22} fill={P.faint} stroke={P.line} strokeWidth="1" />
+            <text x={126} y={63} textAnchor="middle" style={SK} fontSize="9.3" fill={P.ink}>current context  c</text>
+            {arrow(126, 72, 126, 92)}
+            {box(70, 94, 112, 30, "E( · )", "query encoder", P.accent)}
+            {arrow(126, 124, 126, 148)}
+            <text x={126} y={142} textAnchor="middle" style={SK} fontSize="9" fill={P.sub}>h_c</text>
+            {vec(72, 150, 20, 9, P.accent, 5.5, 13)}
+            <text x={430} y={40} textAnchor="middle" style={SK} fontSize="9" fill={P.sub}>M — every memory piece, pre-encoded, in FAISS</text>
+            {Array.from({ length: 8 }).map((_, r) => (
+              <g key={r}>
+                {vec(322, 50 + r * 22, 30, r * 13 + 2, r === 3 ? P.accent : P.ink, 6, 14)}
+                {r === 3 && <rect x={320} y={48 + r * 22} width={186} height={18} fill="none" stroke={P.accent} strokeWidth="1.4" />}
+              </g>
+            ))}
+            <path d="M196 168 Q290 182 318 130" stroke={P.accent} strokeWidth="1.2" fill="none" strokeDasharray="4 3" />
+            <text x={214} y={206} style={SK} fontSize="9" fill={P.accent}>h_cᵀhₘ  →  top match</text>
+            <text x={512} y={131} textAnchor="middle" style={SK} fontSize="8.6" fill={P.accent}>recalled</text>
+            <text x={300} y={280} textAnchor="middle" style={SK} fontSize="10" fontStyle="italic" fill={P.sub}>a dual-tower dense retriever — the same mechanism RAG uses (DPR). The novelty is next.</text>
+          </g>
+        );
+
+      case "forget": {
+        const ghosts = [1, 2, 4].filter((s) => s !== S);
+        return (
+          <g>
+            <line x1={PX0} y1={PY1} x2={PX0} y2={PY0} stroke={P.ink} strokeWidth="1.1" />
+            <line x1={PX0} y1={PY0} x2={PX1} y2={PY0} stroke={P.ink} strokeWidth="1.1" />
+            {[0, 0.25, 0.5, 0.75, 1].map((r) => (
+              <g key={r}>
+                <line x1={PX0} y1={Y(r)} x2={PX1} y2={Y(r)} stroke={P.line} strokeWidth="0.5" strokeDasharray="2 4" />
+                <text x={PX0 - 6} y={Y(r) + 3} textAnchor="end" style={SK} fontSize="8" fill={P.sub}>{r.toFixed(2)}</text>
+              </g>
+            ))}
+            {[0, 5, 10, 15].map((tt) => (
+              <text key={tt} x={X(tt)} y={PY0 + 14} textAnchor="middle" style={SK} fontSize="8" fill={P.sub}>{tt}</text>
+            ))}
+            <text x={(PX0 + PX1) / 2} y={PY0 + 28} textAnchor="middle" style={SK} fontSize="8.5" fill={P.sub}>days since last recall  ·  t</text>
+            <text x={PX0 - 34} y={PY1 - 6} style={SK} fontSize="8.5" fill={P.sub}>retention R</text>
+
+            <line x1={PX0} y1={Y(THR)} x2={PX1} y2={Y(THR)} stroke={P.red} strokeWidth="1" strokeDasharray="5 3" />
+            <text x={PX1 - 4} y={Y(THR) - 4} textAnchor="end" style={SK} fontSize="8.3" fill={P.red}>below here, the memory is let go</text>
+
+            {ghosts.map((s) => (
+              <path key={s} d={`M${curveOf(s)}`} fill="none" stroke={P.sub} strokeWidth="1" strokeOpacity="0.26" />
+            ))}
+            <path d={`M${curveOf(S)}`} fill="none" stroke={P.accent} strokeWidth="2" />
+            <text x={X(TMAX) - 2} y={Y(Math.exp(-TMAX / S)) - 5} textAnchor="end" style={SK} fontSize="9" fill={P.accent}>S = {S}</text>
+
+            <line x1={X(t)} y1={Y(Rnow)} x2={X(t)} y2={PY0} stroke={P.accent} strokeWidth="0.9" strokeDasharray="3 3" />
+            <circle cx={X(t)} cy={Y(Rnow)} r="5" fill={Rnow < THR ? P.red : P.accent} />
+            <text x={X(t) + (t > 12 ? -8 : 8)} y={Y(Rnow) - 6} textAnchor={t > 12 ? "end" : "start"} style={SK} fontSize="9.5" fill={Rnow < THR ? P.red : P.accent}>R = {Rnow.toFixed(2)}</text>
+            <text x={PX0 + 6} y={PY1 + 4} style={SK} fontSize="9" fontStyle="italic" fill={Rnow < THR ? P.red : P.green}>{Rnow < THR ? "forgotten — unused too long" : "retained"}</text>
+          </g>
+        );
+      }
+
+      default: return null;
+    }
+  })();
+
+  const navBtn = { ...SK, fontSize: "0.8rem", padding: "2px 10px", border: `1px solid ${P.line}`, background: P.paper2, color: P.ink, cursor: "pointer" };
+  const N = MB_STEPS.length;
+
+  return (
+    <div>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 10, marginBottom: 10 }}>
+        <span style={{ ...SK, fontSize: "0.6rem", color: P.sub, textTransform: "uppercase", letterSpacing: "0.08em" }}>MemoryBank · Zhong et al. 2023 · a 140-year-old forgetting curve, put to work in an LLM</span>
+        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+          <span style={{ ...SK, fontSize: "0.62rem", color: P.sub, textTransform: "uppercase", letterSpacing: "0.06em" }}>step {step + 1} / {N}</span>
+          <button onClick={() => setStep((step + N - 1) % N)} aria-label="Previous step" style={navBtn}>←</button>
+          <button onClick={() => setStep((step + 1) % N)} aria-label="Next step" style={navBtn}>→</button>
+        </div>
+      </div>
+
+      {sk === "forget" && (
+        <div style={{ display: "flex", gap: 10, marginBottom: 10, flexWrap: "wrap", alignItems: "center" }}>
+          <span style={{ ...SK, fontSize: "0.62rem", color: P.sub }}>let time pass:</span>
+          <input type="range" min={0} max={15} step={1} value={t} onChange={(e) => setT(+e.target.value)} aria-label="days since last recall" style={{ accentColor: P.accent, width: 150 }} />
+          <span style={{ ...SK, fontSize: "0.66rem", color: P.ink, minWidth: 48 }}>t = {t} d</span>
+          <button onClick={() => { setS((s) => Math.min(s + 1, 8)); setT(0); }} style={{ ...SK, fontSize: "0.68rem", padding: "3px 11px", cursor: "pointer", border: `1px solid ${P.accent}`, background: P.accentSoft, color: P.accent }}>recall now · S+1, t→0</button>
+          <button onClick={() => { setS(1); setT(6); }} style={{ ...SK, fontSize: "0.68rem", padding: "3px 11px", cursor: "pointer", border: `1px solid ${P.line}`, background: P.paper2, color: P.sub }}>reset</button>
+          <span style={{ ...SK, fontSize: "0.66rem", color: P.ink }}>strength S = {S} · R = {Rnow.toFixed(2)}</span>
+        </div>
+      )}
+
+      <div style={{ border: `1px solid ${P.line}`, borderTop: `2px solid ${P.ink}`, background: P.paper2 }}>
+        <div style={{ background: "#fff" }}>
+          <div style={{ aspectRatio: "600 / 300" }}>
+            <svg viewBox="0 0 600 300" width="100%" height="100%" role="img" aria-label={`MemoryBank walkthrough step ${step + 1}: ${sc.label}`} style={{ display: "block" }} strokeLinecap="round" strokeLinejoin="round">
+              {body}
+            </svg>
+          </div>
+        </div>
+        <div style={{ padding: "0.9rem 1.1rem 1rem" }}>
+          <div style={{ ...DISP, fontWeight: 600, fontSize: "1rem", color: P.ink, marginBottom: 4 }}>{sc.title}</div>
+          <p style={{ ...BODY, fontSize: "0.88rem", color: P.sub, lineHeight: 1.65, textWrap: "pretty", margin: 0 }}>
+            <span style={{ ...SK, fontSize: "0.6rem", color: P.accent, textTransform: "uppercase", letterSpacing: "0.08em", marginRight: 6 }}>step {step + 1}</span>
+            {sc.body}
+          </p>
+          <div style={{ ...SK, fontSize: "0.66rem", color: P.ink, marginTop: 9, background: P.faint, padding: "6px 9px", display: "inline-block" }}>{sc.math}</div>
+        </div>
+      </div>
+
+      <div style={{ display: "flex", gap: 6, marginTop: 10, flexWrap: "wrap" }}>
+        {MB_STEPS.map((s, j) => (
           <button key={s.key} onClick={() => setStep(j)} style={{ ...SK, fontSize: "0.62rem", padding: "4px 9px", cursor: "pointer", border: `1px solid ${j === step ? P.accent : P.line}`, background: j === step ? P.accentSoft : "#fff", color: j === step ? P.accent : P.sub }}>{j + 1}. {s.label}</button>
         ))}
       </div>
