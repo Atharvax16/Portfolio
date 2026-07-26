@@ -1,8 +1,8 @@
 import { useState, useEffect, useCallback, Fragment } from "react";
 import { P, PAPER, ARCHITECTURES, ARCH_FAMILIES, LIVE_ARCHITECTURES } from "./data.js";
 import {
-  VitWalkthrough, CnnWalkthrough, DetectionParadigms, Dinov2Walkthrough, SteerVitWalkthrough,
-  RagWalkthrough, MemoryBankWalkthrough,
+  VitWalkthrough, CnnWalkthrough, DetectionParadigms, Dinov2Walkthrough, JepaWalkthrough,
+  SteerVitWalkthrough, RagWalkthrough, MemoryBankWalkthrough,
 } from "./ui.jsx";
 
 /* Type tokens — same as the paper, so the Lab reads as the same hand. */
@@ -12,8 +12,8 @@ const MONO = { fontFamily: "'IBM Plex Mono',monospace" };
 
 /* status "live" entries name their export here; the Lab renders it by key. */
 const SKETCHES = {
-  VitWalkthrough, CnnWalkthrough, DetectionParadigms, Dinov2Walkthrough, SteerVitWalkthrough,
-  RagWalkthrough, MemoryBankWalkthrough,
+  VitWalkthrough, CnnWalkthrough, DetectionParadigms, Dinov2Walkthrough, JepaWalkthrough,
+  SteerVitWalkthrough, RagWalkthrough, MemoryBankWalkthrough,
 };
 
 /* Intro copy in data.js is written with *italic* and **bold** markers so the

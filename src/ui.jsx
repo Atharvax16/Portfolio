@@ -2714,6 +2714,485 @@ export function MemoryBankWalkthrough() {
 }
 
 /* ════════════════════════════════════════
+   JEPA WALKTHROUGH — predict in latent space, and the trapdoor that opens
+   underneath when you do. Steps 2 and 5 share one `regime` toggle, so the
+   batch you break in the collapse step is the same batch VICReg then scores.
+
+   The three batches below are fixed 8×6 embedding matrices, not decoration:
+     · healthy — columns Gram-Schmidt'd then scaled, so σⱼ = 1 and the
+       off-diagonal covariance is 0 to rounding. Both guardrails read clean.
+     · dim     — d₂ is a near-copy of d₁, d₃ is shrunk, d₅/d₆ are pinned flat.
+     · full    — every row identical: the cheat that drives the loss to zero.
+   Every statistic on screen is computed from these at render time, so the
+   numbers can't drift away from the grid they're printed next to.
+   ════════════════════════════════════════ */
+const JEPA_BATCH = {
+  healthy: [
+    [-0.43, 1.87, 0.66, -0.64, 0.53, 0.71],
+    [-0.40, -0.62, -0.49, -0.81, 1.44, -1.58],
+    [1.01, 1.13, -0.08, 1.22, 0.01, -0.98],
+    [-1.29, -0.67, 1.72, 0.37, -0.77, -0.36],
+    [0.38, -0.64, -0.08, -0.71, 0.76, 1.47],
+    [-1.26, -0.08, -1.67, 1.08, -0.34, 0.62],
+    [1.35, -0.97, 0.51, 0.86, 0.20, 0.48],
+    [0.65, -0.02, -0.58, -1.38, -1.82, -0.35],
+  ],
+  dim: [
+    [-0.43, -0.40, 0.20, -0.64, 0.20, -0.10],
+    [-0.40, -0.37, -0.15, -0.81, 0.20, -0.10],
+    [1.01, 1.00, -0.02, 1.22, 0.20, -0.10],
+    [-1.29, -1.23, 0.52, 0.37, 0.20, -0.10],
+    [0.38, 0.39, -0.02, -0.71, 0.20, -0.10],
+    [-1.26, -1.20, -0.50, 1.08, 0.20, -0.10],
+    [1.35, 1.33, 0.15, 0.86, 0.20, -0.10],
+    [0.65, 0.65, -0.17, -1.38, 0.20, -0.10],
+  ],
+  full: Array.from({ length: 8 }, () => [0.5, 0.5, 0.5, 0.5, 0.5, 0.5]),
+};
+
+const JEPA_REGIMES = [
+  { key: "healthy", label: "healthy", blurb: "every direction carries variance, nothing is redundant" },
+  { key: "dim", label: "dimensional collapse", blurb: "d₂ duplicates d₁ · d₅, d₆ are flat — 6 dims, 2 real directions" },
+  { key: "full", label: "complete collapse", blurb: "one constant vector for every input · loss = 0" },
+];
+
+/* Column statistics of Z. σ uses the unbiased estimator so it matches the
+   diagonal of the covariance matrix drawn beside it. */
+function jepaStats(Z) {
+  const N = Z.length, D = Z[0].length;
+  const mu = Array.from({ length: D }, (_, j) => Z.reduce((s, r) => s + r[j], 0) / N);
+  const cov = Array.from({ length: D }, (_, a) =>
+    Array.from({ length: D }, (_, b) =>
+      Z.reduce((s, r) => s + (r[a] - mu[a]) * (r[b] - mu[b]), 0) / (N - 1)));
+  const sd = cov.map((row, j) => Math.sqrt(Math.max(0, row[j])));
+  const varPen = sd.reduce((s, v) => s + Math.max(0, 1 - v), 0) / D;
+  let covPen = 0, maxCorr = 0, anyPair = false;
+  for (let a = 0; a < D; a++) for (let b = 0; b < D; b++) {
+    if (a === b) continue;
+    covPen += cov[a][b] ** 2;
+    if (sd[a] > 1e-6 && sd[b] > 1e-6) { anyPair = true; maxCorr = Math.max(maxCorr, Math.abs(cov[a][b] / (sd[a] * sd[b]))); }
+  }
+  covPen /= D;
+  return { N, D, mu, cov, sd, varPen, covPen, maxCorr, anyPair, live: sd.filter((v) => v >= 0.5).length };
+}
+
+const JEPA_STEPS = [
+  {
+    key: "latent",
+    label: "predict in latent space",
+    title: "Don't reconstruct the pixels — predict the representation",
+    body: "Mask a handful of blocks out of an image. A context encoder sees what's left; a predictor is handed the positions of the missing blocks and has to guess what a target encoder would say about them. The comparison happens entirely in embedding space, so the model is never asked to reproduce carpet grain or sensor noise — detail that costs capacity and teaches nothing. That's the whole premise, and it's also the trapdoor: the target is a representation the network itself produces, which means the network gets a vote on how hard its own exam is.",
+    math: "min₍θ,φ₎ ‖ g_φ( f_θ(x_ctx), pos_y ) − sg[ f_θ̄(x_y) ] ‖²",
+  },
+  {
+    key: "collapse",
+    label: "the degenerate solution",
+    title: "The cheapest way to be predictable is to say nothing",
+    body: "Nothing in that loss says the representation has to be informative — only that it has to be guessable. So the optimizer finds the shortcut: emit the same vector regardless of input. Every prediction is exact, the loss sits at zero, and the encoder has learned precisely nothing. That's complete collapse. The subtler cousin is dimensional collapse — the vectors aren't constant, but they pile into a low-dimensional subspace: some dims pinned flat, others just duplicates of a neighbour. You have a 6-dim embedding using two real directions. Flip between the three regimes and watch the statistics rather than the loss, because the loss gets better as the representation gets worse.",
+    math: "f(x) = c  ∀x   ⇒   loss → 0,  information → 0",
+  },
+  {
+    key: "ema",
+    label: "EMA · stop-grad",
+    title: "What JEPA actually does: make the target a moving goalpost",
+    body: "JEPA never adds a repulsion term. It kills collapse architecturally, with three asymmetries. A stop-gradient on the target branch means the optimizer cannot pull both encoders toward the same constant at once — it only ever gets to move one of them. The target encoder's weights are an exponential moving average of the context encoder's, so the target lags behind by a time constant of roughly 1/(1−τ) steps — around 250 at τ = 0.996. And a predictor head sits on the context side only, breaking the last bit of symmetry between the branches. This is the BYOL/SimSiam lineage: no negatives, no batch statistics, collapse handled by the shape of the thing rather than by the loss. Drag τ and watch the goalpost stop moving.",
+    math: "θ̄ ← τ·θ̄ + (1−τ)·θ   ·   sg[·] on the target   ·   predictor on the context side only",
+  },
+  {
+    key: "duality",
+    label: "the two axes",
+    title: "Sample-contrastive and dimension-contrastive are the same matrix, read two ways",
+    body: "Lay the batch out as Z, N samples by D dimensions. There are exactly two ways to contrast it. Multiply one way and you get Z Zᵀ — an N×N table of sample-against-sample similarity. That's SimCLR and MoCo: push different images apart, so a collapsed batch makes every negative pair maximally similar and the loss punishes it. It works, but the table only says something once N is large, hence big batches or a memory bank. Multiply the other way and you get Zᵀ Z — a D×D covariance between feature dimensions. That's VICReg and Barlow Twins, and D is fixed by your architecture, so the cost doesn't scale with batch size. Garrido et al. made the duality precise in 2022: two families contrasting over opposite axes of one matrix.",
+    math: "Z Zᵀ → N×N  ·  the sample axis, cost grows with N      |      Zᵀ Z → D×D  ·  the feature axis, D fixed by the architecture",
+  },
+  {
+    key: "vicreg",
+    label: "VICReg",
+    title: "Two guardrails on the statistics, and neither one is redundant",
+    body: "VICReg keeps the plain MSE as its invariance term and bolts on two regularisers computed straight off that D×D matrix. Variance: for each dimension, hinge its standard deviation above 1 — a flat dimension has σ = 0 and takes the full penalty, which is what makes this the direct anti-collapse term. Covariance: drive the off-diagonals to zero, so the model can't fake variance by copying one informative dimension into several. Watch what happens when you switch regimes, because it's the whole argument for keeping both: complete collapse scores 0.00 on the covariance term — constant columns are perfectly uncorrelated — and is caught only by variance. Dimensional collapse's duplicated pair passes the variance hinge at σ ≈ 1.00 and is caught only by covariance. Barlow Twins does the same job with one object, driving the cross-correlation between branches toward the identity.",
+    math: "L = λ · inv(Z, Z′)  +  μ · Σⱼ max(0, 1 − σⱼ)  +  ν · Σ over i≠j of C_ij²",
+  },
+];
+
+export function JepaWalkthrough() {
+  const [step, setStep] = useState(0);
+  const [regime, setRegime] = useState("healthy");
+  const [tauI, setTauI] = useState(4);
+  const sc = JEPA_STEPS[step];
+  const sk = sc.key;
+
+  const Z = JEPA_BATCH[regime];
+  const st = jepaStats(Z);
+  const H = jepaStats(JEPA_BATCH.healthy);
+
+  const TAUS = [0.9, 0.95, 0.98, 0.99, 0.996, 0.999];
+  const tau = TAUS[tauI];
+
+  const arrow = (x1, y1, x2, y2, col, dash) => {
+    const a = Math.atan2(y2 - y1, x2 - x1);
+    const w = 4.2, len = 7.5;
+    return (
+      <g stroke={col || P.accent} strokeWidth="1.3" fill="none">
+        <path d={`M${x1} ${y1} L${x2} ${y2}`} strokeDasharray={dash ? "4 3" : "none"} />
+        <path d={`M${x2 - len * Math.cos(a) - w * Math.sin(a)} ${y2 - len * Math.sin(a) + w * Math.cos(a)} L${x2} ${y2} L${x2 - len * Math.cos(a) + w * Math.sin(a)} ${y2 - len * Math.sin(a) - w * Math.cos(a)}`} />
+      </g>
+    );
+  };
+  const box = (x, y, w, h, label, sub, col) => (
+    <g>
+      <rect x={x} y={y} width={w} height={h} fill={P.paper2} stroke={col || P.ink} strokeWidth="1.2" />
+      <text x={x + w / 2} y={y + (sub ? h / 2 - 1 : h / 2 + 4)} textAnchor="middle" style={SK} fontSize="10.5" fill={col || P.ink}>{label}</text>
+      {sub && <text x={x + w / 2} y={y + h / 2 + 12} textAnchor="middle" style={SK} fontSize="8" fill={P.sub}>{sub}</text>}
+    </g>
+  );
+  /* signed heat cell — blue for positive, red for negative, opacity by magnitude */
+  const heat = (v, mx) => ({ fill: v >= 0 ? P.accent : P.red, fillOpacity: Math.min(0.82, 0.06 + (Math.abs(v) / (mx || 1)) * 0.7) });
+  /* rounding can leave −0, which prints as an ugly "-0.00" in a grid of cells */
+  const fx = (v) => (Math.abs(v) < 0.005 ? 0 : v).toFixed(2);
+  const grid = (Z2, x0, y0, cw, ch, mx, opts = {}) => (
+    <g>
+      {Z2.map((row, i) => row.map((v, j) => (
+        <rect key={`${i}-${j}`} x={x0 + j * cw} y={y0 + i * ch} width={cw - 0.7} height={ch - 0.7}
+          {...heat(v, mx)} stroke={P.line} strokeWidth="0.3" />
+      )))}
+      {opts.values && Z2.map((row, i) => row.map((v, j) => (
+        <text key={`t${i}-${j}`} x={x0 + (j + 0.5) * cw - 0.35} y={y0 + (i + 0.5) * ch + 2.6} textAnchor="middle"
+          style={SK} fontSize={opts.fs || 7} fill={Math.abs(v) / (mx || 1) > 0.62 ? "#fff" : P.ink}>{fx(v)}</text>
+      )))}
+    </g>
+  );
+
+  /* target blocks held out of the context view — 3 contiguous blocks on a 6×6 grid */
+  const TARGETS = new Set(["1,1", "1,2", "2,1", "2,2", "0,4", "1,4", "4,2", "4,3", "5,2", "5,3"]);
+
+  const body = (() => {
+    switch (sk) {
+      case "latent": {
+        const cell = 11.5;
+        const patchGrid = (ox, oy, mode) => (
+          <g>
+            {Array.from({ length: 6 }).map((_, r) => Array.from({ length: 6 }).map((_, c) => {
+              const isT = TARGETS.has(`${r},${c}`);
+              const show = mode === "ctx" ? !isT : isT;
+              return (
+                <rect key={`${r}-${c}`} x={ox + c * cell} y={oy + r * cell} width={cell - 0.8} height={cell - 0.8}
+                  fill={show ? (mode === "ctx" ? P.accent : P.red) : P.paper2}
+                  fillOpacity={show ? 0.16 + ((r * 6 + c) % 5) * 0.1 : 1}
+                  stroke={show ? (mode === "ctx" ? P.accent : P.red) : P.line}
+                  strokeWidth={show ? 0.8 : 0.5} strokeDasharray={show ? "none" : "1.5 1.5"} />
+              );
+            }))}
+          </g>
+        );
+        return (
+          <g>
+            <text x={300} y={16} textAnchor="middle" style={SK} fontSize="10.5" fill={P.sub}>one image · a few blocks held out — the prediction is made in embedding space, never in pixels</text>
+
+            {patchGrid(26, 54, "ctx")}
+            <text x={60} y={48} textAnchor="middle" style={SK} fontSize="8.5" fill={P.accent}>context  x_ctx</text>
+            {arrow(98, 88, 122, 88)}
+            {box(124, 70, 84, 38, "f_θ", "context encoder", P.accent)}
+            {arrow(208, 88, 240, 88)}
+            {box(242, 70, 86, 38, "g_φ", "predictor", P.accent)}
+            <text x={285} y={122} textAnchor="middle" style={SK} fontSize="7.8" fill={P.sub}>+ position tokens for y</text>
+            {arrow(328, 88, 362, 88)}
+            {grid([[0.9, -0.4, 1.3, 0.2, -1.1, 0.6]], 366, 79, 11, 18, 1.4)}
+            <text x={399} y={71} textAnchor="middle" style={SK} fontSize="8.5" fill={P.accent}>ŝ_y  predicted</text>
+
+            {patchGrid(26, 172, "tgt")}
+            <text x={60} y={166} textAnchor="middle" style={SK} fontSize="8.5" fill={P.red}>targets  x_y</text>
+            {arrow(98, 206, 122, 206)}
+            {box(124, 188, 84, 38, "f_θ̄", "target encoder", P.red)}
+            {arrow(208, 206, 362, 206, P.red)}
+            {grid([[0.8, -0.5, 1.2, 0.3, -1.0, 0.7]], 366, 197, 11, 18, 1.4)}
+            <text x={399} y={237} textAnchor="middle" style={SK} fontSize="8.5" fill={P.red}>s_y  target</text>
+
+            {/* stop-gradient marker on the target branch */}
+            <circle cx={285} cy={206} r="8.5" fill={P.paper2} stroke={P.red} strokeWidth="1.3" />
+            <path d="M280 201 L290 211 M290 201 L280 211" stroke={P.red} strokeWidth="1.3" />
+            <text x={285} y={230} textAnchor="middle" style={SK} fontSize="8" fill={P.red}>sg[·] — no gradient</text>
+
+            {/* EMA coupling */}
+            {arrow(166, 108, 166, 186, P.sub, true)}
+            <text x={172} y={150} style={SK} fontSize="7.8" fill={P.sub}>EMA</text>
+
+            {arrow(432, 92, 468, 128)}
+            {arrow(432, 202, 468, 166, P.red)}
+            <rect x={470} y={126} width={108} height={42} fill={P.accentSoft} stroke={P.accent} strokeWidth="1.3" />
+            <text x={524} y={144} textAnchor="middle" style={SK} fontSize="10.5" fill={P.accent}>‖ ŝ_y − s_y ‖²</text>
+            <text x={524} y={158} textAnchor="middle" style={SK} fontSize="7.8" fill={P.sub}>prediction loss</text>
+            <text x={300} y={268} textAnchor="middle" style={SK} fontSize="8.8" fontStyle="italic" fill={P.sub}>the thing being predicted is the network's own output — which is exactly the problem in step 2</text>
+          </g>
+        );
+      }
+
+      case "collapse": {
+        const mx = 2;
+        const x0 = 132, y0 = 62, cw = 30, ch = 20;
+        return (
+          <g>
+            <text x={300} y={16} textAnchor="middle" style={SK} fontSize="10.5" fill={P.sub}>the batch as a matrix  Z  —  8 images down, 6 embedding dims across</text>
+            {[0, 1, 2, 3, 4, 5].map((j) => (
+              <text key={j} x={x0 + (j + 0.5) * cw} y={56} textAnchor="middle" style={SK} fontSize="8" fill={P.sub}>d{j + 1}</text>
+            ))}
+            {Z.map((_, i) => (
+              <text key={i} x={x0 - 6} y={y0 + (i + 0.5) * ch + 3} textAnchor="end" style={SK} fontSize="8" fill={P.sub}>x{"₁₂₃₄₅₆₇₈"[i]}</text>
+            ))}
+            {grid(Z, x0, y0, cw, ch, mx, { values: true, fs: 7.4 })}
+
+            <text x={x0 - 6} y={y0 + 8 * ch + 16} textAnchor="end" style={SK} fontSize="8" fill={P.ink}>σⱼ</text>
+            {st.sd.map((s, j) => (
+              <text key={j} x={x0 + (j + 0.5) * cw} y={y0 + 8 * ch + 16} textAnchor="middle" style={SK} fontSize="8.4"
+                fill={s < 0.5 ? P.red : P.green}>{s.toFixed(2)}</text>
+            ))}
+            <text x={x0 + 3 * cw} y={y0 + 8 * ch + 32} textAnchor="middle" style={SK} fontSize="7.8" fontStyle="italic" fill={P.sub}>standard deviation of each dimension across the batch</text>
+
+            <rect x={344} y={54} width={234} height={172} fill={P.paper2} stroke={P.line} strokeWidth="1.1" />
+            <rect x={344} y={54} width={234} height={20} fill={P.faint} />
+            <text x={354} y={68} style={SK} fontSize="9" fill={P.ink}>what the optimizer sees</text>
+            {[
+              { l: "prediction loss", v: regime === "full" ? "0.00  ← solved" : "> 0  — must actually predict", c: regime === "full" ? P.red : P.green },
+              { l: "dims with σ ≥ 0.5", v: `${st.live} of ${st.D}`, c: st.live === st.D ? P.green : P.red },
+              { l: "max |corr| between dims", v: st.anyPair ? st.maxCorr.toFixed(2) : "—  (no live dims)", c: st.anyPair && st.maxCorr > 0.9 ? P.red : st.anyPair ? P.green : P.red },
+            ].map((r, i) => (
+              <g key={i}>
+                <text x={354} y={94 + i * 24} style={SK} fontSize="8.6" fill={P.sub}>{r.l}</text>
+                <text x={568} y={94 + i * 24} textAnchor="end" style={SK} fontSize="9.2" fill={r.c}>{r.v}</text>
+              </g>
+            ))}
+            <line x1={354} y1={158} x2={568} y2={158} stroke={P.line} strokeWidth="0.8" />
+            <text x={354} y={176} style={SK} fontSize="8.8" fill={regime === "healthy" ? P.green : P.red}>
+              {regime === "healthy" ? "usable representation" : regime === "dim" ? "dimensional collapse" : "complete collapse"}
+            </text>
+            <foreignObject x={354} y={182} width={214} height={40}>
+              <div xmlns="http://www.w3.org/1999/xhtml" style={{ ...SK, fontSize: "8.4px", lineHeight: 1.45, color: P.sub }}>
+                {JEPA_REGIMES.find((r) => r.key === regime).blurb}
+              </div>
+            </foreignObject>
+            <text x={461} y={244} textAnchor="middle" style={SK} fontSize="8.6" fontStyle="italic" fill={P.sub}>the loss improves as the representation gets worse</text>
+          </g>
+        );
+      }
+
+      case "ema": {
+        /* a scalar weight wandering during training, and the EMA copy trailing it */
+        const NS = 600, PX0 = 300, PX1 = 582, PY0 = 244, PY1 = 66;
+        const th = (t) => 0.5 + 0.30 * Math.sin(t / 95) + 0.10 * Math.sin(t / 23) + 0.055 * Math.sin(t / 6.5);
+        const X = (t) => PX0 + (t / NS) * (PX1 - PX0);
+        const Y = (v) => PY0 - v * (PY0 - PY1);
+        let bar = th(0);
+        const pOnline = [], pEma = [];
+        for (let t = 0; t <= NS; t++) {
+          bar = tau * bar + (1 - tau) * th(t);
+          if (t % 3 === 0) { pOnline.push(`${X(t)} ${Y(th(t))}`); pEma.push(`${X(t)} ${Y(bar)}`); }
+        }
+        const tc = Math.round(1 / (1 - tau));
+        return (
+          <g>
+            <text x={300} y={16} textAnchor="middle" style={SK} fontSize="10.5" fill={P.sub}>three asymmetries, no negatives — the target can never be optimised toward the shortcut</text>
+
+            {box(24, 74, 84, 34, "f_θ", "context", P.accent)}
+            {arrow(66, 108, 66, 132)}
+            {box(24, 134, 84, 34, "g_φ", "predictor", P.accent)}
+            {box(152, 74, 96, 34, "f_θ̄", "target · EMA", P.red)}
+            {arrow(108, 91, 150, 91, P.sub, true)}
+            <text x={129} y={85} textAnchor="middle" style={SK} fontSize="7.6" fill={P.sub}>EMA</text>
+            {arrow(66, 168, 100, 200)}
+            {arrow(200, 108, 156, 200, P.red)}
+            <rect x={78} y={202} width={112} height={30} fill={P.accentSoft} stroke={P.accent} strokeWidth="1.2" />
+            <text x={134} y={221} textAnchor="middle" style={SK} fontSize="10" fill={P.accent}>‖ ŝ − s ‖²</text>
+            <circle cx={178} cy={154} r="8" fill={P.paper2} stroke={P.red} strokeWidth="1.3" />
+            <path d="M173.5 149.5 L182.5 158.5 M182.5 149.5 L173.5 158.5" stroke={P.red} strokeWidth="1.3" />
+            <text x={196} y={152} style={SK} fontSize="7.8" fill={P.red}>gradients</text>
+            <text x={196} y={162} style={SK} fontSize="7.8" fill={P.red}>stop here</text>
+            <text x={134} y={252} textAnchor="middle" style={SK} fontSize="8" fontStyle="italic" fill={P.sub}>predictor on one side only</text>
+
+            {/* the goalpost plot */}
+            <line x1={PX0} y1={PY1} x2={PX0} y2={PY0} stroke={P.ink} strokeWidth="1.1" />
+            <line x1={PX0} y1={PY0} x2={PX1} y2={PY0} stroke={P.ink} strokeWidth="1.1" />
+            {[0, 200, 400, 600].map((t) => (
+              <text key={t} x={X(t)} y={PY0 + 13} textAnchor="middle" style={SK} fontSize="7.6" fill={P.sub}>{t}</text>
+            ))}
+            <text x={(PX0 + PX1) / 2} y={PY0 + 26} textAnchor="middle" style={SK} fontSize="8" fill={P.sub}>training steps</text>
+            <text x={PX0 - 2} y={PY1 - 20} style={SK} fontSize="8" fill={P.sub}>a single weight, during training</text>
+            <path d={`M${pOnline.join(" L")}`} fill="none" stroke={P.accent} strokeWidth="1" strokeOpacity="0.5" />
+            <path d={`M${pEma.join(" L")}`} fill="none" stroke={P.red} strokeWidth="2" />
+            <text x={PX1} y={PY1 - 8} textAnchor="end" style={SK} fontSize="8.4" fill={P.accent}>θ  context (trained)</text>
+            <text x={PX1} y={PY1 + 3} textAnchor="end" style={SK} fontSize="8.4" fill={P.red}>θ̄  target (EMA, τ = {tau})</text>
+            <text x={PX0 + 6} y={PY0 - 8} style={SK} fontSize="8.4" fill={P.ink}>time constant ≈ 1/(1−τ) = {tc} steps</text>
+          </g>
+        );
+      }
+
+      case "duality": {
+        const Zh = JEPA_BATCH.healthy;
+        const N = 8, D = 6;
+        const gram = Array.from({ length: N }, (_, a) =>
+          Array.from({ length: N }, (_, b) => Zh[a].reduce((s, v, j) => s + v * Zh[b][j], 0) / D));
+        const gmx = Math.max(...gram.flat().map(Math.abs));
+        const cmx = Math.max(...H.cov.flat().map(Math.abs));
+        return (
+          <g>
+            <text x={300} y={16} textAnchor="middle" style={SK} fontSize="10.5" fill={P.sub}>one embedding matrix, two ways to multiply it — and that is the whole difference between the families</text>
+
+            <text x={300} y={82} textAnchor="middle" style={SK} fontSize="9" fill={P.ink}>Z  ·  N × D</text>
+            {grid(Zh, 264, 90, 12, 13, 2)}
+            <text x={300} y={220} textAnchor="middle" style={SK} fontSize="7.8" fill={P.sub}>N = 8 samples</text>
+            <text x={300} y={231} textAnchor="middle" style={SK} fontSize="7.8" fill={P.sub}>D = 6 dims</text>
+
+            {arrow(258, 142, 178, 142)}
+            <text x={218} y={135} textAnchor="middle" style={SK} fontSize="8" fill={P.accent}>Z Zᵀ</text>
+            {arrow(342, 142, 428, 142)}
+            <text x={385} y={135} textAnchor="middle" style={SK} fontSize="8" fill={P.accent}>Zᵀ Z</text>
+
+            {grid(gram, 78, 96, 11.5, 11.5, gmx)}
+            <text x={124} y={90} textAnchor="middle" style={SK} fontSize="9" fill={P.ink}>N × N  ·  sample axis</text>
+            <text x={124} y={200} textAnchor="middle" style={SK} fontSize="8.4" fill={P.accent}>sample-contrastive</text>
+            <text x={124} y={211} textAnchor="middle" style={SK} fontSize="7.8" fill={P.sub}>SimCLR · MoCo</text>
+            <text x={124} y={226} textAnchor="middle" style={SK} fontSize="7.8" fill={P.sub}>push different images apart</text>
+            <text x={124} y={238} textAnchor="middle" style={SK} fontSize="7.8" fill={P.red}>needs large N → big batch</text>
+            <text x={124} y={249} textAnchor="middle" style={SK} fontSize="7.8" fill={P.red}>or a memory bank</text>
+
+            {grid(H.cov, 450, 96, 15.5, 15.5, cmx)}
+            <text x={496} y={90} textAnchor="middle" style={SK} fontSize="9" fill={P.ink}>D × D  ·  feature axis</text>
+            <text x={496} y={200} textAnchor="middle" style={SK} fontSize="8.4" fill={P.accent}>dimension-contrastive</text>
+            <text x={496} y={211} textAnchor="middle" style={SK} fontSize="7.8" fill={P.sub}>VICReg · Barlow Twins</text>
+            <text x={496} y={226} textAnchor="middle" style={SK} fontSize="7.8" fill={P.sub}>decorrelate the dimensions</text>
+            <text x={496} y={238} textAnchor="middle" style={SK} fontSize="7.8" fill={P.green}>D is fixed by the architecture</text>
+            <text x={496} y={249} textAnchor="middle" style={SK} fontSize="7.8" fill={P.green}>— batch size stays free</text>
+
+            <text x={300} y={266} textAnchor="middle" style={SK} fontSize="8.6" fontStyle="italic" fill={P.sub}>the duality — Garrido et al. 2022: opposite axes of the same object</text>
+          </g>
+        );
+      }
+
+      case "vicreg": {
+        const bx = 46, bw = 28, bg = 38, base = 176, unit = 88;
+        const cx0 = 350, cy0 = 62, cs = 26;
+        const cmx = Math.max(0.001, ...st.cov.flat().map(Math.abs));
+        return (
+          <g>
+            <text x={300} y={16} textAnchor="middle" style={SK} fontSize="10.5" fill={P.sub}>invariance pulls the branches together — variance and covariance stop it winning by collapsing</text>
+
+            {/* variance hinge */}
+            <text x={bx} y={44} style={SK} fontSize="9" fill={P.ink}>variance  ·  hinge σⱼ above 1</text>
+            <line x1={bx - 6} y1={base} x2={bx + 6 * bg} y2={base} stroke={P.ink} strokeWidth="1" />
+            <line x1={bx - 6} y1={base - unit} x2={bx + 6 * bg} y2={base - unit} stroke={P.green} strokeWidth="1" strokeDasharray="4 3" />
+            <text x={bx + 6 * bg + 2} y={base - unit + 3} style={SK} fontSize="7.6" fill={P.green}>σ = 1</text>
+            {st.sd.map((s, j) => {
+              const h = Math.max(0.6, s * unit), pen = Math.max(0, 1 - s);
+              return (
+                <g key={j}>
+                  {pen > 0.01 && <rect x={bx + j * bg} y={base - unit} width={bw} height={unit - h} fill={P.red} fillOpacity="0.14" stroke={P.red} strokeWidth="0.6" strokeDasharray="2 2" />}
+                  <rect x={bx + j * bg} y={base - h} width={bw} height={h} fill={pen > 0.01 ? P.red : P.green} fillOpacity="0.6" stroke={pen > 0.01 ? P.red : P.green} strokeWidth="0.9" />
+                  <text x={bx + j * bg + bw / 2} y={base + 12} textAnchor="middle" style={SK} fontSize="7.6" fill={P.sub}>d{j + 1}</text>
+                  <text x={bx + j * bg + bw / 2} y={base + 23} textAnchor="middle" style={SK} fontSize="7.4" fill={pen > 0.01 ? P.red : P.green}>{s.toFixed(2)}</text>
+                  {pen > 0.01 && <text x={bx + j * bg + bw / 2} y={base - unit - 5} textAnchor="middle" style={SK} fontSize="7.4" fill={P.red}>+{pen.toFixed(2)}</text>}
+                </g>
+              );
+            })}
+            <text x={bx} y={base + 40} style={SK} fontSize="8" fill={P.sub}>the shaded gap is the penalty: max(0, 1 − σⱼ)</text>
+
+            {/* covariance matrix */}
+            <text x={cx0} y={44} style={SK} fontSize="9" fill={P.ink}>covariance  ·  drive the off-diagonals to 0</text>
+            {st.cov.map((row, a) => row.map((v, b) => (
+              <g key={`${a}-${b}`}>
+                <rect x={cx0 + b * cs} y={cy0 + a * cs} width={cs - 0.8} height={cs - 0.8}
+                  fill={a === b ? P.faint : P.red} fillOpacity={a === b ? 1 : Math.min(0.8, (Math.abs(v) / cmx) * 0.8)}
+                  stroke={a === b ? P.line : P.red} strokeWidth={a === b ? 0.4 : 0.5} strokeOpacity={a === b ? 1 : 0.35} />
+                <text x={cx0 + (b + 0.5) * cs - 0.4} y={cy0 + (a + 0.5) * cs + 2.6} textAnchor="middle" style={SK} fontSize="7"
+                  fill={a === b ? P.sub : Math.abs(v) / cmx > 0.55 ? "#fff" : P.ink}>{fx(v)}</text>
+              </g>
+            )))}
+            <text x={cx0 + 3 * cs} y={cy0 + 6 * cs + 12} textAnchor="middle" style={SK} fontSize="7.8" fill={P.sub}>diagonal is variance (greyed) — only the off-diagonals are penalised</text>
+
+            {/* the two scores */}
+            <line x1={bx} y1={238} x2={554} y2={238} stroke={P.line} strokeWidth="0.8" />
+            <text x={bx} y={256} style={SK} fontSize="8.6" fill={P.sub}>variance term  ·  mean of max(0, 1 − σⱼ)</text>
+            <text x={274} y={256} textAnchor="end" style={SK} fontSize="9.6" fill={st.varPen > 0.01 ? P.red : P.green}>{st.varPen.toFixed(2)}</text>
+            <text x={330} y={256} style={SK} fontSize="8.6" fill={P.sub}>covariance term  ·  off-diagonals, squared</text>
+            <text x={554} y={256} textAnchor="end" style={SK} fontSize="9.6" fill={st.covPen > 0.01 ? P.red : P.green}>{st.covPen.toFixed(2)}</text>
+            <text x={bx} y={273} style={SK} fontSize="8.4" fontStyle="italic" fill={regime === "healthy" ? P.green : P.red}>
+              {regime === "healthy"
+                ? "both terms satisfied — the invariance term is free to do its job"
+                : regime === "full"
+                  ? "the variance term catches this one alone: constant columns are perfectly uncorrelated, so covariance reads 0.00"
+                  : "d₁ and d₂ both sit at σ ≈ 1.00, so variance is nearly satisfied there — only covariance sees they are one direction twice"}
+            </text>
+          </g>
+        );
+      }
+
+      default: return null;
+    }
+  })();
+
+  const navBtn = { ...SK, fontSize: "0.8rem", padding: "2px 10px", border: `1px solid ${P.line}`, background: P.paper2, color: P.ink, cursor: "pointer" };
+  const N = JEPA_STEPS.length;
+  const showRegime = sk === "collapse" || sk === "vicreg";
+
+  return (
+    <div>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 10, marginBottom: 10 }}>
+        <span style={{ ...SK, fontSize: "0.6rem", color: P.sub, textTransform: "uppercase", letterSpacing: "0.08em" }}>I-JEPA · Assran et al. 2023 · and the three ways the field fights collapse</span>
+        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+          <span style={{ ...SK, fontSize: "0.62rem", color: P.sub, textTransform: "uppercase", letterSpacing: "0.06em" }}>step {step + 1} / {N}</span>
+          <button onClick={() => setStep((step + N - 1) % N)} aria-label="Previous step" style={navBtn}>←</button>
+          <button onClick={() => setStep((step + 1) % N)} aria-label="Next step" style={navBtn}>→</button>
+        </div>
+      </div>
+
+      {showRegime && (
+        <div style={{ display: "flex", gap: 8, marginBottom: 10, flexWrap: "wrap", alignItems: "center" }}>
+          <span style={{ ...SK, fontSize: "0.62rem", color: P.sub }}>the batch:</span>
+          {JEPA_REGIMES.map((r) => (
+            <button key={r.key} onClick={() => setRegime(r.key)} aria-pressed={regime === r.key}
+              style={{ ...SK, fontSize: "0.68rem", padding: "3px 11px", cursor: "pointer", border: `1px solid ${regime === r.key ? P.accent : P.line}`, background: regime === r.key ? P.accentSoft : P.paper2, color: regime === r.key ? P.accent : P.sub }}>
+              {r.label}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {sk === "ema" && (
+        <div style={{ display: "flex", gap: 10, marginBottom: 10, flexWrap: "wrap", alignItems: "center" }}>
+          <span style={{ ...SK, fontSize: "0.62rem", color: P.sub }}>decay τ:</span>
+          <input type="range" min={0} max={TAUS.length - 1} step={1} value={tauI} onChange={(e) => setTauI(+e.target.value)} aria-label="EMA decay rate tau" style={{ accentColor: P.accent, width: 150 }} />
+          <span style={{ ...SK, fontSize: "0.66rem", color: P.ink, minWidth: 78 }}>τ = {tau}</span>
+          <span style={{ ...SK, fontSize: "0.66rem", color: P.sub }}>
+            {tau < 0.97 ? "too fast — the target tracks the context encoder, and the asymmetry weakens" : tau > 0.997 ? "too slow — the target is nearly frozen and the signal goes stale" : "≈ the operating range: a target that lags, but still moves"}
+          </span>
+        </div>
+      )}
+
+      <div style={{ border: `1px solid ${P.line}`, borderTop: `2px solid ${P.ink}`, background: P.paper2 }}>
+        <div style={{ background: "#fff" }}>
+          <div style={{ aspectRatio: "600 / 285" }}>
+            <svg viewBox="0 0 600 285" width="100%" height="100%" role="img" aria-label={`JEPA walkthrough step ${step + 1}: ${sc.label}`} style={{ display: "block" }} strokeLinecap="round" strokeLinejoin="round">
+              {body}
+            </svg>
+          </div>
+        </div>
+        <div style={{ padding: "0.9rem 1.1rem 1rem" }}>
+          <div style={{ ...DISP, fontWeight: 600, fontSize: "1rem", color: P.ink, marginBottom: 4 }}>{sc.title}</div>
+          <p style={{ ...BODY, fontSize: "0.88rem", color: P.sub, lineHeight: 1.65, textWrap: "pretty", margin: 0 }}>
+            <span style={{ ...SK, fontSize: "0.6rem", color: P.accent, textTransform: "uppercase", letterSpacing: "0.08em", marginRight: 6 }}>step {step + 1}</span>
+            {sc.body}
+          </p>
+          <div style={{ ...SK, fontSize: "0.66rem", color: P.ink, marginTop: 9, background: P.faint, padding: "6px 9px", display: "inline-block" }}>{sc.math}</div>
+        </div>
+      </div>
+
+      <div style={{ display: "flex", gap: 6, marginTop: 10, flexWrap: "wrap" }}>
+        {JEPA_STEPS.map((s, j) => (
+          <button key={s.key} onClick={() => setStep(j)} style={{ ...SK, fontSize: "0.62rem", padding: "4px 9px", cursor: "pointer", border: `1px solid ${j === step ? P.accent : P.line}`, background: j === step ? P.accentSoft : "#fff", color: j === step ? P.accent : P.sub }}>{j + 1}. {s.label}</button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/* ════════════════════════════════════════
    INSIGHTS VIEWER — step through real figures + the observation each carries
    ════════════════════════════════════════ */
 export function InsightsViewer({ items }) {

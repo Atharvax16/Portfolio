@@ -692,6 +692,13 @@ export const ARCHITECTURES = [
     intro: "Instead of *training* a detector, borrow a backbone that already learned what images look like — with **no labels at all** — then let a small ML head do the deciding. Student–teacher self-supervision, with XGBoost (or a tiny MLP) on top of the frozen embedding.",
   },
   {
+    key: "jepa", name: "JEPA — predicting in latent space", short: "JEPA", family: "Self-supervised",
+    status: "live", component: "JepaWalkthrough", year: 2023,
+    note: "predict in latent space, not pixels · and don't collapse",
+    steps: "mask → predict the embedding → the degenerate solution → EMA · negatives · VICReg",
+    intro: "Reconstructing pixels spends capacity on detail nobody wants — the grain of the carpet, the noise in the sky. JEPA moves the prediction *into embedding space*: mask a few blocks of an image and ask a predictor to guess the **representation** of what was hidden, never the pixels themselves. Which immediately opens a trapdoor. The target is a representation the network also produces, so the network gets a vote on how hard its own exam is — and the cheapest way to be perfectly predictable is to **stop representing anything at all**. This sketch draws the architecture first, then spends the rest of its steps on that failure and the three genuinely different ways the field fights it: JEPA's own EMA-and-stop-gradient asymmetry, the contrastive answer, and the one that regularises the *statistics* instead.",
+  },
+  {
     key: "steervit", name: "SteerViT", short: "SteerViT", family: "Multimodal",
     status: "live", component: "SteerVitWalkthrough", year: 2025,
     note: "gated cross-attention · steering a frozen backbone by prompt",
@@ -721,10 +728,6 @@ export const ARCHITECTURES = [
   },
 
   /* ── the roadmap: slots, not empty rooms ── */
-  {
-    key: "jepa", name: "JEPA", short: "JEPA", family: "Self-supervised",
-    status: "planned", note: "predict in latent space, not pixels",
-  },
   {
     key: "embed", name: "Embedding Space", short: "Embedding space", family: "Self-supervised",
     status: "planned", note: "an interactive projector — what the model's map looks like",
