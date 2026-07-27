@@ -709,7 +709,7 @@ export const ARCHITECTURES = [
     key: "rag", name: "Retrieval-Augmented Generation", short: "RAG", family: "Memory & retrieval",
     status: "live", component: "RagWalkthrough", year: 2020,
     note: "retrieve → ground → generate",
-    steps: "index → MIPS → concatenate → marginalise → the gradient that reaches the retriever",
+    steps: "index → MIPS → concatenate → marginalise → the retriever ablation → the gradient that reaches the retriever",
     intro: "Stop cramming knowledge into weights: bolt on a searchable index of *literal text*, retrieve into the prompt, and marginalise over what came back so the retriever trains by gradient descent **without a single labelled passage**. I rebuilt the whole system end to end on a laptop — 15,077 passages, both equations written from scratch, every number in this sketch measured rather than quoted. Including the one that went the wrong way.",
   },
   {

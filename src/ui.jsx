@@ -2010,6 +2010,34 @@ const RAG_KSWEEP = [
   { k: 20, em: 20.8, se: 4.1, rec: 70.8 },
 ];
 
+/* §8, Fig 3 centre — answer-recall@k for three retrievers over the same n=96
+   questions. No generator runs here at all: retrieve, then check whether a gold
+   answer string appears in the retrieved text. That is why all three could be
+   swept at every k while the EM sweep in §7 had to be rationed. */
+const RAG_RECALL_CURVES = [
+  { name: "learned DPR (RAG-Token)", col: P.accent, rec: [26.0, 36.5, 50.0, 61.5, 70.8] },
+  { name: "frozen DPR — never fine-tuned", col: P.green, rec: [24.0, 38.5, 57.3, 65.6, 76.0] },
+  { name: "BM25 word overlap", col: P.yellow, rec: [67.7, 75.0, 81.2, 86.5, 89.6] },
+];
+
+/* §8 — the ablation itself, at k=5, all four feeding the same generator weights.
+   `paper` is Table 6 (NQ dev EM over the full 21M index); random has no row there. */
+const RAG_ABLATION = [
+  { label: "DPR ✎", full: "learned DPR", em: 24.0, se: 4.4, f1: 30.8, rec: 50.0, paper: 43.5, col: P.accent },
+  { label: "DPR ❄", full: "frozen DPR", em: 22.9, se: 4.3, f1: 32.7, rec: 57.3, paper: 37.8, col: P.green },
+  { label: "BM25", full: "BM25", em: 44.8, se: 5.1, f1: 55.7, rec: 81.2, paper: 29.7, col: P.yellow },
+  { label: "random", full: "random passages", em: 2.1, se: 1.5, f1: 7.0, rec: 1.0, paper: null, col: P.line },
+];
+
+/* §9 — the same 96 questions split by whether the answer string was retrieved
+   at all. It falls exactly 48/48, which is coincidence, not design. */
+const RAG_EVIDENCE = {
+  with: { n: 48, em: 45.8 },
+  without: { n: 48, em: 2.1 },
+  paper: 11.8,
+  example: { q: "Which country was the last to receive the disease?", pred: "russia" },
+};
+
 /* §11 — 25 steps of end-to-end training on 8 questions, answer strings only. */
 const RAG_TRUST_CURVE = [
   [0, 0.097], [5, 0.245], [10, 0.305], [15, 0.341], [20, 0.321], [25, 0.354],
@@ -2047,6 +2075,18 @@ const RAG_STEPS = [
     math: "answer-recall@k  26 → 36 → 50 → 61 → 71   ·   EM peaks at k=5, inside the noise",
   },
   {
+    key: "retrievers", label: "which retriever",
+    title: "The ablation that went the other way",
+    body: "The paper's Table 6 swaps the retriever and keeps everything else: learned DPR 43.5 EM, the same DPR never fine-tuned 37.8, BM25 word-overlap 29.7. I ran all three into the same generator weights and the ordering inverted — BM25 won outright, 44.8 EM to DPR's 24.0, and it isn't close on the retrieval side either: 81.2% recall@5 against 50.0%. Freezing the query tower cost nothing measurable (22.9 vs 24.0, well inside the error bars), so I can't show fine-tuning helped at all. The reading I'll defend: SQuAD questions are written while looking at the paragraph they're about, so they share rare words with it, and a 15,077-passage haystack almost never makes you disambiguate between two documents using the same words. Learned retrieval buys generalisation over 21M passages; at 1/1400th of that, word counting is enough. It is the ablation that most needs the paper's own scale to be tested.",
+    math: "recall@5 — BM25 81.2 · frozen DPR 57.3 · learned DPR 50.0   —   paper's order: learned > frozen > BM25",
+  },
+  {
+    key: "evidence", label: "no evidence",
+    title: "Right when the answer was never retrieved",
+    body: "§4.1's sharpest claim: RAG is right 11.8% of the time on questions where the answer appears in no retrieved document — where an extractive reader scores 0 by construction, because it can only copy a span that is present. Splitting my 96 questions by whether a gold string appears anywhere in the top-5 gives an even 48/48. With evidence: 45.8 EM. Without: 2.1 — one question, a rephrasing that landed on “russia” with no passage naming it. Non-zero is the structural point and it holds, but 2.1 against 11.8 is far below, and a single hit at n=48 is one question from zero. The more useful number is the split itself: the generator converts roughly half of what the retriever finds, so at this scale retrieval, not generation, is what binds.",
+    math: "EM 45.8 (answer retrieved, n=48)   vs   2.1 (answer never retrieved, n=48)   ·   paper 11.8%",
+  },
+  {
     key: "gradient", label: "the leak",
     title: "The answer label trains the retriever",
     body: "This is the claim that makes RAG a model rather than a pipeline. p_η(z|x) is a factor in the output probability, so grading the answer sends gradient straight through the trust score and into the query encoder — no one ever labels a passage as relevant. I trained 25 steps on eight questions, supervising nothing but the answer strings, and watched trust in the passage that actually contains the answer climb from 0.097 to 0.354. Only the query tower moves; the document tower and the index stay frozen, which is exactly why this is affordable.",
@@ -2062,7 +2102,7 @@ const RAG_STEPS = [
     key: "verdict", label: "the verdict",
     title: "What actually held up at 1/1400th scale",
     body: "The mechanism reproduces: retrieval beats closed-book by 23 EM, the hand-written marginalisation matches the reference exactly, the gradient reaches the retriever, recall is monotone in k, hot-swapping works. One result went the other way and is worth more than the ones that agreed — BM25 beat the learned DPR retriever, 44.8 to 24.0 EM, the reverse of the paper's 43.5 vs 29.7. That is a corpus-size artifact, not a refutation: DPR's query tower was fine-tuned on NaturalQuestions, my questions are SQuAD, and word overlap is unusually strong when the haystack is 15k passages. RAG-Sequence scoring 0.0 is a decoding-config bug in my repro, and I've left it in the table rather than hiding it.",
-    math: "✓ 8 claims reproduced · ~ 3 inside the noise · ✗ 2 did not — see results.md",
+    math: "✓ 8 reproduced · ~ 2 inside the noise · ✗ 2 did not — see results.md",
   },
 ];
 
@@ -2320,6 +2360,132 @@ export function RagWalkthrough() {
         );
       }
 
+      case "retrievers": {
+        /* Left: Fig 3 centre, recall@k for three retrievers — retrieval only.
+           Right: EM at k=5, mine beside the paper's Table 6, same axis so the
+           inverted ordering is visible rather than described. */
+        const RX = (i) => 76 + i * 54, RY = (v) => 200 - v * 1.56;
+        const BY = (v) => 200 - v * 3.1;
+        return (
+          <g>
+            <text x={300} y={20} textAnchor="middle" style={SK} fontSize="11" fill={P.sub}>same generator in every row · only the retriever changes</text>
+
+            {/* ── recall@k, three retrievers ── */}
+            <text x={62} y={38} style={SK} fontSize="9" fill={P.ink}>answer-recall@k — no generator involved</text>
+            <line x1={62} y1={200} x2={306} y2={200} stroke={P.ink} strokeWidth="1.1" />
+            <line x1={62} y1={44} x2={62} y2={200} stroke={P.ink} strokeWidth="1.1" />
+            {[0, 25, 50, 75, 100].map((g) => (
+              <g key={g}>
+                <line x1={62} y1={RY(g)} x2={306} y2={RY(g)} stroke={P.line} strokeWidth="0.6" strokeDasharray="2 4" />
+                <text x={57} y={RY(g) + 3} textAnchor="end" style={SK} fontSize="8" fill={P.sub}>{g}</text>
+              </g>
+            ))}
+            {RAG_RECALL_CURVES.map((c) => (
+              <g key={c.name}>
+                <path d={`M${c.rec.map((v, i) => `${RX(i)} ${RY(v)}`).join(" L")}`} fill="none" stroke={c.col} strokeWidth="1.7" />
+                {c.rec.map((v, i) => <circle key={i} cx={RX(i)} cy={RY(v)} r="2.8" fill={c.col} />)}
+              </g>
+            ))}
+            {RAG_KSWEEP.map((d, i) => (
+              <text key={d.k} x={RX(i)} y={212} textAnchor="middle" style={SK} fontSize="8.5" fill={P.sub}>k={d.k}</text>
+            ))}
+            {RAG_RECALL_CURVES.map((c, i) => (
+              <g key={c.name} transform={`translate(64 ${228 + i * 14})`}>
+                <line x1={0} y1={-3} x2={14} y2={-3} stroke={c.col} strokeWidth="1.7" />
+                <circle cx={7} cy={-3} r="2.8" fill={c.col} />
+                <text x={20} y={0} style={SK} fontSize="8.5" fill={P.sub}>{c.name}</text>
+              </g>
+            ))}
+
+            {/* ── EM at k=5, mine vs the paper ── */}
+            <text x={350} y={38} style={SK} fontSize="9" fill={P.ink}>exact match at k=5 · mine vs paper Table 6</text>
+            <line x1={350} y1={200} x2={586} y2={200} stroke={P.ink} strokeWidth="1.1" />
+            <line x1={350} y1={44} x2={350} y2={200} stroke={P.ink} strokeWidth="1.1" />
+            {[0, 20, 40].map((g) => (
+              <g key={g}>
+                <line x1={350} y1={BY(g)} x2={586} y2={BY(g)} stroke={P.line} strokeWidth="0.6" strokeDasharray="2 4" />
+                <text x={345} y={BY(g) + 3} textAnchor="end" style={SK} fontSize="8" fill={P.sub}>{g}</text>
+              </g>
+            ))}
+            {RAG_ABLATION.map((r, i) => {
+              const gx = 360 + i * 57;
+              return (
+                <g key={r.label}>
+                  <rect x={gx} y={BY(r.em)} width={20} height={200 - BY(r.em)} fill={P.accent} fillOpacity="0.85" />
+                  <text x={gx + 10} y={BY(r.em) - 4} textAnchor="middle" style={SK} fontSize="8" fill={P.accent}>{r.em.toFixed(1)}</text>
+                  {r.paper !== null ? (
+                    <>
+                      <rect x={gx + 22} y={BY(r.paper)} width={20} height={200 - BY(r.paper)} fill={P.sub} fillOpacity="0.28" stroke={P.sub} strokeWidth="0.7" />
+                      <text x={gx + 32} y={BY(r.paper) - 4} textAnchor="middle" style={SK} fontSize="8" fill={P.sub}>{r.paper.toFixed(1)}</text>
+                    </>
+                  ) : (
+                    <text x={gx + 32} y={196} textAnchor="middle" style={SK} fontSize="8" fill={P.line}>n/a</text>
+                  )}
+                  <text x={gx + 21} y={212} textAnchor="middle" style={SK} fontSize="8.5" fill={P.ink}>{r.label}</text>
+                </g>
+              );
+            })}
+            <g transform="translate(352 226)">
+              <rect x={0} y={-7} width={11} height={9} fill={P.accent} fillOpacity="0.85" />
+              <text x={16} y={1} style={SK} fontSize="8.5" fill={P.sub}>mine — SQuAD-dev, 15k index</text>
+              <rect x={0} y={7} width={11} height={9} fill={P.sub} fillOpacity="0.28" stroke={P.sub} strokeWidth="0.7" />
+              <text x={16} y={15} style={SK} fontSize="8.5" fill={P.sub}>paper — NQ dev, 21M index</text>
+            </g>
+
+            <line x1={24} y1={262} x2={576} y2={262} stroke={P.line} strokeWidth="0.8" />
+            <text x={300} y={277} textAnchor="middle" style={SK} fontSize="10" fill={P.red}>the ordering inverts: BM25 44.8 &gt; learned DPR 24.0 ≈ frozen DPR 22.9</text>
+            <text x={300} y={292} textAnchor="middle" style={SK} fontSize="9.5" fontStyle="italic" fill={P.sub}>SQuAD questions share rare words with their paragraph, and 15k passages rarely force a disambiguation</text>
+          </g>
+        );
+      }
+
+      case "evidence": {
+        const EY = (v) => 230 - v * 3.4;
+        const cols = [
+          { x: 36, d: RAG_EVIDENCE.with, filled: true, cap: "answer IS somewhere in the top-5", col: P.accent },
+          { x: 320, d: RAG_EVIDENCE.without, filled: false, cap: "answer is in NO retrieved document", col: P.red },
+        ];
+        return (
+          <g>
+            <text x={300} y={18} textAnchor="middle" style={SK} fontSize="11" fill={P.sub}>the same 96 questions, split by whether the evidence was ever retrieved</text>
+
+            {cols.map((c) => (
+              <g key={c.x}>
+                {/* one square per question */}
+                {Array.from({ length: c.d.n }).map((_, i) => (
+                  <rect key={i} x={c.x + i * 5.5} y={32} width={4.4} height={11}
+                    fill={c.filled ? c.col : "none"} fillOpacity={c.filled ? 0.7 : 0}
+                    stroke={c.col} strokeWidth="0.7" />
+                ))}
+                <text x={c.x} y={57} style={SK} fontSize="9" fill={P.ink}>{c.cap} — {c.d.n} questions</text>
+
+                {/* EM for that half */}
+                <rect x={c.x + 96} y={EY(c.d.em)} width={72} height={230 - EY(c.d.em)} fill={c.col} fillOpacity="0.8" />
+                <text x={c.x + 132} y={EY(c.d.em) - 6} textAnchor="middle" style={SK} fontSize="11" fill={c.col}>EM {c.d.em.toFixed(1)}</text>
+              </g>
+            ))}
+
+            {/* shared axis */}
+            <line x1={36} y1={230} x2={584} y2={230} stroke={P.ink} strokeWidth="1.1" />
+            {[0, 20, 40].map((g) => (
+              <g key={g}>
+                <line x1={36} y1={EY(g)} x2={584} y2={EY(g)} stroke={P.line} strokeWidth="0.6" strokeDasharray="2 4" />
+                <text x={31} y={EY(g) + 3} textAnchor="end" style={SK} fontSize="8" fill={P.sub}>{g}</text>
+              </g>
+            ))}
+
+            {/* the paper's number, on the right-hand half */}
+            <line x1={396} y1={EY(RAG_EVIDENCE.paper)} x2={584} y2={EY(RAG_EVIDENCE.paper)} stroke={P.sub} strokeWidth="1.2" strokeDasharray="5 3" />
+            <text x={584} y={EY(RAG_EVIDENCE.paper) - 5} textAnchor="end" style={SK} fontSize="8.5" fill={P.sub}>paper: {RAG_EVIDENCE.paper}% on NQ</text>
+            <text x={492} y={244} textAnchor="middle" style={SK} fontSize="8.5" fill={P.line}>an extractive reader sits on this line — 0 by construction</text>
+
+            <text x={24} y={264} style={SK} fontSize="9.5" fill={P.ink}>the one that was right with nothing retrieved:</text>
+            <text x={24} y={278} style={SK} fontSize="9" fontStyle="italic" fill={P.sub}>“{RAG_EVIDENCE.example.q}” → “{RAG_EVIDENCE.example.pred}”</text>
+            <text x={24} y={293} style={SK} fontSize="9.5" fill={P.red}>non-zero, as the paper claims — but 1 question in 48, not 11.8%</text>
+          </g>
+        );
+      }
+
       case "gradient": {
         const GX0 = 330, GY0 = 250, GW = 200, GH = 88;
         const tx = (s) => GX0 + (s / 25) * GW, ty = (v) => GY0 - (v / 0.4) * GH;
@@ -2410,6 +2576,7 @@ export function RagWalkthrough() {
           ["answer-only loss moves the retriever", "‖g‖ = 6.6e+01 · trust 0.097 → 0.354", "ok"],
           ["index hot-swap changes knowledge, no retraining", "2016 → 2020, weights untouched", "ok"],
           ["retriever has not collapsed (Appendix H)", "427 distinct docs / 480 slots", "ok"],
+          ["right even with no evidence retrieved (extractive: 0%)", "2.1% of 48 · paper 11.8%", "ok"],
           ["learned DPR > frozen DPR (paper 43.5 vs 37.8)", "24.0 ± 4.4  vs  22.9 ± 4.3 EM", "mid"],
           ["EM shape differs between the variants (Fig 3)", "tok peaks k=5, seq peaks k=1", "mid"],
           ["learned DPR > BM25 (paper 43.5 vs 29.7)", "24.0 ± 4.4  vs  44.8 ± 5.1 EM", "bad"],
@@ -2419,18 +2586,18 @@ export function RagWalkthrough() {
         const mark = { ok: "✓", mid: "~", bad: "✗" };
         return (
           <g>
-            <text x={300} y={20} textAnchor="middle" style={SK} fontSize="11" fill={P.sub}>13 claims from the paper, checked against my own measurements</text>
+            <text x={300} y={18} textAnchor="middle" style={SK} fontSize="11" fill={P.sub}>{rows.length} claims from the paper, checked against my own measurements</text>
             {rows.map((r, i) => (
-              <g key={i} transform={`translate(0 ${32 + i * 20})`}>
-                <rect x={24} y={0} width={552} height={18} fill={i % 2 ? P.faint : "transparent"} fillOpacity="0.6" />
-                <text x={34} y={13} style={SK} fontSize="11" fill={col[r[2]]}>{mark[r[2]]}</text>
-                <text x={52} y={13} style={SK} fontSize="9.5" fill={P.ink}>{r[0]}</text>
-                <text x={568} y={13} textAnchor="end" style={SK} fontSize="9.5" fill={col[r[2]]}>{r[1]}</text>
+              <g key={i} transform={`translate(0 ${28 + i * 18})`}>
+                <rect x={24} y={0} width={552} height={16} fill={i % 2 ? P.faint : "transparent"} fillOpacity="0.6" />
+                <text x={34} y={12} style={SK} fontSize="10.5" fill={col[r[2]]}>{mark[r[2]]}</text>
+                <text x={52} y={12} style={SK} fontSize="9.5" fill={P.ink}>{r[0]}</text>
+                <text x={568} y={12} textAnchor="end" style={SK} fontSize="9.5" fill={col[r[2]]}>{r[1]}</text>
               </g>
             ))}
-            <line x1={24} y1={258} x2={576} y2={258} stroke={P.line} strokeWidth="0.8" />
-            <text x={24} y={274} style={SK} fontSize="9.5" fill={P.red}>BM25 winning is the interesting one: DPR was fine-tuned on NaturalQuestions,</text>
-            <text x={24} y={288} style={SK} fontSize="9.5" fill={P.sub}>my questions are SQuAD, and word overlap is strong when the haystack is only 15k.</text>
+            <line x1={24} y1={252} x2={576} y2={252} stroke={P.line} strokeWidth="0.8" />
+            <text x={24} y={268} style={SK} fontSize="9.5" fill={P.red}>BM25 winning is the interesting one: DPR was fine-tuned on NaturalQuestions,</text>
+            <text x={24} y={283} style={SK} fontSize="9.5" fill={P.sub}>my questions are SQuAD, and word overlap is strong when the haystack is only 15k.</text>
           </g>
         );
       }
