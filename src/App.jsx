@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import {
   P, SECS, PAPER, RESEARCH_AREAS, READING_LOG, TIL_REPO, FROM_SCRATCH,
-  METHODS, JOURNEY, ORDERED_PROJECTS, INSIGHTS, CURRENT_TRACK,
+  METHODS, JOURNEY, ORDERED_PROJECTS, INSIGHTS, CURRENT_TRACK, PUBLICATIONS,
 } from "./data.js";
 import { Rv, Radar, PhotoGallery, MatrixOverlay, ResearchModal, SketchFidelityAccuracy, SketchResearcherFrontier, SketchMolecule, SketchAttention, SketchFFT, SketchSpectral, SketchDCT, InsightsViewer, LabGateway } from "./ui.jsx";
 
@@ -164,7 +164,8 @@ export default function App() {
                     <span style={{ width: 6, height: 6, borderRadius: "50%", background: P.green }} />
                     <span style={{ ...MONO, fontSize: "0.58rem", color: P.sub }}>available</span>
                   </div>
-                  <p style={{ ...noteTxt, marginBottom: "0.7rem" }}>Open to ML / applied-research roles &amp; collaborations.</p>
+                  <p style={{ ...noteTxt, marginBottom: "0.5rem" }}>Open to ML / applied-research roles &amp; collaborations.</p>
+                  <p style={{ ...noteTxt, marginBottom: "0.7rem", borderTop: `1px solid ${P.faint}`, paddingTop: "0.5rem" }}>Presenting a poster at <a href="#Publications" style={{ color: P.accent, textDecoration: "underline", textUnderlineOffset: 3, fontStyle: "normal" }}>OMIA 2026</a> (MICCAI) in Strasbourg — Sept–Oct 2026.</p>
                   <div style={{ display: "flex", flexDirection: "column", gap: 3, alignItems: "flex-end" }}>
                     <a href="https://github.com/Atharvax16" target="_blank" rel="noopener noreferrer" style={{ ...MONO, fontSize: "0.64rem", color: P.accent }}>GitHub ↗</a>
                     <a href={`mailto:${PAPER.email}`} style={{ ...MONO, fontSize: "0.64rem", color: P.accent }}>Email ↗</a>
@@ -187,7 +188,7 @@ export default function App() {
               <Rv delay={0.12}>
                 <div style={{ borderTop: `1px solid ${P.line}`, borderBottom: `1px solid ${P.line}`, padding: "1.1rem 0", margin: "1.4rem 0" }}>
                   <p style={{ ...BODY, fontSize: "1rem", lineHeight: 1.78, color: P.ink, textAlign: "justify", hyphens: "auto", textWrap: "pretty" }}>
-                    <b style={{ ...DISP }}>Abstract.</b> This portfolio is laid out as a paper and reads as one — a live research log (§2), finished projects written up as short case studies (§3), figures carrying the observation each one earned (§4), and architectures rebuilt by hand to see the mechanics a framework hides (§5–7). What holds it together is a habit: I break models on purpose. Not because failure is interesting in itself, but because <i>why</i> something breaks tells you more than knowing that it works — degrade a fundus image, watch the heatmap drift off the lesion, and you learn what the network was actually using. So the order is always root cause first, build second. My MSc thesis benchmarks CNNs against Vision Transformers for diabetic-retinopathy screening under controlled degradation — blur, exposure error, sensor noise — using Grad-CAM, attention rollout, and SHAP to locate where the reasoning breaks, then asks whether diffusion restoration can recover the diagnostic signal <i>without hallucinating pathology</i>. The question I keep returning to is never <i>A got 82%, B got 79%</i>, but why ConvNeXt held under blur where EfficientNetV2 collapsed. The same instinct runs through the rest: read and reproduce the foundational results from scratch — attention <Cite n={1} />, adversarial generation <Cite n={2} />, equivariant graph networks <Cite n={3} /> — extend them across generative-image forensics, federated medical imaging, and multi-agent systems grounded in deterministic ML, and ship them past the notebook (Docker, FastAPI, SageMaker, CI/CD). My current thread (§2) follows differentiable memory from Neural Turing Machines to retrieval-augmented generation, toward an <i>episodic memory</i> for vision-language agents that can recall what they saw, not just describe what they see.
+                    <b style={{ ...DISP }}>Abstract.</b> This portfolio is laid out as a paper and reads as one — a live research log (§2), finished projects written up as short case studies (§3), peer-reviewed output (§4), figures carrying the observation each one earned (§5), and architectures rebuilt by hand to see the mechanics a framework hides (§6–8). What holds it together is a habit: I break models on purpose. Not because failure is interesting in itself, but because <i>why</i> something breaks tells you more than knowing that it works — degrade a fundus image, watch the heatmap drift off the lesion, and you learn what the network was actually using. So the order is always root cause first, build second. My MSc thesis benchmarks CNNs against Vision Transformers for diabetic-retinopathy screening under controlled degradation — blur, exposure error, sensor noise — using Grad-CAM, attention rollout, and SHAP to locate where the reasoning breaks, then asks whether diffusion restoration can recover the diagnostic signal <i>without hallucinating pathology</i>. The question I keep returning to is never <i>A got 82%, B got 79%</i>, but why ConvNeXt held under blur where EfficientNetV2 collapsed. The same instinct runs through the rest: read and reproduce the foundational results from scratch — attention <Cite n={1} />, adversarial generation <Cite n={2} />, equivariant graph networks <Cite n={3} /> — extend them across generative-image forensics, federated medical imaging, and multi-agent systems grounded in deterministic ML, and ship them past the notebook (Docker, FastAPI, SageMaker, CI/CD). My current thread (§2) follows differentiable memory from Neural Turing Machines to retrieval-augmented generation, toward an <i>episodic memory</i> for vision-language agents that can recall what they saw, not just describe what they see.
                   </p>
                   <p style={{ ...MONO, fontSize: "0.66rem", color: P.sub, marginTop: "0.9rem", lineHeight: 1.7 }}>
                     <span style={{ color: P.ink }}>Keywords —</span> {PAPER.keywords.join(" · ")}
@@ -350,25 +351,67 @@ export default function App() {
           </div>
         </Section>
 
-        {/* ═══ 4 · FINDINGS (interactive figure explorer) ═══ */}
-        <Section id="Findings" num="4" note={<p style={noteTxt}>For the visiting researcher — step through the figures and the observation each one carries.</p>}>
+        {/* ═══ 4 · PUBLICATIONS ═══
+            Peer-reviewed output, cited as a bibliography entry. Deliberately
+            states the exact acceptance type — a workshop poster is not a main-
+            conference paper, and the entry should read as what it is. */}
+        <Section id="Publications" num="4" note={<p style={noteTxt}>Peer-reviewed output. Entries are listed with the acceptance type they actually carry.</p>}>
+          <SecTitle>Publications</SecTitle>
+          <div style={{ display: "flex", flexDirection: "column", gap: "1.2rem" }}>
+            {PUBLICATIONS.map((pub, i) => (
+              <Rv key={pub.title} delay={i * 0.05}>
+                <div style={{ display: "grid", gridTemplateColumns: "2rem 1fr", gap: "0.4rem" }}>
+                  <div style={{ ...MONO, fontSize: "0.8rem", color: P.accent }}>[{i + 1}]</div>
+                  <div>
+                    <div style={{ ...BODY, fontSize: "0.95rem", color: P.ink, lineHeight: 1.6 }}>
+                      {pub.authors}. <i>{pub.title}</i>. {pub.year}.
+                      {pub.status && (
+                        <span style={{ ...MONO, fontSize: "0.58rem", color: P.green, border: `1px solid ${P.green}55`, padding: "0 6px", marginLeft: 8, verticalAlign: "middle", textTransform: "uppercase", letterSpacing: "0.06em", whiteSpace: "nowrap" }}>{pub.status}</span>
+                      )}
+                    </div>
+                    <div style={{ ...MONO, fontSize: "0.68rem", color: P.sub, lineHeight: 1.7, margin: "6px 0 0" }}>
+                      {pub.venue}
+                      {pub.heldWith && <> · {pub.heldWith}</>}
+                      {pub.place && <><br />{pub.place}{pub.dates ? ` · ${pub.dates}` : ""}</>}
+                      {pub.proceedings && <><br /><span style={{ color: P.ink }}>{pub.proceedings}</span></>}
+                    </div>
+                    {pub.summary && (
+                      <p style={{ ...BODY, fontSize: "0.86rem", color: P.sub, lineHeight: 1.7, margin: "8px 0 6px", textWrap: "pretty" }}>{pub.summary}</p>
+                    )}
+                    <div style={{ display: "flex", gap: 14, flexWrap: "wrap", alignItems: "baseline" }}>
+                      {pub.link && (
+                        <a href={pub.link} target="_blank" rel="noopener noreferrer" style={{ ...MONO, fontSize: "0.66rem", color: P.accent, textDecoration: "underline", textUnderlineOffset: 3 }}>{pub.linkLabel || "Link ↗"}</a>
+                      )}
+                      {pub.project && (
+                        <button onClick={() => { const pr = ORDERED_PROJECTS.find(p => p.id === pub.project); if (pr) setOpenProject(pr); }} style={{ ...MONO, fontSize: "0.66rem", color: P.accent, background: "transparent", border: "none", padding: 0, cursor: "pointer", textDecoration: "underline", textUnderlineOffset: 3 }}>Case study §3 →</button>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              </Rv>
+            ))}
+          </div>
+        </Section>
+
+        {/* ═══ 5 · FINDINGS (interactive figure explorer) ═══ */}
+        <Section id="Findings" num="5" note={<p style={noteTxt}>For the visiting researcher — step through the figures and the observation each one carries.</p>}>
           <SecTitle>Findings &amp; Figures</SecTitle>
           <Rv><p style={{ ...BODY, fontSize: "0.95rem", lineHeight: 1.75, color: P.sub, marginBottom: "1.4rem", maxWidth: 600 }}>Real plots from the work, annotated. Click through, or pick a thumbnail — from the thesis's fidelity-vs-accuracy crossing to the non-saturating GAN trick.</p></Rv>
           <Rv delay={0.06}><InsightsViewer items={INSIGHTS} /></Rv>
         </Section>
 
-        {/* ═══ 5 · ARCHITECTURES (the door to the Lab) ═══
+        {/* ═══ 6 · ARCHITECTURES (the door to the Lab) ═══
             The walkthroughs themselves live at #/lab now — five full-height
             interactive sketches were swallowing the paper. What's left here is
             the invitation; LabGateway rotates through what's inside. */}
-        <Section id="Architectures" num="5" note={<p style={noteTxt}>Learning in public — each architecture I study, rebuilt as an interactive sketch. This one opens into its own room.</p>}>
+        <Section id="Architectures" num="6" note={<p style={noteTxt}>Learning in public — each architecture I study, rebuilt as an interactive sketch. This one opens into its own room.</p>}>
           <SecTitle>Architectures, Visualised</SecTitle>
           <Rv><p style={{ ...BODY, fontSize: "0.95rem", lineHeight: 1.75, color: P.sub, marginBottom: "1.4rem", maxWidth: 600 }}>How a model actually <i>sees</i>. Every architecture I study gets rebuilt as a hand-drawn sketch you can step through and turn the knobs on — patch size, kernel size, the prompt you steer with. They outgrew this page, so they have their own: <b style={DISP}>the Architecture Lab</b>, where nothing lives but the mechanisms.</p></Rv>
           <Rv delay={0.06}><LabGateway /></Rv>
         </Section>
 
-        {/* ═══ 6 · READING & REPRODUCTIONS (references) ═══ */}
-        <Section id="Reading" num="6" note={<p style={noteTxt}>The <a href={TIL_REPO} target="_blank" rel="noopener noreferrer" className="body-link">til</a> journal — papers read in my own words, with notebooks where the idea needs to be felt.</p>}>
+        {/* ═══ 7 · READING & REPRODUCTIONS (references) ═══ */}
+        <Section id="Reading" num="7" note={<p style={noteTxt}>The <a href={TIL_REPO} target="_blank" rel="noopener noreferrer" className="body-link">til</a> journal — papers read in my own words, with notebooks where the idea needs to be felt.</p>}>
           <SecTitle>Reading &amp; Reproductions</SecTitle>
           <div style={{ display: "flex", flexDirection: "column", gap: "1.2rem" }}>
             {foundationalReading.map((r, i) => (
@@ -422,8 +465,8 @@ export default function App() {
           </Rv>
         </Section>
 
-        {/* ═══ 7 · FOUNDATIONS ═══ */}
-        <Section id="Foundations" num="7" note={<p style={noteTxt}>Not to reinvent the framework — to understand the mechanics it hides.</p>}>
+        {/* ═══ 8 · FOUNDATIONS ═══ */}
+        <Section id="Foundations" num="8" note={<p style={noteTxt}>Not to reinvent the framework — to understand the mechanics it hides.</p>}>
           <SecTitle>Foundations, From Scratch</SecTitle>
           <div>
             {FROM_SCRATCH.map((f, i) => (
@@ -445,8 +488,8 @@ export default function App() {
           </div>
         </Section>
 
-        {/* ═══ 8 · METHODS ═══ */}
-        <Section id="Methods" num="8">
+        {/* ═══ 9 · METHODS ═══ */}
+        <Section id="Methods" num="9">
           <SecTitle>Methods &amp; Tools</SecTitle>
           <div>
             {METHODS.map((m, i) => (
@@ -473,8 +516,8 @@ export default function App() {
           </Rv>
         </Section>
 
-        {/* ═══ 9 · ABOUT ═══ */}
-        <Section id="About" num="9">
+        {/* ═══ 10 · ABOUT ═══ */}
+        <Section id="About" num="10">
           <SecTitle>About</SecTitle>
           <Rv>
             <div style={{ display: "flex", gap: "1.3rem", alignItems: "flex-start", marginBottom: "1.4rem", flexWrap: "wrap" }}>
@@ -505,7 +548,7 @@ export default function App() {
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(180px,1fr))", gap: "1rem", marginBottom: "1.8rem" }}>
               {[
                 { t: "Education", d: "MSc AI — Dublin City University\nB.E. AI & DS — TEC Mumbai" },
-                { t: "Selected awards", d: "2nd Place — Etsy Research Leaderboard\nMotivaLogic Hackathon Winner (AWS)\n3rd / 70 — AdvanceHealth MedTech\nIntl. Research Conference" },
+                { t: "Selected awards", d: "Poster accepted — OMIA 2026 (MICCAI, Strasbourg)\n2nd Place — Etsy Research Leaderboard\nMotivaLogic Hackathon Winner (AWS)\n3rd / 70 — AdvanceHealth MedTech\nIntl. Research Conference" },
               ].map((c) => (
                 <div key={c.t} style={{ borderTop: `2px solid ${P.ink}`, paddingTop: 8 }}>
                   <div style={{ ...MONO, fontSize: "0.62rem", color: P.sub, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 6 }}>{c.t}</div>

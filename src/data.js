@@ -30,7 +30,7 @@ export const PAPER = {
 
 /* Nav + scroll-tracked sections (paper running order).
    The gallery "Appendix" is intentionally NOT here — it stays out of nav. */
-export const SECS = ["Abstract", "Research", "Track", "Work", "Findings", "Architectures", "Reading", "Foundations", "Methods", "About", "Contact"];
+export const SECS = ["Abstract", "Research", "Track", "Work", "Publications", "Findings", "Architectures", "Reading", "Foundations", "Methods", "About", "Contact"];
 
 /* ════════════════════════════════════════
    CURRENT TRACK — the live thread, updated as it moves.
@@ -244,7 +244,7 @@ export const READING_LOG = [
     takeaway: "This one lands directly on a limitation I'd been working around. A frozen DINOv2 embedding — the backbone my own detection pipeline leans on — commits to whatever is most salient in the frame, and there is no handle to say 'attend to the thing in the corner instead'. CLIP doesn't fix it: fusing text after the visual encoder (late fusion) can only re-weight features that were already computed. The move here is to push the text in earlier, cross-attending it into the ViT's own layers so the prompt shapes what gets encoded rather than what gets selected afterwards — and, crucially, the features stay generic enough for ordinary downstream tasks instead of collapsing into the language-centric embeddings an MLLM gives you. The part I keep turning over is that anomaly detection falls out of it zero-shot: if you can steer a representation by prompt, 'what's unusual here' stops needing a task-specific model and becomes just another thing you ask for.",
     link: "https://arxiv.org/abs/2604.02327",
     hasNotebook: false,
-    reproduced: "Rebuilt the mechanism at small scale (RefCOCOg, 4.5k images, 3k steps): steering emerges — IoU 0.129 → 0.294 — but the wrong-prompt check doesn't collapse, so at this scale it's reading the image, not the text. Walk the mechanism in §4, Architectures.",
+    reproduced: "Rebuilt the mechanism at small scale (RefCOCOg, 4.5k images, 3k steps): steering emerges — IoU 0.129 → 0.294 — but the wrong-prompt check doesn't collapse, so at this scale it's reading the image, not the text. Walk the mechanism in §6, Architectures.",
   },
 ];
 
@@ -293,6 +293,7 @@ export const JOURNEY = [
   { year: "2024", title: "Going Global", place: "Dublin, Ireland", text: "MSc in Artificial Intelligence at DCU. Began an MSc thesis on robust, explainable diabetic-retinopathy screening.", mindset: "Read the source. Reproduce it.", icon: "●", color: "#4ADE80" },
   { year: "2025", title: "Research Mode", place: "Thesis · Image Forensics", text: "Diffusion-based restoration and a quantitative XAI benchmark for the thesis; a separate study on detecting AI-generated images. Reading and reproducing foundational papers in parallel.", mindset: "Build from first principles.", icon: "■", color: "#60A5FA" },
   { year: "2026", title: "Etsy Recognition", place: "Etsy HQ, Dublin", text: "The generative-image detection research placed 2nd on Etsy's research leaderboard — earning an invitation to present the work in person at Etsy's Dublin office.", mindset: "Build from first principles, get recognised for it.", icon: "🏆", color: "#F5A524" },
+  { year: "2026", title: "First Paper Accepted", place: "OMIA 2026 · MICCAI, Strasbourg", text: "The thesis work — a quality-aware pipeline for diabetic-retinopathy grading, with Naveen Painuly and Prof. Alessandra Mileo — was accepted as a poster at OMIA, the Ophthalmic Medical Image Analysis workshop held with MICCAI 2026. To appear in Springer LNCS; presenting in Strasbourg on 1 Oct.", mindset: "Report the negative result too.", icon: "📄", color: "#2B4C8C" },
   { year: "2026", title: "What's Next", place: "ML Research", text: "Pursuing ML / applied-research roles and collaborations — robustness, explainability, and generative-image forensics.", mindset: "Read deeply. Build from scratch.", icon: "✦", color: "#6AA9FF" },
 ];
 
@@ -304,14 +305,14 @@ export const PROJECTS = [
   {
     id: "dr-xai-thesis",
     title: "Robust & Explainable AI for Diabetic Retinopathy",
-    badge: "MSc Thesis · Diffusion + XAI",
+    badge: "MSc Thesis · Poster @ OMIA 2026 (MICCAI)",
     year: "2025",
-    role: "Thesis · sole author",
+    role: "Thesis · with N. Painuly & Prof. A. Mileo (DCU)",
     color: "#5BE0C9",
     short: "A 5-phase pipeline benchmarking robustness, diffusion-based restoration, and explanation faithfulness for DR screening.",
     tech: ["PyTorch + timm", "Cold Diffusion / DDPM", "SwinIR + GAN", "Captum (IG)", "ViT / ConvNeXt"],
     keywords: ["diffusion models", "explainable AI", "robustness", "medical imaging"],
-    abstract: "My MSc dissertation asks two coupled questions for diabetic-retinopathy screening: how robust are modern classifiers to the degradations real fundus photos collect (motion blur, exposure error, sensor noise), and can generative restoration recover the diagnostic signal in a way we can actually trust? The answer is a five-phase pipeline — synthetic degradation, three DR graders (ResNet-50 / EfficientNet / ViT), a quantitative XAI benchmark (Integrated Gradients, SHAP, attention-rollout, Grad-CAM), several diffusion / GAN restorers, and a quality-aware router — with a pathology-preserving DDPM as the central contribution: a restorer constrained not to hallucinate lesions it cannot justify.",
+    abstract: "My MSc dissertation asks two coupled questions for diabetic-retinopathy screening: how robust are modern classifiers to the degradations real fundus photos collect (motion blur, exposure error, sensor noise), and can generative restoration recover the diagnostic signal in a way we can actually trust? The answer is a five-phase pipeline — synthetic degradation, three DR graders (ResNet-50 / EfficientNet / ViT), a quantitative XAI benchmark (Integrated Gradients, SHAP, attention-rollout, Grad-CAM), several diffusion / GAN restorers, and a quality-aware router — with a pathology-preserving DDPM as the central contribution: a restorer constrained not to hallucinate lesions it cannot justify. The work has been accepted as a poster at OMIA 2026, the Ophthalmic Medical Image Analysis workshop held in conjunction with MICCAI 2026 in Strasbourg, and will appear in the Springer LNCS satellite-event proceedings (§4).",
     architecture: "Pristine APTOS → synthetic degradation (blur/exposure/noise × 3) → DR graders → XAI faithfulness/stability → diffusion restoration (Cold Diffusion · DDPM · SwinIR+GAN) → quality-aware router",
     method: [
       { p: "Phase 1 · Data", i: "🗂️", d: "Built a clean APTOS set plus 26,370 synthetic degraded fundus images — deterministic blur/exposure/noise operators later reused as the diffusion forward process." },
@@ -326,6 +327,7 @@ export const PROJECTS = [
       { label: "Graders", value: "3", note: "ResNet-50 · EfficientNet · ViT" },
       { label: "Restorers", value: "7", note: "Cold Diffusion · DDPM · SwinIR+GAN · …" },
       { label: "XAI", value: "4 methods", note: "IG · SHAP · attn-rollout · Grad-CAM" },
+      { label: "Accepted", value: "OMIA 2026", note: "poster — MICCAI satellite, Strasbourg · Springer LNCS" },
     ],
     plots: [
       { src: "images/plots/thesis/ddpm_forward_backward.png", caption: "Conditional DDPM — forward noising & reverse denoising of a fundus image" },
@@ -336,7 +338,8 @@ export const PROJECTS = [
       { src: "images/plots/thesis/accuracy_vs_degradation_noise.png", caption: "Classifier robustness vs. degradation severity" },
       { src: "images/plots/thesis/trust_score_distribution.png", caption: "Quality-aware router — trust-score distribution" },
     ],
-    links: { github: "https://github.com/Atharvax16/Comparative-Study-for-Diabetic-Retinopathy-Detection-and-Interpretability-methods" },
+    // TODO: `paper` is an OpenReview venue-group placeholder — swap for the LNCS DOI once published.
+    links: { github: "https://github.com/Atharvax16/Comparative-Study-for-Diabetic-Retinopathy-Detection-and-Interpretability-methods", paper: "https://openreview.net/group?id=MICCAI.org/2026/Workshop/OMIA" },
   },
   {
     id: "gen-image-detection",
@@ -614,6 +617,33 @@ export const PROJECTS = [
 /* Research-forward display order. */
 export const PROJECT_ORDER = ["dr-xai-thesis", "gen-image-detection", "voxsight", "retinopathy-fl", "catas", "research-companion", "venueflow", "cyberattack", "cc-fraud", "gait-parkinsons"];
 export const ORDERED_PROJECTS = PROJECT_ORDER.map((id) => PROJECTS.find((p) => p.id === id)).filter(Boolean);
+
+/* ════════════════════════════════════════
+   PUBLICATIONS — peer-reviewed work, cited as it would be in a bibliography.
+   `status` is the honest state of the entry ("accepted — poster", "under review",
+   "published"); `proceedings` names where it will appear in print.
+   `project` links an entry back to its PROJECTS id (§3).
+   ════════════════════════════════════════ */
+export const PUBLICATIONS = [
+  {
+    title: "Towards a Robust and Explainable Pipeline for Diabetic Retinopathy Classification through Quality-Aware GenAI Image Restoration",
+    authors: "Atharva Kocharekar, Naveen Painuly, Alessandra Mileo",
+    year: "2026",
+    status: "accepted — poster",
+    venue: "OMIA 2026 — Ophthalmic Medical Image Analysis Workshop",
+    heldWith: "in conjunction with MICCAI 2026",
+    place: "Strasbourg, France",
+    dates: "workshop day 1 Oct 2026 · MICCAI 27 Sept – 1 Oct 2026",
+    proceedings: "To appear — Springer LNCS (MICCAI 2026 Satellite Events Proceedings)",
+    // TODO: swap for the final Springer LNCS proceedings / DOI link once published.
+    // Placeholder is the OMIA venue group on OpenReview, not the paper's own forum page.
+    link: "https://openreview.net/group?id=MICCAI.org/2026/Workshop/OMIA",
+    linkLabel: "OpenReview (venue) ↗",
+    project: "dr-xai-thesis",
+    summary:
+      "A quality-aware pipeline for diabetic-retinopathy grading, and the negative result underneath it: GenAI restoration reliably improves pixel fidelity but does not reliably recover diagnostic accuracy. Restoring indiscriminately can be actively harmful — so the right response to a low-quality fundus image is to re-acquire it, not to hallucinate the missing detail.",
+  },
+];
 
 /* ════════════════════════════════════════
    INSIGHTS — real figures from the work, each with the observation it

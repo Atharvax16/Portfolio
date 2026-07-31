@@ -459,7 +459,7 @@ export function SketchDCT() {
 }
 
 /* ════════════════════════════════════════
-   LAB GATEWAY — the door on the paper's §5.
+   LAB GATEWAY — the door on the paper's §6.
    The walkthroughs used to sit inline here and ran to most of a screen each.
    They live in the Lab (#/lab) now; what stays behind is a display case that
    rotates through what's inside, so the section reads as an invitation
