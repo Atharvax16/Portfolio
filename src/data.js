@@ -750,6 +750,13 @@ export const ARCHITECTURES = [
     intro: "NTM and RAG *blend* memories; MemGPT *pages* them. None of them ever **forget**. MemoryBank borrows a 140-year-old result from psychology — the Ebbinghaus forgetting curve — and makes decay a design choice: a memory's retention falls off as e^(−t/S) with the time since it was last touched, and every recall bumps its strength *S* and resets the clock, so what you use survives and what you don't fades. Turn the knobs — let time pass, then hit *recall* — and watch an unused memory slip under the threshold while a recalled one flattens its own decay.",
   },
   {
+    key: "moviechat", name: "MovieChat — dense tokens to sparse memory", short: "MovieChat", family: "Memory & retrieval",
+    status: "live", component: "MovieChatWalkthrough", year: 2023,
+    note: "a FIFO tray · merge the frames that look alike · a flat line",
+    steps: "encode each frame alone → FIFO 18 → greedy similarity merge → global vs breakpoint → the measured flat line",
+    intro: "Every other memory on this shelf decides what to keep from text. This one has to decide what to keep from a *stream it cannot afford to hold* — a two-hour film is 200,000 frames, and a dense video pipeline runs out of VRAM around minute 24. MovieChat's answer is almost embarrassingly simple: keep the last 18 frames in full, and when a frame falls out of that tray, **merge it into whichever neighbour it most resembles**. No training, no parameters, ~200 lines. I rebuilt the memory manager and swept it to 10,000 frames — it flatlines at **8 MB** and never moves, 721× under the dense baseline, while merging **zero** pairs across a scene cut. Drag the consolidation target and watch which frames it decides are redundant.",
+  },
+  {
     key: "detection", name: "Detecting AI Images", short: "AI-image forensics", family: "Generative & forensics",
     status: "live", component: "DetectionParadigms", year: 2024,
     note: "six lenses on a fake",

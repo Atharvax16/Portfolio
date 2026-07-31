@@ -517,6 +517,15 @@ const GLYPHS = {
       <path d="M29.4 19.4 L35 25" strokeWidth="1.8" />
     </g>
   ),
+  moviechat: (c) => (
+    /* a filmstrip collapsing: many frames in, a few wide slots out */
+    <g stroke={c} strokeWidth="1.3" fill="none">
+      <rect x="4" y="9" width="15" height="22" />
+      <line x1="8.7" y1="9" x2="8.7" y2="31" /><line x1="13.4" y1="9" x2="13.4" y2="31" />
+      <path d="M20 20 L26 20" /><path d="M23 17 L26 20 L23 23" />
+      <rect x="27" y="9" width="9" height="22" fill={c} fillOpacity="0.28" />
+    </g>
+  ),
   memorybank: (c) => (
     /* the Ebbinghaus forgetting curve — retention decaying, a recall dot on it */
     <g stroke={c} strokeWidth="1.3" fill="none">
@@ -2873,6 +2882,499 @@ export function MemoryBankWalkthrough() {
 
       <div style={{ display: "flex", gap: 6, marginTop: 10, flexWrap: "wrap" }}>
         {MB_STEPS.map((s, j) => (
+          <button key={s.key} onClick={() => setStep(j)} style={{ ...SK, fontSize: "0.62rem", padding: "4px 9px", cursor: "pointer", border: `1px solid ${j === step ? P.accent : P.line}`, background: j === step ? P.accentSoft : "#fff", color: j === step ? P.accent : P.sub }}>{j + 1}. {s.label}</button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/* ════════════════════════════════════════
+   MOVIECHAT — Song et al. 2023, rebuilt in MovieChat_repro.ipynb.
+   The shelf's other memories decide *what to keep*; this one is the first
+   that has to decide what to keep from a stream it can't afford to hold at
+   all. Every number in steps 5–6 is measured in that notebook on an M5, not
+   quoted from the paper.
+   ════════════════════════════════════════ */
+
+/* §6 sweep — stored-token memory, exact byte accounting, verified against
+   real allocated tensor bytes at every N. */
+const MC_SCALING = [
+  { n: 100, dense: 57.7, comp: 3.12, mc: 0.375, kept: 12 },
+  { n: 167, dense: 96.4, comp: 5.22, mc: 0.562, kept: 18 },
+  { n: 278, dense: 160.4, comp: 8.69, mc: 0.938, kept: 30 },
+  { n: 464, dense: 267.8, comp: 14.50, mc: 1.562, kept: 50 },
+  { n: 774, dense: 446.7, comp: 24.19, mc: 2.562, kept: 82 },
+  { n: 1292, dense: 745.7, comp: 40.38, mc: 4.250, kept: 136 },
+  { n: 2154, dense: 1243.2, comp: 67.31, mc: 7.125, kept: 228 },
+  { n: 3594, dense: 2074.3, comp: 112.31, mc: 8.000, kept: 256 },
+  { n: 5995, dense: 3460.0, comp: 187.34, mc: 8.000, kept: 256 },
+  { n: 10000, dense: 5771.5, comp: 312.50, mc: 8.000, kept: 256 },
+];
+
+/* A 24-frame clip with three scenes — the toy version of §7's 320-frame,
+   8-scene test. Each frame carries one scalar standing in for its token
+   block; adjacent similarity is a falling exponential in the gap, so it
+   sits near 0.95 inside a scene and near 0.05 across a cut, the same shape
+   the real encoder produced (0.986 vs 0.701). */
+const MC_CUTS = [10, 16];
+const MC_FRAMES = Array.from({ length: 24 }, (_, i) => {
+  const scene = i < MC_CUTS[0] ? 0 : i < MC_CUTS[1] ? 1 : 2;
+  const jit = ((Math.sin((i + 1) * 12.9898) * 43758.5453) % 1 + 1) % 1;
+  return { i, scene, v: [0.18, 1.0, 1.86][scene] + (jit - 0.5) * 0.07 };
+});
+const MC_SIM = (a, b) => Math.exp(-Math.abs(a - b) / 0.32);
+const MC_ADJ = MC_FRAMES.slice(0, -1).map((f, i) => MC_SIM(f.v, MC_FRAMES[i + 1].v));
+
+/* Algorithm 1, verbatim: while too many frames, find the most-similar
+   adjacent pair and replace it with their size-weighted average. */
+function mcConsolidate(target) {
+  let g = MC_FRAMES.map((f) => ({ v: f.v, n: 1, scenes: [f.scene] }));
+  while (g.length > target) {
+    let at = 0, best = -1;
+    for (let i = 0; i < g.length - 1; i++) {
+      const s = MC_SIM(g[i].v, g[i + 1].v);
+      if (s > best) { best = s; at = i; }
+    }
+    const a = g[at], b = g[at + 1];
+    g.splice(at, 2, {
+      v: (a.v * a.n + b.v * b.n) / (a.n + b.n),
+      n: a.n + b.n,
+      scenes: [...new Set([...a.scenes, ...b.scenes])],
+    });
+  }
+  return g;
+}
+
+const MC_STEPS = [
+  {
+    key: "encode", label: "one frame at a time",
+    title: "The encoder is deliberately blind to time",
+    body: "The first surprise is what MovieChat doesn't use. No video backbone — no ViViT, no Video-Swin. Every frame goes through a plain image encoder alone: ViT-G/14 cuts a 224×224 frame into 14-pixel patches (16 across, 16 down = 256 patches), and BLIP-2's Q-former squeezes those 256 down to a fixed 32 tokens. Two different sixteens live here and they are unrelated — 16 patches per side is spatial, inside one frame; the sliding window of 16 frames is temporal, and it is only the scoop size. Each of those 16 frames is still encoded on its own, so the encoder never learns that frame 5 followed frame 4. That is the architectural bet: the encoder owns space, and memory owns time.",
+    math: "frame → ViT-G/14 → 256 patches → Q-former → 32 tokens   ·   window = 16 frames/slide, each encoded alone",
+  },
+  {
+    key: "short", label: "short-term FIFO",
+    title: "A tray that holds 18 frames and no more",
+    body: "Short-term memory is the least clever part and it needs to be. It is a fixed FIFO of 18 frames × 32 tokens, stored dense and uncompressed — nothing is merged, averaged or thrown away while a frame sits here. The window slides, 16 new frames arrive, the tray overflows, and the oldest frames fall out the far end. Falling out is not deletion: it is the trigger for consolidation. Everything expensive in this architecture happens at the moment a frame leaves the tray, which is why the buffer itself can stay stupid.",
+    math: "S = FIFO(K = 18 frames × 32 tokens, dense)   ·   overflow → consolidate, never discard",
+  },
+  {
+    key: "merge", label: "consolidation",
+    title: "Dense tokens → sparse memory: merge the pair that looks most alike",
+    body: "This is the paper. Consecutive video frames are nearly identical — thirty frames of someone standing still is thirty copies of one picture — so the evicted frames are compressed by merging, not sampling. Compute the frame-to-frame similarity (Eq. 3: the mean over tokens of the per-token cosine), greedily merge the most-similar adjacent pair with a size-weighted average so a slot standing for forty frames isn't outvoted by a fresh one, and repeat until the count hits the target. Parameter-free and training-free — there is nothing to learn. Drag the target down and watch what it eats: the flat stretches inside a scene collapse first, and the cuts survive to the very end, because a cut is exactly where the similarity is lowest.",
+    math: "while |S| > R_L:  m = argmaxᵢ sim(xᵢ, xᵢ₊₁);  xₘ ← (nₘxₘ + nₘ₊₁xₘ₊₁)/(nₘ + nₘ₊₁)",
+  },
+  {
+    key: "modes", label: "two read paths",
+    title: "Ask about the film, or ask about one moment in it",
+    body: "One memory, read two ways. In global mode the question is about the whole video, so the video representation is long-term memory — the sparse, merged summary and nothing else. In breakpoint mode the question is about a specific instant t, where the merged summary has by construction thrown away the local detail you're asking about — so long-term memory, the dense short-term tray and the current frame feature are concatenated. No fusion module: §3.3 concatenates and it works. Either way the result passes through the Q-former and a projection into the LLM, which never sees a frame — only tokens that memory decided were worth keeping.",
+    math: "global:  V = L        breakpoint:  V = [L ; S ; xₜ]        →  Q-former → projection → LLM",
+  },
+  {
+    key: "scaling", label: "the flat line",
+    title: "The line that stops climbing",
+    body: "I rebuilt the memory manager and swept it against two baselines on the same frame stream. The second baseline is the one that matters: it keeps every frame but at MovieChat's own 32×256 footprint, so the flat line gets credited to the memory manager rather than to the token bottleneck. Both effects are real and they are shown apart. MovieChat saturates at 8.00 MB / 256 frames by ~3,600 frames and then does not move — 721× under the dense pipeline at 10k frames, and the gap widens with every frame after. The hard bound is arithmetic, not empirical: K + L_cap = 18 + 256 = 274 frames = 8.56 MB, whatever you feed it. Dense hits a 24 GB budget at 42,582 frames, about 24 minutes of 30 fps video. MovieChat cannot reach it.",
+    math: "MovieChat ≤ (K + L_cap) × 32 × 256 × 4 B = 8.56 MB   ·   dense crosses 24 GB at 42,582 frames",
+  },
+  {
+    key: "verdict", label: "the verdict",
+    title: "What held up, and where I deviated",
+    body: "Compression is worthless if it merges across a cut, so §7 tested that with a real pretrained ViT-B/16 over 320 frames and 8 scenes: 20× compression, and 0 of the 16 retained slots mix frames from more than one scene, with all 8 scenes still represented. The check I trust most is the one the algorithm can't see — raw-pixel SSIM, never touched by the merge rule, agrees on where the cuts are, and the embeddings separate scenes about twice as sharply as pixels do (0.285 vs 0.134), which is why merging in token space works at all. Two deviations, both deliberate: I cap long-term memory where the paper instead stretches its positional encodings, since capping is what makes the bound provable, and my default clears the short-term tray after consolidation rather than re-initialising it with the merged feature (a flag restores the paper's behaviour — it moves the cadence, not the bound). The Q-former stand-in reproduces BLIP-2's shape, not its semantics, and is untrained.",
+    math: "320 → 16 frames (20.0×)  ·  0/16 slots straddle a cut  ·  8/8 scenes kept  ·  cosine sep 0.285 vs SSIM 0.134",
+  },
+];
+
+export function MovieChatWalkthrough() {
+  const [step, setStep] = useState(0);
+  const [target, setTarget] = useState(24);   // consolidation target R_L
+  const [mode, setMode] = useState("global"); // read path
+  const [ni, setNi] = useState(9);            // scaling sweep index
+  const sc = MC_STEPS[step];
+  const sk = sc.key;
+
+  const arrow = (x1, y1, x2, y2, col, dash) => (
+    <g stroke={col || P.accent} strokeWidth="1.3" fill="none">
+      <path d={`M${x1} ${y1} L${x2} ${y2}`} strokeDasharray={dash ? "4 3" : "none"} />
+      <path d={`M${x2 - 7} ${y2 - 4} L${x2} ${y2} L${x2 - 7} ${y2 + 4}`} />
+    </g>
+  );
+  const box = (x, y, w, h, label, sub, col, soft) => (
+    <g>
+      <rect x={x} y={y} width={w} height={h} fill={soft ? P.accentSoft : P.paper2} stroke={col || P.ink} strokeWidth="1.2" />
+      <text x={x + w / 2} y={y + (sub ? h / 2 - 1 : h / 2 + 4)} textAnchor="middle" style={SK} fontSize="10" fill={col || P.ink}>{label}</text>
+      {sub && <text x={x + w / 2} y={y + h / 2 + 12} textAnchor="middle" style={SK} fontSize="8.5" fill={P.sub}>{sub}</text>}
+    </g>
+  );
+  const vec = (x, y, n, seed, col, w = 5, h = 13) => (
+    <g>
+      {Array.from({ length: n }).map((_, i) => {
+        const v = ((Math.sin((i + seed) * 12.9898) * 43758.5453) % 1 + 1) % 1;
+        return <rect key={i} x={x + i * w} y={y} width={w - 0.8} height={h} fill={col} fillOpacity={0.12 + v * 0.72} stroke={P.line} strokeWidth="0.3" />;
+      })}
+    </g>
+  );
+
+  const SCENE_COL = [P.accent, P.green, P.yellow];
+  const groups = mcConsolidate(target);
+  const straddling = groups.filter((g) => g.scenes.length > 1).length;
+
+  /* log–log transforms for the scaling plot */
+  const GX0 = 74, GX1 = 566, GY0 = 248, GY1 = 42;
+  const LX = (n) => GX0 + ((Math.log10(n) - 2) / 3) * (GX1 - GX0);
+  const LY = (mb) => GY0 - ((Math.log10(mb) + 0.6) / 5.4) * (GY0 - GY1);
+  const row = MC_SCALING[ni];
+  const ratio = row.dense / row.mc;
+
+  const body = (() => {
+    switch (sk) {
+      case "encode":
+        return (
+          <g>
+            <text x={300} y={18} textAnchor="middle" style={SK} fontSize="11" fill={P.sub}>a plain image encoder, run on one frame at a time</text>
+
+            {/* the window: a stack of frames, only the front one being encoded */}
+            {[3, 2, 1].map((d) => (
+              <rect key={d} x={26 + d * 4} y={54 - d * 4} width={92} height={92} fill={P.paper2} stroke={P.line} strokeWidth="1" />
+            ))}
+            <rect x={26} y={54} width={92} height={92} fill={P.paper2} stroke={P.ink} strokeWidth="1.3" />
+            {Array.from({ length: 15 }).map((_, i) => (
+              <g key={i} stroke={P.line} strokeWidth="0.5">
+                <line x1={26 + (i + 1) * 5.75} y1={54} x2={26 + (i + 1) * 5.75} y2={146} />
+                <line x1={26} y1={54 + (i + 1) * 5.75} x2={118} y2={54 + (i + 1) * 5.75} />
+              </g>
+            ))}
+            <rect x={26 + 5.75 * 6} y={54 + 5.75 * 7} width={5.75} height={5.75} fill={P.accent} fillOpacity="0.4" stroke="none" />
+            <text x={72} y={166} textAnchor="middle" style={SK} fontSize="9" fill={P.ink}>224 × 224 px</text>
+            <text x={72} y={179} textAnchor="middle" style={SK} fontSize="8.4" fill={P.sub}>16 × 16 patches of 14 px</text>
+            <text x={72} y={36} textAnchor="middle" style={SK} fontSize="8.6" fill={P.sub}>window: 16 frames/slide</text>
+
+            {arrow(124, 100, 156, 100)}
+            {box(158, 78, 84, 44, "ViT-G/14", "EVA-CLIP  ❄", P.ink)}
+            {arrow(244, 100, 272, 100)}
+
+            <text x={330} y={72} textAnchor="middle" style={SK} fontSize="8.6" fill={P.sub}>256 patch tokens</text>
+            {Array.from({ length: 8 }).map((_, r) => vec(276, 80 + r * 8, 16, r * 7 + 1, P.ink, 6.8, 6.6))}
+            {arrow(392, 100, 420, 100)}
+            {box(422, 78, 84, 44, "Q-former", "BLIP-2", P.accent)}
+            {arrow(508, 100, 532, 100)}
+            <text x={556} y={72} textAnchor="middle" style={SK} fontSize="8.6" fill={P.accent}>32 tokens</text>
+            {Array.from({ length: 8 }).map((_, r) => vec(538, 80 + r * 8, 4, r * 5 + 4, P.accent, 8.6, 6.6))}
+
+            <line x1={26} y1={206} x2={574} y2={206} stroke={P.line} strokeWidth="0.8" />
+            <text x={26} y={228} style={SK} fontSize="9.6" fill={P.ink}>the encoder never sees two frames at once — it cannot know that frame 5 followed frame 4.</text>
+            <text x={26} y={246} style={SK} fontSize="9.6" fill={P.accent}>space is the encoder's job.  time is memory's job.  that division is the whole architecture.</text>
+            <text x={26} y={272} style={SK} fontSize="8.8" fontStyle="italic" fill={P.sub}>the two sixteens are unrelated: 16 patches per side is spatial (inside one frame); 16 frames per window is temporal (just the scoop size).</text>
+          </g>
+        );
+
+      case "short":
+        return (
+          <g>
+            <text x={300} y={18} textAnchor="middle" style={SK} fontSize="11" fill={P.sub}>short-term memory — dense, uncompressed, and fixed at 18 frames</text>
+
+            {/* new frames arrive at the right end of the queue */}
+            <text x={506} y={38} textAnchor="middle" style={SK} fontSize="9" fill={P.accent}>16 new frames per slide</text>
+            {Array.from({ length: 4 }).map((_, i) => (
+              <rect key={i} x={478 + i * 15} y={46} width={13} height={22} fill={P.accent} fillOpacity={0.16 + i * 0.11} stroke={P.line} strokeWidth="0.4" />
+            ))}
+            {arrow(506, 70, 506, 84, P.accent)}
+
+            <rect x={110} y={86} width={432} height={34} fill={P.paper2} stroke={P.ink} strokeWidth="1.3" />
+            {Array.from({ length: 18 }).map((_, i) => (
+              <rect key={i} x={114 + i * 23.8} y={90} width={21} height={26} fill={P.ink} fillOpacity={i === 17 ? 0.34 : 0.13} stroke={P.line} strokeWidth="0.4" />
+            ))}
+            <text x={216} y={137} style={SK} fontSize="9.2" fill={P.ink}>S — FIFO, K = 18 frames × 32 tokens, stored in full detail</text>
+
+            {/* the oldest frame leaves at the left end — and that is the trigger */}
+            <text x={120} y={139} textAnchor="end" style={SK} fontSize="9" fill={P.red}>oldest out</text>
+            <path d="M130 122 L130 152" stroke={P.red} strokeWidth="1.3" fill="none" />
+            <path d="M123 145 L130 152 L137 145" stroke={P.red} strokeWidth="1.3" fill="none" />
+
+            {box(54, 156, 152, 40, "consolidate", "merge, then file away", P.red)}
+            {arrow(210, 176, 244, 176)}
+            <rect x={248} y={150} width={306} height={52} fill={P.paper2} stroke={P.accent} strokeWidth="1.3" />
+            {Array.from({ length: 10 }).map((_, i) => (
+              <rect key={i} x={254 + i * 29.6} y={156} width={26} height={40} fill={P.accent} fillOpacity={0.1 + (i % 3) * 0.13} stroke={P.line} strokeWidth="0.4" />
+            ))}
+            <text x={401} y={218} textAnchor="middle" style={SK} fontSize="9.2" fill={P.accent}>L — long-term memory, sparse, capped at 256 frames</text>
+
+            <text x={300} y={252} textAnchor="middle" style={SK} fontSize="9.6" fill={P.ink}>nothing is compressed while it sits in the tray. falling out of it is not deletion —</text>
+            <text x={300} y={270} textAnchor="middle" style={SK} fontSize="9.6" fill={P.ink}>it is the trigger for the only expensive step in the system.</text>
+          </g>
+        );
+
+      case "merge": {
+        const W = 528, X0 = 40, cw = W / 24;
+        let acc = 0;
+        return (
+          <g>
+            <text x={300} y={16} textAnchor="middle" style={SK} fontSize="10.5" fill={P.sub}>24 frames · 3 scenes · cuts at 10 and 16</text>
+
+            {/* the incoming frames */}
+            {MC_FRAMES.map((f) => (
+              <rect key={f.i} x={X0 + f.i * cw} y={26} width={cw - 1} height={24}
+                fill={SCENE_COL[f.scene]} fillOpacity="0.34" stroke={P.line} strokeWidth="0.4" />
+            ))}
+            {MC_CUTS.map((c) => (
+              <g key={c}>
+                <line x1={X0 + c * cw - 0.5} y1={24} x2={X0 + c * cw - 0.5} y2={132} stroke={P.red} strokeWidth="1.1" strokeDasharray="4 3" />
+                <text x={X0 + c * cw + 3} y={62} style={SK} fontSize="8" fill={P.red}>cut</text>
+              </g>
+            ))}
+
+            {/* adjacent-frame similarity — what the merge rule actually reads */}
+            <line x1={X0} y1={126} x2={X0 + W} y2={126} stroke={P.line} strokeWidth="0.7" />
+            <path d={`M${MC_ADJ.map((s, i) => `${X0 + (i + 1) * cw} ${126 - s * 52}`).join(" L")}`}
+              fill="none" stroke={P.accent} strokeWidth="1.6" />
+            {MC_ADJ.map((s, i) => (
+              <circle key={i} cx={X0 + (i + 1) * cw} cy={126 - s * 52} r="1.9" fill={s < 0.4 ? P.red : P.accent} />
+            ))}
+            <text x={X0 - 4} y={78} textAnchor="end" style={SK} fontSize="8" fill={P.sub}>sim</text>
+            <text x={X0 + 4} y={68} style={SK} fontSize="8.4" fill={P.accent}>adjacent-frame cosine — Eq. 3</text>
+            <text x={X0 + W} y={140} textAnchor="end" style={SK} fontSize="8.2" fill={P.red}>the dips are the cuts — merged last, if ever</text>
+
+            {arrow(300, 146, 300, 168)}
+            <text x={308} y={162} style={SK} fontSize="8.8" fill={P.sub}>greedy merge, size-weighted</text>
+
+            {/* what memory now holds */}
+            {groups.map((g, i) => {
+              const w = (g.n / 24) * W, x = X0 + acc;
+              acc += w;
+              const col = g.scenes.length > 1 ? P.red : SCENE_COL[g.scenes[0]];
+              return (
+                <g key={i}>
+                  <rect x={x} y={176} width={Math.max(w - 1.4, 1)} height={30} fill={col} fillOpacity="0.34" stroke={col} strokeWidth={g.scenes.length > 1 ? 1.4 : 0.6} />
+                  {w > 15 && <text x={x + w / 2} y={196} textAnchor="middle" style={SK} fontSize="8.4" fill={P.ink}>×{g.n}</text>}
+                </g>
+              );
+            })}
+            <text x={X0} y={224} style={SK} fontSize="9.4" fill={P.ink}>{24} frames in  →  <tspan fill={P.accent}>{groups.length} slots</tspan> held  ·  {(24 / groups.length).toFixed(1)}× compression</text>
+            <text x={X0 + W} y={224} textAnchor="end" style={SK} fontSize="9.4" fill={straddling ? P.red : P.green}>
+              {straddling} of {groups.length} slots straddle a cut
+            </text>
+
+            <text x={300} y={252} textAnchor="middle" style={SK} fontSize="9.6" fill={P.sub}>a slot's width is how many frames it now stands for. long still stretches collapse into one token;</text>
+            <text x={300} y={270} textAnchor="middle" style={SK} fontSize="9.6" fill={P.sub}>the moments either side of a cut stay apart, because that is where similarity is lowest.</text>
+          </g>
+        );
+      }
+
+      case "modes": {
+        const G = mode === "global";
+        const on = (live) => (live ? 1 : 0.22);
+        return (
+          <g>
+            <text x={300} y={18} textAnchor="middle" style={SK} fontSize="11" fill={P.sub}>
+              {G ? "global mode — “what happens in this film?”" : "breakpoint mode — “what is going on at t = 47:12?”"}
+            </text>
+
+            {/* long-term — always in play */}
+            <g opacity={1}>
+              <rect x={26} y={44} width={214} height={54} fill={P.paper2} stroke={P.accent} strokeWidth="1.3" />
+              {Array.from({ length: 12 }).map((_, i) => (
+                <rect key={i} x={31 + i * 17.6} y={49} width={15} height={44} fill={P.accent} fillOpacity={0.1 + (i % 4) * 0.11} stroke={P.line} strokeWidth="0.3" />
+              ))}
+              <text x={133} y={112} textAnchor="middle" style={SK} fontSize="9.2" fill={P.accent}>L — long-term, merged, ≤ 256 frames</text>
+            </g>
+
+            {/* short-term — breakpoint only */}
+            <g opacity={on(!G)}>
+              <rect x={26} y={130} width={214} height={44} fill={P.paper2} stroke={P.ink} strokeWidth="1.2" />
+              {Array.from({ length: 18 }).map((_, i) => (
+                <rect key={i} x={30 + i * 11.7} y={135} width={9.5} height={34} fill={P.ink} fillOpacity="0.15" stroke={P.line} strokeWidth="0.3" />
+              ))}
+              <text x={133} y={188} textAnchor="middle" style={SK} fontSize="9.2" fill={P.ink}>S — short-term, dense, 18 frames</text>
+            </g>
+
+            {/* current frame — breakpoint only */}
+            <g opacity={on(!G)}>
+              <rect x={26} y={204} width={54} height={40} fill={P.paper2} stroke={P.ink} strokeWidth="1.2" />
+              <rect x={32} y={210} width={42} height={28} fill={P.ink} fillOpacity="0.16" />
+              <text x={94} y={228} style={SK} fontSize="9.2" fill={P.ink}>xₜ — the frame at the breakpoint</text>
+            </g>
+
+            {arrow(244, 71, 288, 132, P.accent)}
+            {!G && arrow(244, 152, 288, 146, P.ink)}
+            {!G && arrow(244, 224, 288, 160, P.ink)}
+
+            {box(290, 128, 74, 44, G ? "V = L" : "concat", G ? "long-term only" : "[L ; S ; xₜ]", P.accent, true)}
+            {arrow(366, 150, 396, 150)}
+            {box(398, 128, 72, 44, "Q-former", "+ projection", P.ink)}
+            {arrow(472, 150, 500, 150)}
+            {box(502, 122, 72, 56, "LLM", "LLaMA / Vicuna", P.ink)}
+            <text x={538} y={192} textAnchor="middle" style={SK} fontSize="8.6" fill={P.sub}>never sees a frame —</text>
+            <text x={538} y={204} textAnchor="middle" style={SK} fontSize="8.6" fill={P.sub}>only what memory kept</text>
+
+            <text x={300} y={272} textAnchor="middle" style={SK} fontSize="9.6" fontStyle="italic" fill={P.sub}>
+              {G
+                ? "the merged summary is the whole video representation — detail nobody asked about was the point of merging."
+                : "the merged summary has thrown away exactly the local detail this question needs, so the dense tray is concatenated back on."}
+            </text>
+          </g>
+        );
+      }
+
+      case "scaling": {
+        const series = [
+          { key: "dense", col: P.red, name: "naive dense — 197×768/frame", slope: 57.71484375 / 100 },
+          { key: "comp", col: P.yellow, name: "naive compressed — 32×256/frame", slope: 3.125 / 100 },
+        ];
+        return (
+          <g>
+            {/* frame */}
+            <line x1={GX0} y1={GY1} x2={GX0} y2={GY0} stroke={P.ink} strokeWidth="1.1" />
+            <line x1={GX0} y1={GY0} x2={GX1} y2={GY0} stroke={P.ink} strokeWidth="1.1" />
+            {[1, 10, 100, 1000, 10000].map((mb) => (
+              <g key={mb}>
+                <line x1={GX0} y1={LY(mb)} x2={GX1} y2={LY(mb)} stroke={P.line} strokeWidth="0.5" strokeDasharray="2 4" />
+                <text x={GX0 - 5} y={LY(mb) + 3} textAnchor="end" style={SK} fontSize="7.6" fill={P.sub}>{mb.toLocaleString()} MB</text>
+              </g>
+            ))}
+            {[100, 1000, 10000, 100000].map((n) => (
+              <text key={n} x={LX(n)} y={GY0 + 13} textAnchor="middle" style={SK} fontSize="7.8" fill={P.sub}>
+                {n >= 1000 ? `${n / 1000}k` : n}
+              </text>
+            ))}
+            <text x={(GX0 + GX1) / 2} y={GY0 + 27} textAnchor="middle" style={SK} fontSize="8.4" fill={P.sub}>frames of video  (log)</text>
+            <text x={GX0 - 46} y={GY1 - 6} style={SK} fontSize="8.4" fill={P.sub}>stored token memory (log)</text>
+
+            {/* the 24 GB budget */}
+            <line x1={GX0} y1={LY(24576)} x2={GX1} y2={LY(24576)} stroke={P.red} strokeWidth="1" strokeDasharray="5 3" />
+            <text x={GX0 + 4} y={LY(24576) - 5} style={SK} fontSize="8" fill={P.red}>24 GB VRAM budget</text>
+
+            {/* the two growing lines: measured solid, extrapolated dashed */}
+            {series.map((s) => (
+              <g key={s.key}>
+                <path d={`M${MC_SCALING.map((r) => `${LX(r.n)} ${LY(r[s.key])}`).join(" L")}`} fill="none" stroke={s.col} strokeWidth="2" />
+                <path d={`M${LX(10000)} ${LY(s.slope * 10000)} L${LX(100000)} ${LY(s.slope * 100000)}`} fill="none" stroke={s.col} strokeWidth="1.4" strokeDasharray="4 3" />
+              </g>
+            ))}
+            <circle cx={LX(42582)} cy={LY(24576)} r="4.4" fill="none" stroke={P.red} strokeWidth="1.5" />
+            <text x={LX(42582) + 8} y={LY(24576) + 16} style={SK} fontSize="8.2" fill={P.red}>42,582 frames ≈ 24 min</text>
+
+            {/* MovieChat */}
+            <path d={`M${MC_SCALING.map((r) => `${LX(r.n)} ${LY(r.mc)}`).join(" L")}`} fill="none" stroke={P.accent} strokeWidth="2.4" />
+            <path d={`M${LX(10000)} ${LY(8)} L${LX(100000)} ${LY(8)}`} fill="none" stroke={P.accent} strokeWidth="1.6" strokeDasharray="4 3" />
+            <text x={GX1 - 2} y={LY(8) - 7} textAnchor="end" style={SK} fontSize="8.4" fill={P.accent}>MovieChat — 8.00 MB, 256 frames, and it stops</text>
+
+            {/* labels on the growing lines */}
+            <text x={LX(1292)} y={LY(745.7) - 7} style={SK} fontSize="8.2" fill={P.red}>naive dense</text>
+            <text x={LX(1292)} y={LY(40.38) - 7} style={SK} fontSize="8.2" fill={P.yellow}>naive compressed</text>
+
+            {/* the reading head */}
+            <line x1={LX(row.n)} y1={GY1} x2={LX(row.n)} y2={GY0} stroke={P.ink} strokeWidth="0.8" strokeDasharray="3 3" />
+            <circle cx={LX(row.n)} cy={LY(row.dense)} r="3.4" fill={P.red} />
+            <circle cx={LX(row.n)} cy={LY(row.comp)} r="3.4" fill={P.yellow} />
+            <circle cx={LX(row.n)} cy={LY(row.mc)} r="3.8" fill={P.accent} />
+            <text x={LX(row.n) + (ni > 6 ? -7 : 7)} y={LY(row.mc) + 16} textAnchor={ni > 6 ? "end" : "start"} style={SK} fontSize="8.6" fill={P.accent}>
+              {row.mc.toFixed(2)} MB · {row.kept} frames kept
+            </text>
+
+            <text x={GX0} y={GY1 - 16} style={SK} fontSize="8.4" fontStyle="italic" fill={P.sub}>solid = measured (100 → 10,000 frames) · dashed = the same relation extended, verified linear to the byte</text>
+          </g>
+        );
+      }
+
+      case "verdict": {
+        const rows = [
+          { ok: "y", t: "320 frames → 16 retained slots", d: "20.0× compression, 10.00 MB → 0.50 MB, real pretrained ViT-B/16" },
+          { ok: "y", t: "0 of 16 slots mix two scenes", d: "and 8 of 8 scenes are still represented — it compresses without erasing" },
+          { ok: "y", t: "byte accounting = allocated tensors", d: "at every N; naive dense linear to the byte, max deviation 0 B" },
+          { ok: "y", t: "SSIM agrees, and it never saw the algorithm", d: "cosine separates scenes 0.285 vs raw-pixel SSIM's 0.134 — token space separates twice as sharply" },
+          { ok: "~", t: "long-term is capped, not re-encoded", d: "the paper stretches positional encodings n → n²; capping is what makes the bound provable" },
+          { ok: "~", t: "short-term cleared, not re-initialised", d: "paper §3.3 seeds S with the merged feature; a flag restores it — cadence changes, the bound does not" },
+        ];
+        return (
+          <g>
+            <text x={300} y={20} textAnchor="middle" style={SK} fontSize="11" fill={P.sub}>MovieChat_repro.ipynb — every number measured on an M5, none quoted</text>
+            {rows.map((r, i) => {
+              const y = 46 + i * 36, col = r.ok === "y" ? P.green : P.yellow;
+              return (
+                <g key={i}>
+                  <text x={30} y={y + 11} style={SK} fontSize="13" fill={col}>{r.ok === "y" ? "✓" : "~"}</text>
+                  <text x={52} y={y + 10} style={SK} fontSize="10" fill={P.ink}>{r.t}</text>
+                  <text x={52} y={y + 24} style={SK} fontSize="8.6" fill={P.sub}>{r.d}</text>
+                  <line x1={30} y1={y + 30} x2={570} y2={y + 30} stroke={P.line} strokeWidth="0.5" />
+                </g>
+              );
+            })}
+            <text x={300} y={276} textAnchor="middle" style={SK} fontSize="9.8" fontStyle="italic" fill={P.accent}>long video was never blocked on a bigger context window. it was blocked on nobody throwing away the redundant frames.</text>
+          </g>
+        );
+      }
+
+      default: return null;
+    }
+  })();
+
+  const navBtn = { ...SK, fontSize: "0.8rem", padding: "2px 10px", border: `1px solid ${P.line}`, background: P.paper2, color: P.ink, cursor: "pointer" };
+  const pill = (on) => ({ ...SK, fontSize: "0.68rem", padding: "3px 11px", cursor: "pointer", border: `1px solid ${on ? P.accent : P.line}`, background: on ? P.accentSoft : P.paper2, color: on ? P.accent : P.sub });
+  const N = MC_STEPS.length;
+
+  return (
+    <div>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 10, marginBottom: 10 }}>
+        <span style={{ ...SK, fontSize: "0.6rem", color: P.sub, textTransform: "uppercase", letterSpacing: "0.08em" }}>MovieChat · Song et al. 2023 · rebuilt on a laptop — 10,000 frames, 8 MB, flat</span>
+        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+          <span style={{ ...SK, fontSize: "0.62rem", color: P.sub, textTransform: "uppercase", letterSpacing: "0.06em" }}>step {step + 1} / {N}</span>
+          <button onClick={() => setStep((step + N - 1) % N)} aria-label="Previous step" style={navBtn}>←</button>
+          <button onClick={() => setStep((step + 1) % N)} aria-label="Next step" style={navBtn}>→</button>
+        </div>
+      </div>
+
+      {sk === "merge" && (
+        <div style={{ display: "flex", gap: 10, marginBottom: 10, flexWrap: "wrap", alignItems: "center" }}>
+          <span style={{ ...SK, fontSize: "0.62rem", color: P.sub }}>merge down to R_L =</span>
+          {/* reversed: the handle's position is the number of slots kept — drag
+              left to demand a smaller memory. Floored at 3, the scene count:
+              below that something has to merge across a cut. */}
+          <input type="range" min={0} max={21} step={1} value={24 - target} onChange={(e) => setTarget(24 - +e.target.value)} aria-label="consolidation target" style={{ accentColor: P.accent, width: 150, direction: "rtl" }} />
+          <span style={{ ...SK, fontSize: "0.66rem", color: P.ink, minWidth: 74 }}>{groups.length} slots</span>
+          <span style={{ ...SK, fontSize: "0.66rem", color: straddling ? P.red : P.green }}>{straddling} straddle a cut</span>
+          <button onClick={() => setTarget(24)} style={{ ...SK, fontSize: "0.68rem", padding: "3px 11px", cursor: "pointer", border: `1px solid ${P.line}`, background: P.paper2, color: P.sub }}>reset</button>
+        </div>
+      )}
+
+      {sk === "modes" && (
+        <div style={{ display: "flex", gap: 8, marginBottom: 10, flexWrap: "wrap", alignItems: "center" }}>
+          <span style={{ ...SK, fontSize: "0.62rem", color: P.sub }}>read path:</span>
+          <button onClick={() => setMode("global")} style={pill(mode === "global")}>global — the whole film</button>
+          <button onClick={() => setMode("breakpoint")} style={pill(mode === "breakpoint")}>breakpoint — one moment</button>
+        </div>
+      )}
+
+      {sk === "scaling" && (
+        <div style={{ display: "flex", gap: 10, marginBottom: 10, flexWrap: "wrap", alignItems: "center" }}>
+          <span style={{ ...SK, fontSize: "0.62rem", color: P.sub }}>video length:</span>
+          <input type="range" min={0} max={MC_SCALING.length - 1} step={1} value={ni} onChange={(e) => setNi(+e.target.value)} aria-label="number of frames" style={{ accentColor: P.accent, width: 150 }} />
+          <span style={{ ...SK, fontSize: "0.66rem", color: P.ink, minWidth: 96 }}>{row.n.toLocaleString()} frames</span>
+          <span style={{ ...SK, fontSize: "0.66rem", color: P.red }}>dense {row.dense.toLocaleString(undefined, { minimumFractionDigits: 1, maximumFractionDigits: 1 })} MB</span>
+          <span style={{ ...SK, fontSize: "0.66rem", color: P.accent }}>MovieChat {row.mc.toFixed(2)} MB</span>
+          <span style={{ ...SK, fontSize: "0.66rem", color: P.ink }}>= {Math.round(ratio)}× less</span>
+        </div>
+      )}
+
+      <div style={{ border: `1px solid ${P.line}`, borderTop: `2px solid ${P.ink}`, background: P.paper2 }}>
+        <div style={{ background: "#fff" }}>
+          <div style={{ aspectRatio: "600 / 300" }}>
+            <svg viewBox="0 0 600 300" width="100%" height="100%" role="img" aria-label={`MovieChat walkthrough step ${step + 1}: ${sc.label}`} style={{ display: "block" }} strokeLinecap="round" strokeLinejoin="round">
+              {body}
+            </svg>
+          </div>
+        </div>
+        <div style={{ padding: "0.9rem 1.1rem 1rem" }}>
+          <div style={{ ...DISP, fontWeight: 600, fontSize: "1rem", color: P.ink, marginBottom: 4 }}>{sc.title}</div>
+          <p style={{ ...BODY, fontSize: "0.88rem", color: P.sub, lineHeight: 1.65, textWrap: "pretty", margin: 0 }}>
+            <span style={{ ...SK, fontSize: "0.6rem", color: P.accent, textTransform: "uppercase", letterSpacing: "0.08em", marginRight: 6 }}>step {step + 1}</span>
+            {sc.body}
+          </p>
+          <div style={{ ...SK, fontSize: "0.66rem", color: P.ink, marginTop: 9, background: P.faint, padding: "6px 9px", display: "inline-block" }}>{sc.math}</div>
+        </div>
+      </div>
+
+      <div style={{ display: "flex", gap: 6, marginTop: 10, flexWrap: "wrap" }}>
+        {MC_STEPS.map((s, j) => (
           <button key={s.key} onClick={() => setStep(j)} style={{ ...SK, fontSize: "0.62rem", padding: "4px 9px", cursor: "pointer", border: `1px solid ${j === step ? P.accent : P.line}`, background: j === step ? P.accentSoft : "#fff", color: j === step ? P.accent : P.sub }}>{j + 1}. {s.label}</button>
         ))}
       </div>
