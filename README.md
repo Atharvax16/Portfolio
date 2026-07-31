@@ -33,8 +33,8 @@ public/
   images/      # portrait, gallery photos, and research figures/plots
 ```
 
-**Editing content:** everything lives in `src/data.js` — projects, the reading
-log, research focus areas, methods, and the journey timeline. Projects flagged
+**Editing content:** everything lives in `src/data.js` — projects, publications,
+the reading log, research focus areas, methods, and the journey timeline. Projects flagged
 `placeholder: true` carry TODO fields shown as a draft banner in the case-study modal.
 
 ## Deployment
