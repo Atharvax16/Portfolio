@@ -3,7 +3,7 @@ import {
   P, SECS, PAPER, RESEARCH_AREAS, READING_LOG, TIL_REPO, FROM_SCRATCH,
   METHODS, JOURNEY, ORDERED_PROJECTS, INSIGHTS, CURRENT_TRACK, PUBLICATIONS,
 } from "./data.js";
-import { Rv, Radar, PhotoGallery, MatrixOverlay, ResearchModal, SketchFidelityAccuracy, SketchResearcherFrontier, SketchMolecule, SketchAttention, SketchFFT, SketchSpectral, SketchDCT, InsightsViewer, LabGateway } from "./ui.jsx";
+import { Rv, Radar, PhotoGallery, MatrixOverlay, ResearchModal, SketchFidelityAccuracy, SketchResearcherFrontier, SketchMolecule, SketchAttention, SketchFFT, SketchSpectral, SketchDCT, InsightsViewer, MetricsGateway, LabGateway } from "./ui.jsx";
 
 /* Type tokens */
 const DISP = { fontFamily: "'Spectral',Georgia,serif" };
@@ -87,6 +87,17 @@ export default function App() {
     }, { rootMargin: "-45% 0px -45% 0px" });
     SECS.forEach((id) => { const el = document.getElementById(id); if (el) obs.observe(el); });
     return () => obs.disconnect();
+  }, []);
+
+  /* The paper can mount with a section hash already set — a cold load of
+     "…/#Metrics", or Esc / "back to the paper" out of one of the rooms
+     (#/lab, #/metrics). The browser tries its anchor jump before React has
+     rendered that section, so it silently lands at the top; do the jump here
+     instead, once the sections actually exist. */
+  useEffect(() => {
+    const id = decodeURIComponent(window.location.hash.slice(1));
+    if (!id || id.startsWith("/")) return;
+    document.getElementById(id)?.scrollIntoView({ behavior: "instant", block: "start" });
   }, []);
 
   const goTo = (id) => { const el = document.getElementById(id); if (el) el.scrollIntoView({ behavior: "smooth", block: "start" }); };
@@ -188,7 +199,7 @@ export default function App() {
               <Rv delay={0.12}>
                 <div style={{ borderTop: `1px solid ${P.line}`, borderBottom: `1px solid ${P.line}`, padding: "1.1rem 0", margin: "1.4rem 0" }}>
                   <p style={{ ...BODY, fontSize: "1rem", lineHeight: 1.78, color: P.ink, textAlign: "justify", hyphens: "auto", textWrap: "pretty" }}>
-                    <b style={{ ...DISP }}>Abstract.</b> This portfolio is laid out as a paper and reads as one — a live research log (§2), finished projects written up as short case studies (§3), peer-reviewed output (§4), figures carrying the observation each one earned (§5), and architectures rebuilt by hand to see the mechanics a framework hides (§6–8). What holds it together is a habit: I break models on purpose. Not because failure is interesting in itself, but because <i>why</i> something breaks tells you more than knowing that it works — degrade a fundus image, watch the heatmap drift off the lesion, and you learn what the network was actually using. So the order is always root cause first, build second. My MSc thesis benchmarks CNNs against Vision Transformers for diabetic-retinopathy screening under controlled degradation — blur, exposure error, sensor noise — using Grad-CAM, attention rollout, and SHAP to locate where the reasoning breaks, then asks whether diffusion restoration can recover the diagnostic signal <i>without hallucinating pathology</i>. The question I keep returning to is never <i>A got 82%, B got 79%</i>, but why ConvNeXt held under blur where EfficientNetV2 collapsed. The same instinct runs through the rest: read and reproduce the foundational results from scratch — attention <Cite n={1} />, adversarial generation <Cite n={2} />, equivariant graph networks <Cite n={3} /> — extend them across generative-image forensics, federated medical imaging, and multi-agent systems grounded in deterministic ML, and ship them past the notebook (Docker, FastAPI, SageMaker, CI/CD). My current thread (§2) follows differentiable memory from Neural Turing Machines to retrieval-augmented generation, toward an <i>episodic memory</i> for vision-language agents that can recall what they saw, not just describe what they see.
+                    <b style={{ ...DISP }}>Abstract.</b> This portfolio is laid out as a paper and reads as one — a live research log (§2), finished projects written up as short case studies (§3), peer-reviewed output (§4), figures carrying the observation each one earned (§5), the instruments those figures were measured with and what each one refuses to tell you (§6), and architectures rebuilt by hand to see the mechanics a framework hides (§7–9). What holds it together is a habit: I break models on purpose. Not because failure is interesting in itself, but because <i>why</i> something breaks tells you more than knowing that it works — degrade a fundus image, watch the heatmap drift off the lesion, and you learn what the network was actually using. So the order is always root cause first, build second. My MSc thesis benchmarks CNNs against Vision Transformers for diabetic-retinopathy screening under controlled degradation — blur, exposure error, sensor noise — using Grad-CAM, attention rollout, and SHAP to locate where the reasoning breaks, then asks whether diffusion restoration can recover the diagnostic signal <i>without hallucinating pathology</i>. The question I keep returning to is never <i>A got 82%, B got 79%</i>, but why ConvNeXt held under blur where EfficientNetV2 collapsed. The same instinct runs through the rest: read and reproduce the foundational results from scratch — attention <Cite n={1} />, adversarial generation <Cite n={2} />, equivariant graph networks <Cite n={3} /> — extend them across generative-image forensics, federated medical imaging, and multi-agent systems grounded in deterministic ML, and ship them past the notebook (Docker, FastAPI, SageMaker, CI/CD). My current thread (§2) follows differentiable memory from Neural Turing Machines to retrieval-augmented generation, toward an <i>episodic memory</i> for vision-language agents that can recall what they saw, not just describe what they see.
                   </p>
                   <p style={{ ...MONO, fontSize: "0.66rem", color: P.sub, marginTop: "0.9rem", lineHeight: 1.7 }}>
                     <span style={{ color: P.ink }}>Keywords —</span> {PAPER.keywords.join(" · ")}
@@ -400,18 +411,37 @@ export default function App() {
           <Rv delay={0.06}><InsightsViewer items={INSIGHTS} /></Rv>
         </Section>
 
-        {/* ═══ 6 · ARCHITECTURES (the door to the Lab) ═══
+        {/* ═══ 6 · METRICS (the door to the Instrument Room) ═══
+            §5 shows the figures; this asks what they were measured with. Ten
+            metrics written out in full ran to several screens, so they went
+            the way of the walkthroughs — the entries live at #/metrics and
+            what stays here is the invitation, plus the one position the
+            section exists to hold. */}
+        <Section id="Metrics" num="6" note={<p style={noteTxt}>Every number in §3 and §5 was produced by an instrument. This one opens into its own room — the instrument list, and what each one refuses to tell you.</p>}>
+          <SecTitle>Metrics, Interrogated</SecTitle>
+          <Rv><p style={{ ...BODY, fontSize: "0.95rem", lineHeight: 1.75, color: P.sub, marginBottom: "1.4rem", maxWidth: 600 }}>Choosing the metric <i>is</i> the experiment design. Accuracy on a grade-0-heavy screening set, PSNR on a restorer that smooths lesions away, cosine similarity between two attribution maps with different dynamic ranges — each is a number that moves for reasons that have nothing to do with the question being asked. So every instrument gets written the same way: what it captures, why it beats the obvious alternative, what it showed, why that matters outside a notebook, and — always — <b style={DISP}>what it does not say</b>. They outgrew this page, so they have their own: <b style={DISP}>the Instrument Room</b>.</p></Rv>
+          <Rv delay={0.06}><MetricsGateway /></Rv>
+
+          <Rv delay={0.1}>
+            <p style={{ ...BODY, fontSize: "0.9rem", lineHeight: 1.72, color: P.ink, marginTop: "1.5rem", background: P.faint, borderLeft: `2px solid ${P.red}`, padding: "0.8rem 1rem", textWrap: "pretty" }}>
+              <span style={{ ...MONO, fontSize: "0.56rem", color: P.red, textTransform: "uppercase", letterSpacing: "0.1em", display: "block", marginBottom: 5 }}>the position this section exists to hold</span>
+              Lesion-level IoU would say whether an explanation lands on real pathology — but APTOS ships image-level grades and no pixel masks, so it is uncomputable here and is reported as <b style={DISP}>not measured</b>, never as 0.00. A literal zero claims the explanations completely miss the lesions; the truth is that there is no instrument to measure lesion overlap at all. <span style={{ background: P.highlight, padding: "0 2px" }}>Absence of measurement is not measurement of absence.</span>
+            </p>
+          </Rv>
+        </Section>
+
+        {/* ═══ 7 · ARCHITECTURES (the door to the Lab) ═══
             The walkthroughs themselves live at #/lab now — five full-height
             interactive sketches were swallowing the paper. What's left here is
             the invitation; LabGateway rotates through what's inside. */}
-        <Section id="Architectures" num="6" note={<p style={noteTxt}>Learning in public — each architecture I study, rebuilt as an interactive sketch. This one opens into its own room.</p>}>
+        <Section id="Architectures" num="7" note={<p style={noteTxt}>Learning in public — each architecture I study, rebuilt as an interactive sketch. This one opens into its own room.</p>}>
           <SecTitle>Architectures, Visualised</SecTitle>
           <Rv><p style={{ ...BODY, fontSize: "0.95rem", lineHeight: 1.75, color: P.sub, marginBottom: "1.4rem", maxWidth: 600 }}>How a model actually <i>sees</i>. Every architecture I study gets rebuilt as a hand-drawn sketch you can step through and turn the knobs on — patch size, kernel size, the prompt you steer with. They outgrew this page, so they have their own: <b style={DISP}>the Architecture Lab</b>, where nothing lives but the mechanisms.</p></Rv>
           <Rv delay={0.06}><LabGateway /></Rv>
         </Section>
 
-        {/* ═══ 7 · READING & REPRODUCTIONS (references) ═══ */}
-        <Section id="Reading" num="7" note={<p style={noteTxt}>The <a href={TIL_REPO} target="_blank" rel="noopener noreferrer" className="body-link">til</a> journal — papers read in my own words, with notebooks where the idea needs to be felt.</p>}>
+        {/* ═══ 8 · READING & REPRODUCTIONS (references) ═══ */}
+        <Section id="Reading" num="8" note={<p style={noteTxt}>The <a href={TIL_REPO} target="_blank" rel="noopener noreferrer" className="body-link">til</a> journal — papers read in my own words, with notebooks where the idea needs to be felt.</p>}>
           <SecTitle>Reading &amp; Reproductions</SecTitle>
           <div style={{ display: "flex", flexDirection: "column", gap: "1.2rem" }}>
             {foundationalReading.map((r, i) => (
@@ -465,8 +495,8 @@ export default function App() {
           </Rv>
         </Section>
 
-        {/* ═══ 8 · FOUNDATIONS ═══ */}
-        <Section id="Foundations" num="8" note={<p style={noteTxt}>Not to reinvent the framework — to understand the mechanics it hides.</p>}>
+        {/* ═══ 9 · FOUNDATIONS ═══ */}
+        <Section id="Foundations" num="9" note={<p style={noteTxt}>Not to reinvent the framework — to understand the mechanics it hides.</p>}>
           <SecTitle>Foundations, From Scratch</SecTitle>
           <div>
             {FROM_SCRATCH.map((f, i) => (
@@ -488,8 +518,8 @@ export default function App() {
           </div>
         </Section>
 
-        {/* ═══ 9 · METHODS ═══ */}
-        <Section id="Methods" num="9">
+        {/* ═══ 10 · METHODS ═══ */}
+        <Section id="Methods" num="10">
           <SecTitle>Methods &amp; Tools</SecTitle>
           <div>
             {METHODS.map((m, i) => (
@@ -516,8 +546,8 @@ export default function App() {
           </Rv>
         </Section>
 
-        {/* ═══ 10 · ABOUT ═══ */}
-        <Section id="About" num="10">
+        {/* ═══ 11 · ABOUT ═══ */}
+        <Section id="About" num="11">
           <SecTitle>About</SecTitle>
           <Rv>
             <div style={{ display: "flex", gap: "1.3rem", alignItems: "flex-start", marginBottom: "1.4rem", flexWrap: "wrap" }}>

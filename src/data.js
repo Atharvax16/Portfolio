@@ -30,7 +30,7 @@ export const PAPER = {
 
 /* Nav + scroll-tracked sections (paper running order).
    The gallery "Appendix" is intentionally NOT here — it stays out of nav. */
-export const SECS = ["Abstract", "Research", "Track", "Work", "Publications", "Findings", "Architectures", "Reading", "Foundations", "Methods", "About", "Contact"];
+export const SECS = ["Abstract", "Research", "Track", "Work", "Publications", "Findings", "Metrics", "Architectures", "Reading", "Foundations", "Methods", "About", "Contact"];
 
 /* ════════════════════════════════════════
    CURRENT TRACK — the live thread, updated as it moves.
@@ -244,7 +244,7 @@ export const READING_LOG = [
     takeaway: "This one lands directly on a limitation I'd been working around. A frozen DINOv2 embedding — the backbone my own detection pipeline leans on — commits to whatever is most salient in the frame, and there is no handle to say 'attend to the thing in the corner instead'. CLIP doesn't fix it: fusing text after the visual encoder (late fusion) can only re-weight features that were already computed. The move here is to push the text in earlier, cross-attending it into the ViT's own layers so the prompt shapes what gets encoded rather than what gets selected afterwards — and, crucially, the features stay generic enough for ordinary downstream tasks instead of collapsing into the language-centric embeddings an MLLM gives you. The part I keep turning over is that anomaly detection falls out of it zero-shot: if you can steer a representation by prompt, 'what's unusual here' stops needing a task-specific model and becomes just another thing you ask for.",
     link: "https://arxiv.org/abs/2604.02327",
     hasNotebook: false,
-    reproduced: "Rebuilt the mechanism at small scale (RefCOCOg, 4.5k images, 3k steps): steering emerges — IoU 0.129 → 0.294 — but the wrong-prompt check doesn't collapse, so at this scale it's reading the image, not the text. Walk the mechanism in §6, Architectures.",
+    reproduced: "Rebuilt the mechanism at small scale (RefCOCOg, 4.5k images, 3k steps): steering emerges — IoU 0.129 → 0.294 — but the wrong-prompt check doesn't collapse, so at this scale it's reading the image, not the text. Walk the mechanism in §7, Architectures.",
   },
 ];
 
@@ -683,6 +683,241 @@ export const INSIGHTS = [
     tag: "anomaly", title: "Anomalies in CPU telemetry",
     src: "images/plots/anomaly-cpu-usage.png",
     insight: "Injected attack spikes stand clear of baseline load. With a recall-first detector, a few false alarms are a fair price for never missing the spike that matters.",
+  },
+];
+
+/* ════════════════════════════════════════
+   METRICS — the instruments, not the results.
+
+   The counterpart to ARCHITECTURES: where that registry asks "how does this
+   model work", this one asks "how do I know this number means anything".
+   Every entry is a metric something in §3 was actually scored with, written
+   in five deliberate parts:
+
+     captures  — what the number is a measurement of
+     why       — why this one and not the obvious alternative (the argument)
+     showed    — what it produced on my data
+     deployed  — why that matters outside a notebook
+     limit     — what the number does NOT say (always present, never softened)
+
+   The `limit` field is not decoration. A metric reported without its blind
+   spot is a claim in disguise, and the whole section exists to refuse that.
+
+   Like the architectures, these outgrew the paper: §6 keeps the gateway and
+   the entries live in the Instrument Room (#/metrics/<key>). `short` is the
+   rail label; `figure` names an optional sketch rendered above the parts.
+   ════════════════════════════════════════ */
+export const METRIC_FAMILIES = [
+  "Explanation quality",
+  "Ordinal agreement",
+  "Restoration",
+  "Asymmetric cost",
+  "Reliability of the number",
+  "Selective prediction",
+];
+
+export const METRICS = [
+  {
+    key: "spearman-stability",
+    short: "Rank stability",
+    figure: "rankStability",
+    name: "Spearman rank stability of saliency",
+    symbol: "ρ_s(clean, deg)",
+    family: "Explanation quality",
+    where: ["MSc thesis — DR grading"],
+    projects: ["dr-xai-thesis"],
+    headline: "Did the explanation survive the degradation?",
+    captures:
+      "A saliency map is the classifier's “where I looked” signal for a given image. You compute it twice — once on the clean fundus, once on the degraded version of the same image — and ask whether the model's attention survived. Spearman ρ over the flattened maps answers that as a single scalar: ρ = 1 means every pixel kept its relative importance ranking, so the explanation is anchored to the same structures; ρ falling toward 0 means degradation pushed the model to attend elsewhere. Crucially this is a property of the model-plus-method under perturbation, not of the prediction — the grade can stay correct while the explanation drifts, and that drift is exactly what I'm trying to expose.",
+    why:
+      "The comparison I want is “did the ranking of importance move”, and it has to mean the same thing whether the map came from Grad-CAM or Integrated Gradients. Those methods don't share a scale: Grad-CAM is non-negative, smooth and upsampled from the last conv block; IG is signed, sparse and at pixel resolution. Any metric that reads absolute magnitude — cosine (dominated by the high-magnitude entries, invariant only to global scaling) or SSIM (luminance/contrast/structure over local windows, built for perceptual image similarity, not attribution) — conflates “the explanation moved” with “this method has a different dynamic range”. Spearman is Pearson on ranks, so it is invariant to any monotone transform of the heatmap. It collapses the comparison to the only thing that ports across methods: does pixel A outrank pixel B in both maps. That is the defensible, method-agnostic definition of “same explanation”.",
+    showed:
+      "Clean-vs-degraded is the baseline; the plot that carries the thesis is clean-vs-restored — whether restoration pulls ρ back toward the clean explanation or instead moves attention onto content the restorer invented. If restoration drives ρ down rather than up, the model is attending to synthesised features. That is the fidelity-vs-accuracy paradox restated in attribution space rather than in classifier-accuracy space, and it is the same finding arriving through a second, independent instrument.",
+    deployed:
+      "A screening tool whose heatmap jumps when the camera is slightly out of focus cannot be handed to a clinician as an explanation. The map has to hold across the image-quality variation a real clinic actually produces, or “here is why” means something different from one shot to the next — and an explanation that changes with the lens is not an explanation, it is noise with a colormap.",
+    limit:
+      "Two, both worth pre-empting. First, a naïve flatten includes the black surround — a fundus is a disc on a zero background, and those near-zero, heavily-tied pixels enter the rank correlation and usually inflate ρ, since both maps agree “nothing here”; the fix is to mask to the field of view before the correlation. Second, Spearman on a flattened map is a bag-of-pixels comparison: it ignores spatial layout, so two maps with identical rank distributions but shuffled geometry would score 1.0. Attribution is spatially coherent in practice, so this is benign — but the honest framing is that stability is necessary, not sufficient. A map can be perfectly stable and stably wrong. That is fine for the claim being made, which is robustness of attention, not correctness of it.",
+  },
+  {
+    key: "insertion-deletion",
+    short: "Insertion / deletion",
+    name: "Insertion / deletion AUC",
+    symbol: "AUC↑ / AUC↓",
+    family: "Explanation quality",
+    where: ["MSc thesis — DR grading"],
+    projects: ["dr-xai-thesis"],
+    headline: "Do the highlighted pixels actually drive the output?",
+    captures:
+      "Faithfulness to the model. Rank every pixel by its attribution, then insert them into a blank canvas most-important-first (or delete them from the original) and watch the predicted class probability move. The area under that curve says whether the pixels the method called important are the pixels the model is genuinely using.",
+    why:
+      "It needs no ground truth of any kind — only the model and its own output — which is what makes it computable on a dataset carrying image-level labels and nothing else. Insertion and deletion fail in opposite directions (deletion pushes the image off the training distribution; insertion builds an unnatural composite), so reporting both is the check on either one.",
+    showed:
+      "Insertion AUC falls as degradation severity climbs: the explanations grow less faithful exactly when the input gets hard — which is precisely when you would most want to trust them. Robustness of the grade and robustness of the reason for the grade are not the same curve, and they do not decay together.",
+    deployed:
+      "It separates “the model is right” from “the model is right for a reason you can inspect”. In a regulated setting the second is the one that has to be evidenced, and this is the cheapest instrument that evidences it without annotation cost.",
+    limit:
+      "Faithful-to-the-model is not faithful-to-pathology. Insertion AUC can be high for an explanation that lands nowhere near a lesion — it only certifies that the model uses those pixels, never that a clinician would agree they are the right ones.",
+  },
+  {
+    key: "lesion-iou",
+    short: "Lesion IoU",
+    name: "Lesion-level IoU",
+    symbol: "IoU — not measured",
+    family: "Explanation quality",
+    where: ["MSc thesis — DR grading"],
+    projects: ["dr-xai-thesis"],
+    absent: true,
+    headline: "The metric I deliberately do not report.",
+    captures:
+      "What it would capture: faithfulness to pathology — whether the attributed region lands on real microaneurysms, haemorrhages and exudates, scored as intersection-over-union against pixel-level lesion masks. Faithfulness splits in two, and insertion/deletion only answers the first half; this is the second half.",
+    why:
+      "APTOS ships image-level DR grades (0–4) and no pixel annotations, so lesion overlap is not something I have an instrument to measure. The count in my results table is zero because nothing was scored — not because the overlap was zero. Reporting a literal IoU of 0.00 would be a claim that the explanations completely miss the lesions; the truth is weaker and categorically different. Absence of measurement is not measurement of absence.",
+    showed:
+      "The entry stays in the results table as “not measured”, with the count of scored images shown next to it, rather than being quietly dropped or back-filled with a zero. A sharp reviewer respects the distinction; a sloppy one misreads a literal zero — and only one of those two failure modes is my fault.",
+    deployed:
+      "Every deployed XAI claim inherits this question: what would falsify it, and do you own the data to run that test? The honest way to close this gap is a lesion-annotated set — IDRiD and DDR carry pixel-level lesion masks — which makes it the next experiment, not a number to be invented. Rank stability sidesteps the gap entirely, because clean-map-versus-degraded-map is self-referential and needs no external ground truth at all.",
+    limit:
+      "This is a stated gap, not a result. Nothing in the thesis should be read as evidence that the explanations do land on pathology — only that they stay put under degradation, which is a strictly weaker and separately useful claim.",
+  },
+  {
+    key: "qwk",
+    short: "QWK",
+    name: "Quadratic-weighted kappa",
+    symbol: "κ_w",
+    family: "Ordinal agreement",
+    where: ["MSc thesis — DR grading", "Federated DR"],
+    projects: ["dr-xai-thesis", "retinopathy-fl"],
+    headline: "Grade 0 mistaken for 4 is not the same error as 3 for 4.",
+    captures:
+      "Chance-corrected agreement between the predicted and true DR grade on the ordinal 0–4 scale, where the penalty grows with the square of how far off the prediction lands.",
+    why:
+      "Accuracy treats a grade-0 image called grade 4 exactly like a grade-3 image called grade 4 — but one is a healthy patient sent for laser treatment and the other is a borderline call between two referral-worthy grades. Plain Cohen's kappa corrects for chance agreement but still flattens all errors into “wrong”. The quadratic weighting is what makes the number move in step with the clinical cost. And APTOS is heavily skewed toward grade 0, so raw accuracy is inflated by the majority class before any modelling happens.",
+    showed:
+      "κ_w was the headline metric for all three backbones throughout, including under degradation — so the robustness comparison between ResNet-50, EfficientNet and ViT is a comparison of ordinal agreement, not of a number the class prior is quietly propping up. It is also what the ordinal focal loss is aimed at, so the training objective and the reported metric agree about what an error costs.",
+    deployed:
+      "Screening is a triage decision — refer or don't — and the cost of being wrong is not symmetric in the grade. A metric that agrees with the referral pathway is the only one worth optimising; one that doesn't will happily rank the wrong model first.",
+    limit:
+      "κ_w is a single scalar over a whole population, so it hides *where* on the scale the model fails. A grader that is excellent at 0-vs-anything and useless at telling 2 from 3 can post a respectable kappa — the confusion matrix has to be read alongside it.",
+  },
+  {
+    key: "psnr-ssim",
+    short: "PSNR / SSIM",
+    name: "PSNR / SSIM vs downstream accuracy",
+    symbol: "PSNR · SSIM ⟂ κ_w",
+    family: "Restoration",
+    where: ["MSc thesis — restoration phase"],
+    projects: ["dr-xai-thesis"],
+    headline: "The pair that produced the thesis's negative result.",
+    captures:
+      "PSNR is per-pixel reconstruction error in decibels; SSIM compares luminance, contrast and local structure against the reference. Both answer one question — does the restored image look like the original — and neither has any notion of diagnostic content.",
+    why:
+      "A restorer can raise both by smoothing, and the structures it smooths first are microaneurysms, which are a handful of pixels across. So a reference-quality score alone is not evidence the image is still gradeable. The only defensible read is PSNR/SSIM reported *alongside* the grader's κ_w on the restored image — the pair, never the fidelity number on its own.",
+    showed:
+      "The curves cross. Restoration reliably improves pixel fidelity and does not reliably recover diagnostic accuracy; push it harder and the image looks cleaner while the signal the classifier depends on keeps eroding. Looks restored, reads wrong — and it is the paper's central claim (§4).",
+    deployed:
+      "This is the whole clinical recommendation, and it is a recommendation *against* a tempting product feature: for a low-quality fundus photo, re-acquire the image — do not hallucinate the missing detail back in. A pipeline selected on PSNR ships a model that looks better and reads worse, and nobody in the loop would notice from the images alone.",
+    limit:
+      "PSNR and SSIM need a clean reference, which exists here only because the degradations are synthetic. On genuinely degraded clinical images there is no reference to compare against — which is why anything deployable has to lean on a no-reference quality signal instead, and why the router in phase 5 exists at all.",
+  },
+  {
+    key: "f1",
+    short: "F1",
+    name: "F1 under class asymmetry",
+    symbol: "F1 = 2PR/(P+R)",
+    family: "Asymmetric cost",
+    where: ["Generative-image detection", "Credit-card fraud"],
+    projects: ["gen-image-detection", "cc-fraud"],
+    headline: "Accuracy is degenerate the moment one class dominates.",
+    captures:
+      "The harmonic mean of precision and recall — a summary that punishes any model buying one of them with the other, rather than letting a single lopsided number carry the report.",
+    why:
+      "On 1.29M+ transactions with a tiny fraud rate, a model that predicts “legitimate” every time posts near-perfect accuracy and catches nothing. The harmonic mean is chosen over the arithmetic one precisely because it refuses to average away a collapse: precision 0.95 with recall 0.05 gives F1 ≈ 0.095, not 0.5.",
+    showed:
+      "The forensics ladder is only legible in F1: FFT 0.60 and ELA 0.65 for the hand-crafted signals, 0.79–0.85 for fine-tuned DINOv2 / EfficientNet, 0.92 for intermediate CLIP layers with XGBoost, ≈ 0.94 for the Optuna-weighted four-model ensemble. The interesting result sits in the middle — intermediate CLIP layers beat the final embedding (0.92 vs 0.85), because the last layer has already discarded the low-level generation artifacts the task depends on.",
+    deployed:
+      "A marketplace cannot act on a detector that flags a third of authentic listings, and a bank cannot staff a queue that cries wolf. The operating point is a business decision before it is a modelling one, and F1 is the summary that keeps both halves of that decision in view while you make it.",
+    limit:
+      "F1 is one point on the precision–recall curve — it silently assumes the threshold you happened to pick. When the threshold isn't yet fixed, the curve (or average precision) is the honest object to report, and F1 is a footnote on it.",
+  },
+  {
+    key: "recall-first",
+    short: "Recall-first",
+    name: "Recall-first operating point",
+    symbol: "argmax R | P ≥ p₀",
+    family: "Asymmetric cost",
+    where: ["CPU-telemetry attack detection", "Credit-card fraud"],
+    projects: ["cyberattack", "cc-fraud"],
+    headline: "Choosing which error you are willing to make.",
+    captures:
+      "Not a score so much as a decision recorded as one: where on the precision–recall curve the threshold sits, and therefore how many false alarms you are buying per missed event.",
+    why:
+      "The stakeholders' cost function is asymmetric — a missed intrusion costs far more than a false alarm an analyst dismisses in thirty seconds — so the detector is tuned toward recall on purpose. That makes the headline accuracy the *least* informative number in the report, and the one most likely to be quoted back at you.",
+    showed:
+      "98% accuracy on labelled attack patterns, with recall deliberately held at 78% rather than chasing the balanced optimum; on the fraud side the model is reported on recall (~88%) and F1 (85) with accuracy left out of the summary entirely, because at that imbalance it would only mislead.",
+    deployed:
+      "This is the metric conversation to have with the stakeholder *before* training, not after. The number that gets optimised is the one that encodes their cost — and getting that agreed up front is most of the reason a model ships instead of being argued about.",
+    limit:
+      "Recall-first only holds while the alarm budget holds. Push recall high enough and analysts start ignoring the queue, at which point the effective recall of the *system* has nothing to do with the recall of the model — a failure that never shows up in offline evaluation.",
+  },
+  {
+    key: "cv-spread",
+    short: "K-fold ± σ",
+    name: "K-fold mean ± std",
+    symbol: "μ ± σ over K folds",
+    family: "Reliability of the number",
+    where: ["Generative-image detection"],
+    projects: ["gen-image-detection"],
+    headline: "The error bar is the metric. The mean is the headline.",
+    captures:
+      "Not the score — the spread. 5-fold CV at 0.87 ± 0.01 says the model is doing the same thing on every split; the same 0.87 with ± 0.09 would say it isn't, and the two situations warrant completely different conclusions from an identical headline.",
+    why:
+      "A single held-out number is one draw from a distribution nobody characterised. On a ~4,340-image set the gap between two models can easily sit inside fold noise, so the ± is what decides whether a comparison is a finding or a coincidence.",
+    showed:
+      "0.87 ± 0.01 across five folds on the fused 6,018-dimensional feature set — tight enough that the ensemble's lift over the single best model is a real difference rather than a lucky split, which is the only reason the ensemble was worth keeping.",
+    deployed:
+      "It is the reason to distrust any leaderboard delta smaller than its own error bar — including your own. Most reported improvements in a small-data regime do not survive being asked this question.",
+    limit:
+      "Cross-validation variance measures split noise, not distribution shift. A tight ± says nothing whatsoever about what happens when the images arrive from a different camera, a different marketplace, or a generator that didn't exist at training time.",
+  },
+  {
+    key: "leakage-audit",
+    short: "Leakage audit",
+    name: "Leakage audit",
+    symbol: "Δ acc. after removal",
+    family: "Reliability of the number",
+    where: ["Credit-card fraud"],
+    projects: ["cc-fraud"],
+    headline: "The check that makes every other number mean something.",
+    captures:
+      "Not a score at all — the test of whether the score is measuring the task. Location signals in the transaction set correlated with the label and inflated naive accuracy; removing them lowers the headline and makes what's left honest.",
+    why:
+      "This is the failure mode where the metric is excellent and the model is worthless, and it is invisible to every metric above. All of them are conditional on this check having been run first, which is why it belongs in a metrics section rather than a preprocessing footnote.",
+    showed:
+      "Dropping the leakage-prone location features moves the reported accuracy *down*. That is the correct direction — the earlier number was measuring the dataset's construction, not the model's ability to detect fraud.",
+    deployed:
+      "The first question to ask of any reported number, anyone's: what could the model see at training time that it will not see at inference? A production model quietly loses whatever leaked, and the drop shows up as an unexplained regression weeks after launch.",
+    limit:
+      "Negative by construction. You can prove leakage present; you can never prove it absent — so the audit lowers the risk of a fantasy number without ever eliminating it.",
+  },
+  {
+    key: "trust-coverage",
+    short: "Coverage – risk",
+    name: "Trust score & coverage–risk",
+    symbol: "risk @ coverage",
+    family: "Selective prediction",
+    where: ["MSc thesis — quality-aware router"],
+    projects: ["dr-xai-thesis"],
+    headline: "The metric that turns a negative result into a system.",
+    captures:
+      "A per-image decision rather than a population score: whether to act on the model at all, whether to enhance the image first, and which explanation to return. The distribution of that score is the object to read — it says what fraction of a real intake the system would decline to auto-grade.",
+    why:
+      "A single global accuracy assumes you are obliged to answer every image. A screening tool is not — it can refer, or ask for a re-shot. So the honest instrument is a pair, coverage (how many images you answered) against risk (how wrong you were on those), and a model that abstains well can beat a more accurate model that never does.",
+    showed:
+      "The trust score separates images worth enhancing from those to leave alone, turning the fidelity-versus-accuracy trade-off from a single global verdict into a per-image decision — which is what makes the pipeline quality-*aware* rather than merely quality-*sensitive*.",
+    deployed:
+      "This is what makes the negative result actionable instead of merely discouraging. If restoration can't be trusted in general, the deployable system is the one that knows when it is out of its depth and says so — abstention is a feature a clinician can work with, a confident wrong grade is not.",
+    limit:
+      "Coverage–risk is only ever as good as the calibration of the score behind it. A confidently wrong trust score is strictly worse than no router at all, because it moves the failure from a place a clinician can see to a place they can't.",
   },
 ];
 

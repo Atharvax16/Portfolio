@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from "react";
-import { P, GALLERY_PHOTOS, ARCHITECTURES, LIVE_ARCHITECTURES } from "./data.js";
+import { P, GALLERY_PHOTOS, ARCHITECTURES, LIVE_ARCHITECTURES, METRICS, METRIC_FAMILIES } from "./data.js";
 
 /* Type tokens */
 const DISP = { fontFamily: "'Spectral',Georgia,serif" };
@@ -459,7 +459,7 @@ export function SketchDCT() {
 }
 
 /* ════════════════════════════════════════
-   LAB GATEWAY — the door on the paper's §6.
+   LAB GATEWAY — the door on the paper's §7.
    The walkthroughs used to sit inline here and ran to most of a screen each.
    They live in the Lab (#/lab) now; what stays behind is a display case that
    rotates through what's inside, so the section reads as an invitation
@@ -3864,6 +3864,224 @@ export function JepaWalkthrough() {
 /* ════════════════════════════════════════
    INSIGHTS VIEWER — step through real figures + the observation each carries
    ════════════════════════════════════════ */
+/* The instrument behind the metrics section: the same image scored twice,
+   flattened, ranked, and correlated. Draws the argument rather than the
+   result — magnitude is thrown away, only the ordering is compared. */
+export function SketchRankStability() {
+  const pts = [
+    [215, 197], [228, 175], [240, 178], [252, 157], [265, 158], [278, 134],
+    [290, 138], [302, 116], [315, 118], [328, 95], [340, 97], [352, 76],
+    [365, 78], [378, 57], [390, 55],
+  ];
+  return (
+    <svg viewBox="0 0 440 260" width="100%" height="100%" role="img"
+      aria-label="Sketch: a saliency map computed on a clean and a degraded fundus image, flattened and rank-correlated"
+      style={{ display: "block" }}>
+      <defs><RoughDefs id="rgh-rk" scale={1.4} seed={19} /></defs>
+
+      <g filter="url(#rgh-rk)" fill="none" strokeLinecap="round" strokeLinejoin="round">
+        {/* the same fundus, twice — clean above, degraded below */}
+        <circle cx="58" cy="66" r="30" stroke={P.sub} strokeWidth="1.3" />
+        <circle cx="48" cy="56" r="5" stroke={P.accent} strokeWidth="1.6" fill={P.accentSoft} />
+        <circle cx="68" cy="74" r="4" stroke={P.accent} strokeWidth="1.3" />
+        <circle cx="55" cy="80" r="3" stroke={P.accent} strokeWidth="1.1" />
+
+        <circle cx="58" cy="176" r="30" stroke={P.sub} strokeWidth="1.3" strokeDasharray="4 3" />
+        <circle cx="50" cy="167" r="5.5" stroke={P.accent} strokeWidth="1.6" fill={P.accentSoft} />
+        <circle cx="70" cy="182" r="4" stroke={P.accent} strokeWidth="1.3" />
+        <circle cx="44" cy="190" r="3.5" stroke={P.accent} strokeWidth="1.1" />
+
+        {/* both maps converge on one operation */}
+        <path d="M90 74 C 120 82, 136 102, 147 114" stroke={P.sub} strokeWidth="1.2" />
+        <path d="M90 170 C 120 162, 136 134, 147 120" stroke={P.sub} strokeWidth="1.2" />
+        <path d="M152 117 L188 117" stroke={P.ink} strokeWidth="1.4" />
+        <path d="M182 113 L188 117 L182 121" stroke={P.ink} strokeWidth="1.4" />
+
+        {/* rank-vs-rank plot */}
+        <path d="M200 40 L200 205 L400 205" stroke={P.sub} strokeWidth="1.4" />
+        <path d="M205 200 L395 48" stroke={P.line} strokeWidth="1.2" strokeDasharray="4 4" />
+        {pts.map(([x, y], i) => <circle key={i} cx={x} cy={y} r="2.6" fill={P.accent} stroke="none" />)}
+      </g>
+
+      {/* labels left un-roughened for legibility */}
+      <text x="20" y="30" style={SK} fontSize="9.5" fill={P.ink}>clean</text>
+      <text x="20" y="140" style={SK} fontSize="9.5" fill={P.ink}>degraded</text>
+      <text x="150" y="104" textAnchor="middle" style={SK} fontSize="9" fill={P.sub}>flatten · rank</text>
+      <text x="150" y="139" textAnchor="middle" style={SK} fontSize="8.4" fontStyle="italic" fill={P.sub}>magnitude discarded</text>
+
+      <text x="200" y="32" style={SK} fontSize="8.6" fill={P.sub}>rank · degraded ↑</text>
+      <text x="300" y="224" textAnchor="middle" style={SK} fontSize="9" fill={P.sub}>importance rank · clean →</text>
+
+      <text x="214" y="60" style={SK} fontSize="10" fill={P.accent}>ρ → 1</text>
+      <text x="214" y="73" style={SK} fontSize="8.4" fill={P.sub}>same order,</text>
+      <text x="214" y="84" style={SK} fontSize="8.4" fill={P.sub}>same structures</text>
+
+      <text x="398" y="170" textAnchor="end" style={SK} fontSize="10" fill={P.red}>ρ → 0</text>
+      <text x="398" y="182" textAnchor="end" style={SK} fontSize="8.4" fill={P.sub}>attention moved</text>
+      <text x="398" y="193" textAnchor="end" style={SK} fontSize="8.4" fill={P.sub}>elsewhere</text>
+
+      <text x="20" y="248" style={SK} fontSize="8.4" fontStyle="italic" fill={P.sub}>FOV-masked first — the black surround is one enormous tie, and ties inflate ρ.</text>
+    </svg>
+  );
+}
+
+/* ════════════════════════════════════════
+   METRICS APPENDIX — the instruments, opened one at a time.
+   The counterpart to the Lab: ARCHITECTURES answers "how does this work",
+   METRICS answers "how do I know this number means anything". Every entry
+   opens onto the same five parts, and the last of them is always the blind
+   spot — a metric shown without one reads as a claim.
+   ════════════════════════════════════════ */
+export const METRIC_PARTS = [
+  { k: "captures", label: "What it captures" },
+  { k: "why", label: "Why this one, not the obvious alternative" },
+  { k: "showed", label: "What it showed" },
+  { k: "deployed", label: "Why it matters outside the notebook" },
+  { k: "limit", label: "What it does not say", warn: true },
+];
+
+/* The five-part body of one instrument. Lives in the Instrument Room
+   (#/metrics/<key>); `onProject` is optional and only wired on the paper. */
+export function MetricParts({ m, onProject }) {
+  return (
+    <>
+      <style>{`
+        .mx-part{border-top:1px solid ${P.faint};padding:0.8rem 0 0}
+        .mx-part+.mx-part{margin-top:0.6rem}
+        .mx-plabel{font-family:'IBM Plex Mono',monospace;font-size:0.56rem;text-transform:uppercase;
+          letter-spacing:0.1em;color:${P.sub};margin-bottom:5px}
+        .mx-ptext{font-family:'Source Serif 4',Georgia,serif;font-size:0.94rem;line-height:1.78;
+          color:${P.ink};max-width:640px;text-wrap:pretty}
+        .mx-part[data-warn="true"]{border-left:2px solid ${P.red}55;padding-left:0.8rem}
+        .mx-part[data-warn="true"] .mx-plabel{color:${P.red}}
+        .mx-where{background:transparent;border:1px solid ${P.line};padding:2px 8px;
+          font-family:'IBM Plex Mono',monospace;font-size:0.62rem;color:${P.sub};transition:all .15s}
+        .mx-where[data-link="true"]{cursor:pointer}
+        .mx-where[data-link="true"]:hover{border-color:${P.accent};color:${P.accent};background:${P.accentSoft}}
+      `}</style>
+
+      <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center", marginBottom: "1.1rem" }}>
+        {/* an entry that was never scored cannot be "scored in" anything —
+            it belongs to a project, and the label has to say so */}
+        <span style={{ ...MONO, fontSize: "0.56rem", textTransform: "uppercase", letterSpacing: "0.1em", color: m.absent ? P.red : P.sub }}>
+          {m.absent ? "would belong to" : "scored in"}
+        </span>
+        {m.where.map((w, j) => (
+          <button key={w} className="mx-where" data-link={!!onProject} disabled={!onProject}
+            onClick={() => onProject?.(m.projects?.[j] ?? m.projects?.[0])}>
+            {w}{onProject ? " →" : ""}
+          </button>
+        ))}
+      </div>
+
+      {METRIC_PARTS.map((part) => (
+        <div key={part.k} className="mx-part" data-warn={!!part.warn}>
+          <div className="mx-plabel">{part.label}</div>
+          <p className="mx-ptext">{m[part.k]}</p>
+        </div>
+      ))}
+    </>
+  );
+}
+
+/* ════════════════════════════════════════
+   METRICS GATEWAY — the door on the paper's §6.
+   Same shape as LabGateway, and for the same reason: ten instruments written
+   out in full ran to several screens and swallowed the paper. The entries
+   live in the Instrument Room (#/metrics) now; what stays here is a case that
+   rotates through them. The notation *is* the glyph, so the symbol badge
+   carries the display where the Lab uses a hand-drawn mark.
+   ════════════════════════════════════════ */
+export function MetricsGateway() {
+  const [i, setI] = useState(0);
+  const [hover, setHover] = useState(false);
+
+  useEffect(() => {
+    if (hover) return;
+    if (window.matchMedia?.("(prefers-reduced-motion: reduce)").matches) return;
+    const t = setInterval(() => setI((n) => (n + 1) % METRICS.length), 3400);
+    return () => clearInterval(t);
+  }, [hover]);
+
+  const cur = METRICS[i];
+  const famCount = METRIC_FAMILIES.filter((f) => METRICS.some((m) => m.family === f)).length;
+  const absent = METRICS.filter((m) => m.absent).length;
+
+  return (
+    <>
+      <style>{`
+        .mgate{display:block;width:100%;text-align:left;cursor:pointer;background:${P.paper2};
+          border:1px solid ${P.line};border-top:2px solid ${P.ink};padding:0;
+          transition:transform .18s ease,box-shadow .18s ease}
+        .mgate:hover{transform:translateY(-2px);box-shadow:4px 4px 0 ${P.line}}
+        .mgate:hover .mgate-cta{gap:12px}
+        .mgate-cta{display:inline-flex;align-items:center;gap:7px;transition:gap .18s ease}
+        .mgate-sym{font-family:'IBM Plex Mono',monospace;font-size:0.74rem;color:${P.accent};
+          border:1px solid ${P.accent}44;padding:6px 10px;white-space:nowrap;flex-shrink:0}
+        .mgate[data-absent="true"] .mgate-sym{border-style:dashed;color:${P.red};border-color:${P.red}66}
+        .mgate-names{display:flex;flex-wrap:wrap;gap:5px}
+        .mgate-name{background:transparent;border:1px solid ${P.line};cursor:pointer;
+          padding:3px 9px;transition:border-color .15s,color .15s,background .15s}
+        .mgate-name:hover{border-color:${P.accent};color:${P.accent};background:${P.accentSoft}}
+        @media(max-width:560px){.mgate-sym{display:none}}
+        @media(prefers-reduced-motion:reduce){.mgate,.mgate-cta{transition:none}}
+      `}</style>
+
+      <div
+        className="mgate"
+        role="link"
+        tabIndex={0}
+        data-absent={!!cur.absent}
+        onMouseEnter={() => setHover(true)}
+        onMouseLeave={() => setHover(false)}
+        onClick={() => { window.location.hash = `#/metrics/${cur.key}`; }}
+        onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); window.location.hash = `#/metrics/${cur.key}`; } }}
+        aria-label={`Enter the Instrument Room — ${METRICS.length} metrics written out in full`}
+      >
+        <div style={{ display: "flex", alignItems: "center", gap: "1rem", padding: "1.1rem 1.2rem", borderBottom: `1px solid ${P.faint}`, minHeight: 96 }}>
+          <span className="mgate-sym">{cur.symbol}</span>
+          <div style={{ minWidth: 0, flex: 1 }}>
+            <div style={{ ...MONO, fontSize: "0.55rem", textTransform: "uppercase", letterSpacing: "0.13em", color: P.sub, marginBottom: 3 }}>{cur.family}</div>
+            <div style={{ ...DISP, fontWeight: 600, fontSize: "1.12rem", color: P.ink, lineHeight: 1.2 }}>{cur.name}</div>
+            <div style={{ ...BODY, fontSize: "0.85rem", color: cur.absent ? P.red : P.sub, marginTop: 4, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{cur.headline}</div>
+          </div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 3, flexShrink: 0 }}>
+            {METRICS.map((m, j) => (
+              <span key={m.key} style={{ width: 5, height: 5, borderRadius: "50%", background: j === i ? P.accent : P.line }} />
+            ))}
+          </div>
+        </div>
+
+        <div style={{ padding: "0.85rem 1.2rem 1rem", display: "flex", justifyContent: "space-between", alignItems: "center", gap: "1rem", flexWrap: "wrap" }}>
+          <span style={{ ...MONO, fontSize: "0.62rem", color: P.sub }}>
+            {METRICS.length} instruments · {famCount} families · <span style={{ color: P.red }}>{absent} deliberately not reported</span>
+          </span>
+          <span className="mgate-cta" style={{ ...MONO, fontSize: "0.76rem", color: P.accent, borderBottom: `1.5px solid ${P.accent}`, paddingBottom: 1 }}>
+            Enter the Instrument Room <span aria-hidden="true">→</span>
+          </span>
+        </div>
+      </div>
+
+      <div style={{ marginTop: "0.9rem" }}>
+        <div className="mgate-names">
+          {METRICS.map((m, j) => (
+            <button
+              key={m.key}
+              className="mgate-name"
+              onMouseEnter={() => { setHover(true); setI(j); }}
+              onMouseLeave={() => setHover(false)}
+              onClick={() => { window.location.hash = `#/metrics/${m.key}`; }}
+              style={{ ...MONO, fontSize: "0.66rem", color: j === i ? P.accent : P.sub, borderColor: j === i ? P.accent : P.line }}
+            >
+              {m.short}
+            </button>
+          ))}
+        </div>
+      </div>
+    </>
+  );
+}
+
 export function InsightsViewer({ items }) {
   const [i, setI] = useState(0);
   const it = items[i];
