@@ -5,6 +5,9 @@ work around machine-learning research: robustness, explainability, diffusion-bas
 restoration, and generative-image forensics.
 
 **Live:** https://atharvax16.github.io/Portfolio/
+**Résumé:** https://atharvax16.github.io/Portfolio/resume — opens the CV inline
+*and* drops the reader inside the portfolio. This is the link to share when
+someone asks for a resume or CV.
 
 ## Stack
 
@@ -25,13 +28,20 @@ npm run preview  # preview the production build
 
 ```
 src/
-  main.jsx     # entry point
+  main.jsx     # entry point + hash router (#/lab, #/metrics, #/resume)
   App.jsx      # page layout (title block, numbered sections, nav)
   data.js      # palette, paper front-matter, and all content arrays
   ui.jsx       # shared components (Rv, Radar, ResearchModal, PhotoGallery, …)
+  resume.jsx   # the CV room (#/resume) — PDF inline + links back into the paper
 public/
   images/      # portrait, gallery photos, and research figures/plots
+  resume/      # static shim: /resume redirects to #/resume (Pages has no rewrites)
+  Atharva_Kocharekar_CV.pdf   # the CV itself — overwrite in place to update
 ```
+
+**Updating the résumé:** replace `public/Atharva_Kocharekar_CV.pdf` (keep the
+filename — it's the shared link) and bump `RESUME.updated` / `RESUME.pages` in
+`src/data.js`.
 
 **Editing content:** everything lives in `src/data.js` — projects, publications,
 the reading log, research focus areas, methods, and the journey timeline. Projects flagged

@@ -1049,3 +1049,36 @@ export const GALLERY_PHOTOS = [
   { src: "images/portrait-sunglasses.jpeg", caption: "Dublin sun hits different when it actually shows up", category: "life", span: "tall" },
   { src: "images/dublin-casual.jpeg", caption: "Exploring Dublin — the city that became home", category: "life", span: "tall" },
 ];
+
+/* ════════════════════════════════════════
+   RÉSUMÉ — the one-link door.
+   Lives at #/resume, with a clean /resume/ shim in public/ that redirects
+   there, so a single URL both opens the CV and lands the reader inside the
+   portfolio. `file` is written relative to the site root so it resolves
+   under the GitHub Pages subpath (/Portfolio/) as well as at a domain root.
+   ════════════════════════════════════════ */
+export const RESUME = {
+  file: "Atharva_Kocharekar_CV.pdf",
+  download: "Atharva_Kocharekar_CV.pdf",   // filename the browser saves as
+  updated: "August 2026",
+  pages: 2,
+  role: "ML / Applied-Research Engineer",
+  summary:
+    "Two pages: MSc AI at Dublin City University, the retinopathy robustness dissertation (OMIA 2026 poster), " +
+    "and the applied work behind it. The portfolio it sits in is the long version.",
+  contacts: [
+    { l: "Email", v: PAPER.email, h: `mailto:${PAPER.email}` },
+    { l: "Phone", v: "+353 89 960 7779", h: "tel:+353899607779" },
+    { l: "LinkedIn", v: "atharva-kocharekar", h: "https://linkedin.com/in/atharva-kocharekar-3512b4224" },
+    { l: "GitHub", v: "Atharvax16", h: "https://github.com/Atharvax16" },
+  ],
+  /* The second target of the same arrow: a line on the CV, and where the
+     portfolio says more about it. `to` is a paper anchor or a room route. */
+  tour: [
+    { line: "MSc dissertation — robustness & explainability under degradation", to: "#Findings", where: "§5 · the figures, annotated" },
+    { line: "Accepted poster — OMIA 2026 (MICCAI), Strasbourg", to: "#Publications", where: "§4 · publications" },
+    { line: "VenueFlow.ie, Etsy ML Challenge, HealEdge, VoxSight", to: "#Work", where: "§3 · case studies" },
+    { line: "Architectures rebuilt by hand — ViT, RAG, MemoryBank, MovieChat", to: "#/lab", where: "the Architecture Lab" },
+    { line: "Every metric behind the numbers, and what it refuses to say", to: "#/metrics", where: "the Instrument Room" },
+  ],
+};

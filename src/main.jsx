@@ -3,16 +3,20 @@ import ReactDOM from 'react-dom/client'
 import App from './App'
 import Lab from './lab.jsx'
 import Instruments from './instruments.jsx'
+import Resume from './resume.jsx'
 
 /* Hash routing, no dependency: "#/lab..." is the Architecture Lab,
-   "#/metrics..." is the Instrument Room, anything else is the paper. Hash
-   (rather than history) keeps deep links working on GitHub Pages, which has
-   no server to rewrite them — and the leading slash is what keeps these
-   apart from the paper's own "#Architectures" / "#Metrics" section anchors. */
+   "#/metrics..." is the Instrument Room, "#/resume" is the CV, anything else
+   is the paper. Hash (rather than history) keeps deep links working on GitHub
+   Pages, which has no server to rewrite them — and the leading slash is what
+   keeps these apart from the paper's own "#Architectures" / "#Metrics"
+   section anchors. (public/resume/index.html redirects the pretty
+   "/resume" URL here, so the shareable link is one hop from a bare path.) */
 const currentRoom = () => {
   const h = window.location.hash
   if (h.startsWith('#/lab')) return 'lab'
   if (h.startsWith('#/metrics')) return 'metrics'
+  if (h.startsWith('#/resume')) return 'resume'
   return null
 }
 
@@ -27,6 +31,7 @@ function Root() {
 
   if (room === 'lab') return <Lab />
   if (room === 'metrics') return <Instruments />
+  if (room === 'resume') return <Resume />
   return <App />
 }
 

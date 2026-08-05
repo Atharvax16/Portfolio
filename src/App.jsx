@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import {
   P, SECS, PAPER, RESEARCH_AREAS, READING_LOG, TIL_REPO, FROM_SCRATCH,
-  METHODS, JOURNEY, ORDERED_PROJECTS, INSIGHTS, CURRENT_TRACK, PUBLICATIONS,
+  METHODS, JOURNEY, ORDERED_PROJECTS, INSIGHTS, CURRENT_TRACK, PUBLICATIONS, RESUME,
 } from "./data.js";
 import { Rv, Radar, PhotoGallery, MatrixOverlay, ResearchModal, SketchFidelityAccuracy, SketchResearcherFrontier, SketchMolecule, SketchAttention, SketchFFT, SketchSpectral, SketchDCT, InsightsViewer, MetricsGateway, LabGateway } from "./ui.jsx";
 
@@ -160,6 +160,8 @@ export default function App() {
             {SECS.map((sec, i) => (
               <button key={sec} onClick={() => goTo(sec)} style={{ padding: "3px 8px", border: "none", background: "transparent", cursor: "pointer", fontSize: "0.7rem", ...MONO, color: active === i ? P.accent : P.sub, borderBottom: `1.5px solid ${active === i ? P.accent : "transparent"}`, transition: "all 0.2s" }}>{sec}</button>
             ))}
+            {/* Not a section of the paper — a door out to the CV room (#/resume). */}
+            <a href="#/resume" style={{ ...MONO, fontSize: "0.7rem", color: P.ink, textDecoration: "none", border: `1px solid ${P.line}`, background: P.paper2, padding: "3px 9px", marginLeft: 6 }}>Résumé ↗</a>
           </nav>
         </header>
 
@@ -178,6 +180,7 @@ export default function App() {
                   <p style={{ ...noteTxt, marginBottom: "0.5rem" }}>Open to ML / applied-research roles &amp; collaborations.</p>
                   <p style={{ ...noteTxt, marginBottom: "0.7rem", borderTop: `1px solid ${P.faint}`, paddingTop: "0.5rem" }}>Presenting a poster at <a href="#Publications" style={{ color: P.accent, textDecoration: "underline", textUnderlineOffset: 3, fontStyle: "normal" }}>OMIA 2026</a> (MICCAI) in Strasbourg — Sept–Oct 2026.</p>
                   <div style={{ display: "flex", flexDirection: "column", gap: 3, alignItems: "flex-end" }}>
+                    <a href="#/resume" style={{ ...MONO, fontSize: "0.64rem", color: P.accent }}>Résumé ↗</a>
                     <a href="https://github.com/Atharvax16" target="_blank" rel="noopener noreferrer" style={{ ...MONO, fontSize: "0.64rem", color: P.accent }}>GitHub ↗</a>
                     <a href={`mailto:${PAPER.email}`} style={{ ...MONO, fontSize: "0.64rem", color: P.accent }}>Email ↗</a>
                   </div>
@@ -632,11 +635,17 @@ export default function App() {
             ))}
           </div>
           <Rv delay={0.2}>
-            <button style={{ marginTop: "1.6rem", padding: "9px 20px", border: `1px solid ${P.ink}`, background: P.ink, color: P.paper, ...MONO, fontSize: "0.74rem", cursor: "pointer", transition: "all 0.2s" }}
-              onMouseEnter={e => { e.currentTarget.style.background = P.accent; e.currentTarget.style.borderColor = P.accent; }}
-              onMouseLeave={e => { e.currentTarget.style.background = P.ink; e.currentTarget.style.borderColor = P.ink; }}>
-              Download résumé (PDF)
-            </button>
+            <div style={{ marginTop: "1.6rem", display: "flex", gap: "0.7rem", flexWrap: "wrap", alignItems: "center" }}>
+              <a href="#/resume" style={{ padding: "9px 20px", border: `1px solid ${P.ink}`, background: P.ink, color: P.paper, ...MONO, fontSize: "0.74rem", textDecoration: "none", transition: "all 0.2s" }}
+                onMouseEnter={e => { e.currentTarget.style.background = P.accent; e.currentTarget.style.borderColor = P.accent; }}
+                onMouseLeave={e => { e.currentTarget.style.background = P.ink; e.currentTarget.style.borderColor = P.ink; }}>
+                Read the résumé →
+              </a>
+              <a href={RESUME.file} download={RESUME.download} style={{ padding: "9px 18px", border: `1px solid ${P.line}`, background: P.paper2, color: P.ink, ...MONO, fontSize: "0.74rem", textDecoration: "none" }}>
+                Download PDF ↓
+              </a>
+              <span style={{ ...MONO, fontSize: "0.6rem", color: P.sub }}>{RESUME.pages} pages · updated {RESUME.updated}</span>
+            </div>
           </Rv>
           <Rv delay={0.26}>
             <footer style={{ marginTop: "2.2rem", paddingTop: "1rem", borderTop: `2px solid ${P.ink}` }}>
