@@ -30,15 +30,29 @@ export const PAPER = {
 
 /* Nav + scroll-tracked sections (paper running order).
    The gallery "Appendix" is intentionally NOT here — it stays out of nav. */
-export const SECS = ["Abstract", "Research", "Track", "Work", "Publications", "Findings", "Metrics", "Architectures", "Reading", "Foundations", "Methods", "About", "Contact"];
+export const SECS = ["Abstract", "Research", "Tracks", "Work", "Publications", "Findings", "Metrics", "Architectures", "Reading", "Foundations", "Methods", "About", "Contact"];
 
 /* ════════════════════════════════════════
-   CURRENT TRACK — the live thread, updated as it moves.
+   CURRENT TRACKS — the live threads, updated as they move.
    Unlike PROJECTS (finished, written up as case studies), this section is
    deliberately unfinished: a dated research log. `arc` entries carry a
    status of "done" | "active" | "queued".
+
+   §2 renders these as tabs, so every field the section prints is per-track —
+   including the three headings that used to be hardcoded in App.jsx:
+
+     spineLabel  — the callout above `spine` ("the shared spine")
+     arcLabel    — the heading above `arc` ("The arc — read → reproduce → build")
+     ledgerLabel — the heading above `reproductions` ("Reproductions in flight")
+
+   `arc` entries suppress the "authors, year" line when `year` is "—", which
+   is what lets a track use the same renderer for reading steps and for build
+   phases. `closing` is optional; `projectId` turns the label into a button
+   that opens that project's case study in §3.
    ════════════════════════════════════════ */
-export const CURRENT_TRACK = {
+export const TRACKS = [
+  {
+  id: "voxsight-recall",
   name: "VoxSight Recall",
   title: "Episodic Memory for Vision-Language Agents",
   status: "active",
@@ -108,8 +122,112 @@ export const CURRENT_TRACK = {
     { name: "MemGPT — study notes", detail: "The OS analogy pulled apart: paging, the pressure/flush split, heartbeat chaining — and where the missing provenance layer sits", state: "written" },
   ],
   tags: ["episodic memory", "retrieval", "vision-language agents", "differentiable memory"],
+  spineLabel: "the shared spine",
+  arcLabel: "The arc — read → reproduce → build",
+  ledgerLabel: "Reproductions in flight",
   origin: "voxsight",
-};
+  closing: {
+    prefix: "The thread traces back to ",
+    projectId: "voxsight",
+    label: "VoxSight",
+    suffix: " — the accessibility co-pilot that could see but not remember. This is the reading it set off.",
+  },
+  },
+
+  /* ── OrthoVision ──────────────────────────────────────────────────────────
+     Second live thread, opened August 2026. The vehicle is the RSNA Knee
+     Abnormality Detection competition; the question is what makes it worth
+     the time. Status discipline matters here more than anywhere else on the
+     site: the EDA and the rule labeler have been RUN (every number below is
+     measured), the conversion has been WRITTEN AND COSTED but not executed
+     (RUN_CONVERSION is still False), and everything past that is queued.
+     53.7 GB is arithmetic, not an artifact — it is labelled as projected and
+     must not drift into sounding shipped.
+     ──────────────────────────────────────────────────────────────────────── */
+  {
+  id: "orthovision",
+  name: "OrthoVision",
+  title: "Weak Supervision for Musculoskeletal MRI",
+  status: "active",
+  started: "August 2026",
+  updated: "6 August 2026",
+  stage: "phase 1 — EDA + weak-label floor",
+  question:
+    "A knee-MRI dataset of 4,407 studies where exactly 58 carry the twelve ground-truth labels — 1.3%. The other 4,349 carry nothing but a free-text radiology report, and only 39% of those are written in English; the rest are Spanish, German, Turkish, Dutch, Cyrillic, French, Italian, Portuguese. The labels are not missing. They are sitting in the prose, in nine languages, written by radiologists who were describing a knee rather than filling in a schema. So the question is what survives the translation from clinical narrative to a supervised target — and whether 4,349 labels extracted from text are worth more than 58 labels a human actually checked.",
+  premise:
+    "The working hypothesis is that this is a supervision problem before it is an architecture problem. The obvious move is to reach for a heavier backbone — a 3D network, a bigger pretrained ViT — but a heavier model trained on 58 studies is still a model trained on 58 studies. The bet is that the ceiling here is set by how much signal can be pulled out of the reports, so the reading and the build both start at the text end rather than the image end. That ordering is also what makes the thread falsifiable: a weak-label pass either beats the hand-labelled floor on held-out data or it does not.",
+  spine:
+    "The leaderboard is the referee. Macro-averaged AUC over the twelve findings on a private test set is not a number I get to grade myself, and macro-averaging is the part that bites: MCL sits at 15% prevalence and effusion at 60%, yet each contributes one twelfth of the score. So the rare findings — the ones a weak labeler is most likely to miss, because they appear in the fewest reports and in the most varied phrasing — carry exactly as much weight as the common ones. Any shortcut that quietly optimises the frequent labels shows up as a flat score.",
+  arc: [
+    {
+      status: "done",
+      paper: "Phase 1a — what is actually in the dataset",
+      authors: "",
+      year: "—",
+      label: "run · every number below measured",
+      takeaway:
+        "The EDA that set the strategy. 4,407 studies, 58 fully labelled and 4,349 with no labels at all — and no partial rows, so the split is clean rather than ragged. The task is multi-label, not multi-class: the labelled studies average 4.14 findings each, up to 9. Across 24,371 series (mean 5.5 per study, max 14) the planes split Sagittal 9,864 / Coronal 8,609 / Axial 5,898, and fluid-sensitive and fat-suppressed turn out to be the same 14,010 series — one flag, not two. That matters because the findings are plane-specific: ACL is a sagittal call, MCL coronal, effusion needs a fluid-sensitive sequence. A single model over pooled slices would be averaging away the geometry the diagnosis depends on.",
+    },
+    {
+      status: "done",
+      paper: "Phase 1b — the rule labeler, and the floor it sets",
+      authors: "",
+      year: "—",
+      label: "run · macro-AUC 0.605",
+      takeaway:
+        "Before paying an LLM to read 4,349 reports, establish what regex alone buys. A per-finding pattern set with a NegEx-style negation window — the hard part is that radiology prose is overwhelmingly negative, so “the anterior and posterior cruciate ligaments are intact” must not fire the ACL pattern that matches inside it. Scored against the 58 labelled studies it reaches macro-F1 0.418 and macro-AUC 0.605. That is well off useless (0.5) and nowhere near good, which is exactly what makes it useful: it is the floor the LLM pass has to clear to justify its own cost, and it is free, offline and auditable, so it doubles as a validator. Where the LLM and a high-confidence regex hit disagree is where I go read the prompt.",
+      progress:
+        "The honest caveat, and it is a large one: that 0.605 is measured on 58 studies. A twelve-label macro-AUC over 58 rows — some findings with only nine positives — has confidence intervals wide enough to drive through. It is a floor in the sense of a sanity check, not a benchmark, and the first thing Phase 2 has to buy is a validation set big enough for the number to mean something.",
+    },
+    {
+      status: "active",
+      paper: "Phase 1c — 570 GB of DICOM into something trainable",
+      authors: "",
+      year: "—",
+      label: "written and costed — not yet executed",
+      takeaway:
+        "The conversion pipeline, written and sanity-checked on sample series but not yet run at scale. Three details decide whether the output is data or garbage, and all three fail silently. Slice order: InstanceNumber is not reliable across vendors, so slices are sorted by projecting ImagePositionPatient onto the slice normal taken from the two ImageOrientationPatient direction cosines. Photometric interpretation: MONOCHROME1 means higher value = darker, so those series must be inverted or half the dataset trains as a photographic negative. Normalisation: MRI intensities have no standardised units the way CT has Hounsfield, so a fixed window is meaningless — it is a per-volume percentile clip at [0.5, 99.5], per volume rather than per slice so relative slice brightness survives.",
+      progress:
+        "The arithmetic, which is projection rather than result: 819,078 slices at 256×256 uint8 is 53.7 GB — about a 90% reduction on the 570 GB of raw DICOM, and still over the ~20 GB working-directory cap, so it shards by a hash of the study UID into 4 × ~13.4 GB. Output is one flat uint8 blob plus a parquet index of byte offsets rather than 27k loose .npy files, so a DataLoader worker memory-maps straight to a series with no per-sample open() and no deserialisation. Nothing here is verified until the byte-accounting check passes on all four shards — one gap and every offset after it is garbage.",
+    },
+    {
+      status: "queued",
+      paper: "Phase 2 — LLM extraction over the multilingual reports",
+      authors: "",
+      year: "—",
+      label: "queued — script written, not yet run",
+      takeaway:
+        "The batch extraction script is emitted but deliberately unrun. Label generation is offline preprocessing, so it happens once, off the competition platform, and ships as a static label set — the submission notebook itself never touches a network. The open questions are the ones worth the thread: whether one prompt generalises across nine languages or each needs its own, whether the model should be asked for a binary or a confidence it can hedge with, and how to validate at all when the only ground truth is 58 studies. Cheap to run, expensive to trust — so it gets validated against the regex floor before the full pass is paid for.",
+    },
+    {
+      status: "queued",
+      paper: "Phase 3 — the model, once the labels are real",
+      authors: "",
+      year: "—",
+      label: "queued — deliberately last",
+      takeaway:
+        "Only after the supervision is settled. The shape the dataset argues for is per-plane rather than pooled — 2.5D stacks of adjacent slices through a 2D backbone, aggregated over the series by attention-based multiple-instance learning, so the model both predicts and points at which slices it used. That last part is the bit I actually care about, and where this thread rejoins the rest of the site: a study-level score with no indication of which slice earned it is not something a radiologist can check.",
+    },
+  ],
+  reproductions: [
+    { name: "Phase 1 notebook — EDA, DICOM anatomy, conversion, weak labels", detail: "The full pipeline written end to end, with the storage arithmetic done before committing the compute", state: "written" },
+    { name: "Rule-based labeler + NegEx negation scoping", detail: "Regex per finding across nine languages, scored against ground truth — macro-F1 0.418, macro-AUC 0.605", state: "run" },
+    { name: "Sharded DICOM → memmap converter", detail: "IPP-projected slice ordering, MONOCHROME1 inversion, per-volume percentile normalisation, flat blob + parquet offset index", state: "in progress" },
+    { name: "LLM batch extraction over 4,349 reports", detail: "Structured-output batch pass, validated against the regex floor before the full run is paid for", state: "queued" },
+  ],
+  tags: ["weak supervision", "multimodal", "medical imaging", "label scarcity", "multilingual NLP"],
+  spineLabel: "what keeps it honest",
+  arcLabel: "The phases — measure → convert → label → model",
+  ledgerLabel: "Artifacts so far",
+  closing: {
+    prefix: "Run as an entry to the RSNA Knee Abnormality Detection competition — the leaderboard is the harness, not the point. What pulled me in is the same thing that runs through §1: a setting where the supervision is scarce, the evaluation punishes you for ignoring the rare findings, and the interesting question sits upstream of the model. Written up here as it moves, floors and caveats included.",
+  },
+  },
+];
+
+/* The paper's default track. §2 renders all of TRACKS; anything that just
+   wants "the current thread" — §1's active flag, the abstract — points here. */
+export const CURRENT_TRACK = TRACKS[0];
 
 /* ════════════════════════════════════════
    RESEARCH FOCUS — the threads that define the work
@@ -131,6 +249,13 @@ export const RESEARCH_AREAS = [
     thesis: "VoxSight Recall — giving a vision-language agent a memory of its own past: written as it looks around, queried in natural language, inspectable after the fact.",
     blurb: "My current thread (§2). VoxSight can describe what the camera sees now but forgets it the instant the turn ends — perception without memory. I'm following the differentiable-memory literature from Neural Turing Machines through retrieval-augmented generation to MemGPT, reading each paper then rebuilding the mechanism small enough to watch it work, on the bet that the right external, addressable, inspectable memory beats a larger set of weights for recall.",
     tags: ["episodic memory", "retrieval", "vision-language agents", "differentiable memory"],
+    active: true,
+  },
+  {
+    title: "Label-Scarce Medical Imaging",
+    thesis: "OrthoVision — when 1.3% of studies carry ground truth and the other 98.7% carry a radiology report in nine languages, the supervision has to come from the prose.",
+    blurb: "My other current thread (§2). Ground truth in medical imaging is expensive because it needs a clinician's hour; free-text reports are already written and cost nothing. So the interesting question sits upstream of the model: how much supervision can be recovered from clinical narrative, and how would you know it worked? On a knee-MRI set of 4,407 studies with 58 labelled, I start from a regex-plus-negation labeler as a free, auditable floor (macro-AUC 0.605 — measured, on 58 studies, with all the caution that implies) and build toward LLM extraction that has to beat it on held-out data before it earns its cost.",
+    tags: ["weak supervision", "label scarcity", "multilingual NLP", "medical imaging"],
     active: true,
   },
 ];

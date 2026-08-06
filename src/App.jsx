@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import {
   P, SECS, PAPER, RESEARCH_AREAS, READING_LOG, TIL_REPO, FROM_SCRATCH,
-  METHODS, JOURNEY, ORDERED_PROJECTS, INSIGHTS, CURRENT_TRACK, PUBLICATIONS, RESUME,
+  METHODS, JOURNEY, ORDERED_PROJECTS, INSIGHTS, TRACKS, PUBLICATIONS, RESUME,
 } from "./data.js";
 import { Rv, Radar, PhotoGallery, MatrixOverlay, ResearchModal, SketchFidelityAccuracy, SketchResearcherFrontier, SketchMolecule, SketchAttention, SketchFFT, SketchSpectral, SketchDCT, InsightsViewer, MetricsGateway, LabGateway } from "./ui.jsx";
 
@@ -80,6 +80,9 @@ export default function App() {
   const [eggC, setEggC] = useState(0);
   const [openProject, setOpenProject] = useState(null);
   const [showForensics, setShowForensics] = useState(false);
+  /* §2 runs more than one live thread now, so the section is tabbed. */
+  const [trackIdx, setTrackIdx] = useState(0);
+  const track = TRACKS[trackIdx];
 
   useEffect(() => {
     const obs = new IntersectionObserver((entries) => {
@@ -106,6 +109,10 @@ export default function App() {
   const link = { ...MONO, color: P.accent, textDecoration: "underline", textUnderlineOffset: 3, textDecorationThickness: "1px" };
   const chip = { ...MONO, fontSize: "0.64rem", color: P.sub, border: `1px solid ${P.line}`, borderRadius: 2, padding: "2px 8px" };
   const noteTxt = { ...BODY, fontSize: "0.74rem", color: P.sub, lineHeight: 1.55, fontStyle: "italic" };
+
+  /* §2 ledger badge. "queued" is deliberately muted rather than green — the
+     whole point of the ledger is that shipped and intended look different. */
+  const stateColor = (s) => (s === "queued" ? P.sub : s === "in progress" ? P.accent : P.green);
 
   /* Reading log splits into the fixed foundational trio (kept inline) and the
      growing generative-image-forensics thread (tucked behind a toggle). `n` is
@@ -202,7 +209,7 @@ export default function App() {
               <Rv delay={0.12}>
                 <div style={{ borderTop: `1px solid ${P.line}`, borderBottom: `1px solid ${P.line}`, padding: "1.1rem 0", margin: "1.4rem 0" }}>
                   <p style={{ ...BODY, fontSize: "1rem", lineHeight: 1.78, color: P.ink, textAlign: "justify", hyphens: "auto", textWrap: "pretty" }}>
-                    <b style={{ ...DISP }}>Abstract.</b> This portfolio is laid out as a paper and reads as one — a live research log (§2), finished projects written up as short case studies (§3), peer-reviewed output (§4), figures carrying the observation each one earned (§5), the instruments those figures were measured with and what each one refuses to tell you (§6), and architectures rebuilt by hand to see the mechanics a framework hides (§7–9). What holds it together is a habit: I break models on purpose. Not because failure is interesting in itself, but because <i>why</i> something breaks tells you more than knowing that it works — degrade a fundus image, watch the heatmap drift off the lesion, and you learn what the network was actually using. So the order is always root cause first, build second. My MSc thesis benchmarks CNNs against Vision Transformers for diabetic-retinopathy screening under controlled degradation — blur, exposure error, sensor noise — using Grad-CAM, attention rollout, and SHAP to locate where the reasoning breaks, then asks whether diffusion restoration can recover the diagnostic signal <i>without hallucinating pathology</i>. The question I keep returning to is never <i>A got 82%, B got 79%</i>, but why ConvNeXt held under blur where EfficientNetV2 collapsed. The same instinct runs through the rest: read and reproduce the foundational results from scratch — attention <Cite n={1} />, adversarial generation <Cite n={2} />, equivariant graph networks <Cite n={3} /> — extend them across generative-image forensics, federated medical imaging, and multi-agent systems grounded in deterministic ML, and ship them past the notebook (Docker, FastAPI, SageMaker, CI/CD). My current thread (§2) follows differentiable memory from Neural Turing Machines to retrieval-augmented generation, toward an <i>episodic memory</i> for vision-language agents that can recall what they saw, not just describe what they see.
+                    <b style={{ ...DISP }}>Abstract.</b> This portfolio is laid out as a paper and reads as one — live research logs (§2), finished projects written up as short case studies (§3), peer-reviewed output (§4), figures carrying the observation each one earned (§5), the instruments those figures were measured with and what each one refuses to tell you (§6), and architectures rebuilt by hand to see the mechanics a framework hides (§7–9). What holds it together is a habit: I break models on purpose. Not because failure is interesting in itself, but because <i>why</i> something breaks tells you more than knowing that it works — degrade a fundus image, watch the heatmap drift off the lesion, and you learn what the network was actually using. So the order is always root cause first, build second. My MSc thesis benchmarks CNNs against Vision Transformers for diabetic-retinopathy screening under controlled degradation — blur, exposure error, sensor noise — using Grad-CAM, attention rollout, and SHAP to locate where the reasoning breaks, then asks whether diffusion restoration can recover the diagnostic signal <i>without hallucinating pathology</i>. The question I keep returning to is never <i>A got 82%, B got 79%</i>, but why ConvNeXt held under blur where EfficientNetV2 collapsed. The same instinct runs through the rest: read and reproduce the foundational results from scratch — attention <Cite n={1} />, adversarial generation <Cite n={2} />, equivariant graph networks <Cite n={3} /> — extend them across generative-image forensics, federated medical imaging, and multi-agent systems grounded in deterministic ML, and ship them past the notebook (Docker, FastAPI, SageMaker, CI/CD). Two threads run live in §2. One follows differentiable memory from Neural Turing Machines to retrieval-augmented generation, toward an <i>episodic memory</i> for vision-language agents that can recall what they saw, not just describe what they see. The other starts from a knee-MRI dataset where 1.3% of studies carry labels and the remaining 98.7% carry only a radiology report — in nine languages — and asks what survives the translation from clinical prose into a supervised target.
                   </p>
                   <p style={{ ...MONO, fontSize: "0.66rem", color: P.sub, marginTop: "0.9rem", lineHeight: 1.7 }}>
                     <span style={{ color: P.ink }}>Keywords —</span> {PAPER.keywords.join(" · ")}
@@ -252,49 +259,76 @@ export default function App() {
           ))}
         </Section>
 
-        {/* ═══ 2 · CURRENT TRACK (the live thread) ═══ */}
-        <Section id="Track" num="2" note={<p style={noteTxt}>The thread I'm inside right now — a dated log, not a finished write-up. Updated {CURRENT_TRACK.updated}.</p>}>
-          <SecTitle>Current Track</SecTitle>
+        {/* ═══ 2 · CURRENT TRACKS (the live threads) ═══
+            Two threads run in parallel now, so the section is tabbed rather
+            than stacked — stacking two full research logs buried §3. Every
+            heading here comes off the track object; nothing about the section
+            is specific to whichever one is selected. */}
+        <Section id="Tracks" num="2" note={<p style={noteTxt}>The threads I'm inside right now — dated logs, not finished write-ups. {TRACKS.length} running in parallel; this one updated {track.updated}.</p>}>
+          <SecTitle>Current Tracks</SecTitle>
+
+          <Rv>
+            <div role="tablist" aria-label="Current research tracks" style={{ display: "flex", gap: 0, flexWrap: "wrap", borderBottom: `1px solid ${P.line}`, marginBottom: "1.3rem" }}>
+              {TRACKS.map((t, i) => {
+                const on = i === trackIdx;
+                return (
+                  <button
+                    key={t.id}
+                    role="tab"
+                    aria-selected={on}
+                    onClick={() => setTrackIdx(i)}
+                    style={{ ...MONO, fontSize: "0.7rem", display: "inline-flex", alignItems: "center", gap: 7, padding: "7px 14px", background: on ? P.paper2 : "transparent", color: on ? P.ink : P.sub, border: `1px solid ${on ? P.line : "transparent"}`, borderBottom: `2px solid ${on ? P.accent : "transparent"}`, marginBottom: -1, cursor: "pointer", transition: "color 0.2s, background 0.2s" }}
+                  >
+                    <span style={{ width: 6, height: 6, borderRadius: "50%", background: on ? P.green : P.line, flexShrink: 0 }} />
+                    {t.name}
+                  </button>
+                );
+              })}
+            </div>
+          </Rv>
+
+          {/* key on the track id so switching tabs remounts and re-reveals */}
+          <div key={track.id}>
           <Rv>
             <div style={{ display: "flex", alignItems: "baseline", gap: 10, flexWrap: "wrap", marginBottom: 6 }}>
               <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
                 <span style={{ width: 7, height: 7, borderRadius: "50%", background: P.green, boxShadow: `0 0 0 3px ${P.accentSoft}` }} />
                 <span style={{ ...MONO, fontSize: "0.6rem", textTransform: "uppercase", letterSpacing: "0.12em", color: P.green }}>active</span>
               </span>
-              <span style={{ ...MONO, fontSize: "0.62rem", color: P.sub }}>started {CURRENT_TRACK.started} · {CURRENT_TRACK.stage}</span>
+              <span style={{ ...MONO, fontSize: "0.62rem", color: P.sub }}>started {track.started} · {track.stage}</span>
             </div>
-            <h3 style={{ ...DISP, fontWeight: 600, fontSize: "clamp(1.3rem,3.4vw,1.6rem)", color: P.ink, lineHeight: 1.15, marginBottom: 4 }}>{CURRENT_TRACK.name}</h3>
-            <div style={{ ...BODY, fontSize: "1rem", fontStyle: "italic", color: P.sub, marginBottom: 10 }}>{CURRENT_TRACK.title}</div>
+            <h3 style={{ ...DISP, fontWeight: 600, fontSize: "clamp(1.3rem,3.4vw,1.6rem)", color: P.ink, lineHeight: 1.15, marginBottom: 4 }}>{track.name}</h3>
+            <div style={{ ...BODY, fontSize: "1rem", fontStyle: "italic", color: P.sub, marginBottom: 10 }}>{track.title}</div>
           </Rv>
           <Rv delay={0.04}>
             <div style={{ borderLeft: `2px solid ${P.accent}`, paddingLeft: "0.85rem", margin: "0 0 1.1rem" }}>
               <div style={{ ...MONO, fontSize: "0.56rem", color: P.sub, textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 4 }}>the question</div>
-              <p style={{ ...BODY, fontSize: "0.96rem", lineHeight: 1.75, color: P.ink, textWrap: "pretty" }}>{CURRENT_TRACK.question}</p>
+              <p style={{ ...BODY, fontSize: "0.96rem", lineHeight: 1.75, color: P.ink, textWrap: "pretty" }}>{track.question}</p>
             </div>
           </Rv>
           <Rv delay={0.06}>
-            <p style={{ ...BODY, fontSize: "0.92rem", lineHeight: 1.74, color: P.sub, marginBottom: "0.8rem", textWrap: "pretty" }}>{CURRENT_TRACK.premise}</p>
+            <p style={{ ...BODY, fontSize: "0.92rem", lineHeight: 1.74, color: P.sub, marginBottom: "0.8rem", textWrap: "pretty" }}>{track.premise}</p>
           </Rv>
           <Rv delay={0.08}>
             <p style={{ ...BODY, fontSize: "0.9rem", lineHeight: 1.7, color: P.ink, marginBottom: "1.5rem", background: P.faint, borderLeft: `2px solid ${P.line}`, padding: "0.7rem 0.9rem", textWrap: "pretty" }}>
-              <span style={{ ...MONO, fontSize: "0.56rem", color: P.sub, textTransform: "uppercase", letterSpacing: "0.1em", display: "block", marginBottom: 4 }}>the shared spine</span>
-              {CURRENT_TRACK.spine}
+              <span style={{ ...MONO, fontSize: "0.56rem", color: P.sub, textTransform: "uppercase", letterSpacing: "0.1em", display: "block", marginBottom: 4 }}>{track.spineLabel}</span>
+              {track.spine}
             </p>
           </Rv>
 
-          {/* The reading arc as a progress spine */}
+          {/* The arc as a progress spine — reading steps for one track, build phases for the other */}
           <Rv delay={0.1}>
-            <div style={{ ...MONO, fontSize: "0.62rem", color: P.sub, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: "0.9rem" }}>The arc — read → reproduce → build</div>
+            <div style={{ ...MONO, fontSize: "0.62rem", color: P.sub, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: "0.9rem" }}>{track.arcLabel}</div>
           </Rv>
           <div style={{ position: "relative" }}>
-            {CURRENT_TRACK.arc.map((a, i) => {
+            {track.arc.map((a, i) => {
               const done = a.status === "done", active = a.status === "active";
               const dot = done ? P.green : active ? P.accent : P.line;
               const glyph = done ? "✓" : active ? "▸" : "○";
               return (
                 <Rv key={a.paper} delay={0.12 + i * 0.05}>
-                  <div style={{ display: "grid", gridTemplateColumns: "1.6rem 1fr", gap: "0.7rem", position: "relative", paddingBottom: i < CURRENT_TRACK.arc.length - 1 ? "1.3rem" : 0 }}>
-                    {i < CURRENT_TRACK.arc.length - 1 && (
+                  <div style={{ display: "grid", gridTemplateColumns: "1.6rem 1fr", gap: "0.7rem", position: "relative", paddingBottom: i < track.arc.length - 1 ? "1.3rem" : 0 }}>
+                    {i < track.arc.length - 1 && (
                       <span style={{ position: "absolute", left: "0.75rem", top: "1.4rem", bottom: 0, width: 1, background: P.line }} />
                     )}
                     <div style={{ ...MONO, fontSize: "0.9rem", color: dot, textAlign: "center", lineHeight: 1.5, zIndex: 1, background: P.paper }}>{glyph}</div>
@@ -315,25 +349,32 @@ export default function App() {
             })}
           </div>
 
-          {/* Reproductions + link back to VoxSight */}
+          {/* The ledger — what actually exists — then the track's closing note */}
           <Rv delay={0.28}>
             <div style={{ marginTop: "1.6rem", borderTop: `2px solid ${P.ink}`, paddingTop: "1rem" }}>
-              <div style={{ ...MONO, fontSize: "0.62rem", color: P.sub, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: "0.7rem" }}>Reproductions in flight</div>
-              {CURRENT_TRACK.reproductions.map((r) => (
+              <div style={{ ...MONO, fontSize: "0.62rem", color: P.sub, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: "0.7rem" }}>{track.ledgerLabel}</div>
+              {track.reproductions.map((r) => (
                 <div key={r.name} style={{ display: "flex", gap: "0.7rem", alignItems: "baseline", borderTop: `1px solid ${P.faint}`, padding: "0.55rem 0" }}>
-                  <span style={{ ...MONO, fontSize: "0.56rem", color: r.state === "in progress" ? P.accent : P.green, border: `1px solid ${r.state === "in progress" ? P.accent : P.green}55`, padding: "1px 6px", flexShrink: 0, textTransform: "uppercase", letterSpacing: "0.06em" }}>{r.state}</span>
+                  <span style={{ ...MONO, fontSize: "0.56rem", color: stateColor(r.state), border: `1px solid ${stateColor(r.state)}55`, padding: "1px 6px", flexShrink: 0, textTransform: "uppercase", letterSpacing: "0.06em" }}>{r.state}</span>
                   <div>
                     <div style={{ ...BODY, fontSize: "0.9rem", color: P.ink, fontWeight: 600 }}>{r.name}</div>
                     <div style={{ ...MONO, fontSize: "0.66rem", color: P.sub, lineHeight: 1.55, marginTop: 2 }}>{r.detail}</div>
                   </div>
                 </div>
               ))}
-              <p style={{ ...BODY, fontSize: "0.84rem", color: P.sub, lineHeight: 1.65, marginTop: "0.9rem", fontStyle: "italic" }}>
-                The thread traces back to <button onClick={() => { const vp = ORDERED_PROJECTS.find(p => p.id === CURRENT_TRACK.origin); if (vp) setOpenProject(vp); }} style={{ ...MONO, fontSize: "0.82em", color: P.accent, background: "transparent", border: "none", padding: 0, cursor: "pointer", textDecoration: "underline", textUnderlineOffset: 3, fontStyle: "normal" }}>VoxSight</button> — the accessibility co-pilot that could see but not remember. This is the reading it set off.
-              </p>
-              <div style={{ display: "flex", gap: 5, flexWrap: "wrap", marginTop: "1rem" }}>{CURRENT_TRACK.tags.map(t => <span key={t} style={chip}>{t}</span>)}</div>
+              {track.closing && (
+                <p style={{ ...BODY, fontSize: "0.84rem", color: P.sub, lineHeight: 1.65, marginTop: "0.9rem", fontStyle: "italic" }}>
+                  {track.closing.prefix}
+                  {track.closing.projectId && (
+                    <button onClick={() => { const pr = ORDERED_PROJECTS.find(p => p.id === track.closing.projectId); if (pr) setOpenProject(pr); }} style={{ ...MONO, fontSize: "0.82em", color: P.accent, background: "transparent", border: "none", padding: 0, cursor: "pointer", textDecoration: "underline", textUnderlineOffset: 3, fontStyle: "normal" }}>{track.closing.label}</button>
+                  )}
+                  {track.closing.suffix}
+                </p>
+              )}
+              <div style={{ display: "flex", gap: 5, flexWrap: "wrap", marginTop: "1rem" }}>{track.tags.map(t => <span key={t} style={chip}>{t}</span>)}</div>
             </div>
           </Rv>
+          </div>
         </Section>
 
         {/* ═══ 3 · SELECTED WORK ═══ */}
