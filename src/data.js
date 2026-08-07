@@ -207,12 +207,15 @@ export const TRACKS = [
       label: "queued — deliberately last",
       takeaway:
         "Only after the supervision is settled. The shape the dataset argues for is per-plane rather than pooled — 2.5D stacks of adjacent slices through a 2D backbone, aggregated over the series by attention-based multiple-instance learning, so the model both predicts and points at which slices it used. That last part is the bit I actually care about, and where this thread rejoins the rest of the site: a study-level score with no indication of which slice earned it is not something a radiologist can check.",
+      progress:
+        "Reading MRNet (2018) settled the baseline: max-pool across slices, which is one line and strong, and is the ancestor of this whole task. It also handed me the first real research question. Max-pooling assumes a finding is its peak slice — correct for ACL and meniscal tears, blind to effusion, synovitis and osteoarthritis, which are diffuse and never spike. Since the score is macro-averaged over twelve findings of both kinds, the pooling rule may be quietly deciding which half of the label set the model can see at all. That is cheap to test — swap one layer, hold everything else fixed, measure the interaction between pooling rule and finding type rather than overall accuracy. The mechanism is rebuilt as an interactive sketch in the Lab (§7).",
     },
   ],
   reproductions: [
     { name: "Phase 1 notebook — EDA, DICOM anatomy, conversion, weak labels", detail: "The full pipeline written end to end, with the storage arithmetic done before committing the compute", state: "written" },
     { name: "Rule-based labeler + NegEx negation scoping", detail: "Regex per finding across nine languages, scored against ground truth — macro-F1 0.418, macro-AUC 0.605", state: "run" },
     { name: "Sharded DICOM → memmap converter", detail: "IPP-projected slice ordering, MONOCHROME1 inversion, per-volume percentile normalisation, flat blob + parquet offset index", state: "in progress" },
+    { name: "MRNet — study notes + Lab sketch", detail: "The slice → series → study ladder pulled apart, and the assumption hiding inside max-pooling — rebuilt as an interactive sketch (§7)", state: "written" },
     { name: "LLM batch extraction over 4,349 reports", detail: "Structured-output batch pass, validated against the regex floor before the full run is paid for", state: "queued" },
   ],
   tags: ["weak supervision", "multimodal", "medical imaging", "label scarcity", "multilingual NLP"],
@@ -293,6 +296,15 @@ export const READING_LOG = [
     area: "Graph / Sci-ML",
     takeaway: "The arc from message passing to E(3)-equivariant networks — each step bakes in a physical symmetry the previous one ignored.",
     link: "https://github.com/Atharvax16/til/tree/main/papers/Quantum_chemistry",
+    hasNotebook: false,
+  },
+  {
+    paper: "Deep-learning-assisted diagnosis for knee MRI: MRNet",
+    authors: "Bien, Rajpurkar, Ball et al.",
+    year: "2018",
+    area: "Medical imaging",
+    takeaway: "The direct ancestor of the RSNA knee task I'm inside now (§2) — same shape, same trick of taking labels from radiology reports, except they extracted theirs by hand and in one language. What I went in for was the aggregation step, and it turned out to be one line: max-pool down the slice axis, so the most suspicious slice wins and a two-slice tear isn't diluted by twenty-eight normal ones. What I came out with was the assumption hiding inside it. Max encodes “the finding is the peak slice”, which is right for a tear and blind to an effusion — it records how bright the brightest was and discards how many slices lit up, so two volumes with the same peak and wildly different extent pool to the identical number. The other number worth carrying: trained at one hospital it read ACL at 0.965, then fell to 0.824 on a different scanner with nothing changed but the machine. The RSNA test set spans sixteen institutions.",
+    link: "https://doi.org/10.1371/journal.pmed.1002699",
     hasNotebook: false,
   },
   {
@@ -1117,6 +1129,13 @@ export const ARCHITECTURES = [
     intro: "Every other memory on this shelf decides what to keep from text. This one has to decide what to keep from a *stream it cannot afford to hold* — a two-hour film is 200,000 frames, and a dense video pipeline runs out of VRAM around minute 24. MovieChat's answer is almost embarrassingly simple: keep the last 18 frames in full, and when a frame falls out of that tray, **merge it into whichever neighbour it most resembles**. No training, no parameters, ~200 lines. I rebuilt the memory manager and swept it to 10,000 frames — it flatlines at **8 MB** and never moves, 721× under the dense baseline, while merging **zero** pairs across a scene cut. Drag the consolidation target and watch which frames it decides are redundant.",
   },
   {
+    key: "mrnet", name: "MRNet — collapsing a slice stack", short: "MRNet", family: "Medical imaging",
+    status: "live", component: "MRNetWalkthrough", year: 2018,
+    note: "slice → series → study · max-pool, and what it throws away",
+    steps: "the ladder → max across slices → max is an opinion → series → exam → the number to quote",
+    intro: "A knee MRI is not an image, it's a *stack* — ~30 slices per series, 5.5 series per knee, and one label for the whole bundle. So before any of it can be classified, something has to **collapse a group into a single summary**, twice. MRNet's answer on the bottom rung is one line: max-pool down the slice axis, letting the most suspicious slice win. The grid in step 2 is the operation drawn out, and it holds a detail worth clicking through — *different features peak on different slices*, so the pooled vector can carry a tear and an effusion that never once appeared together. Step 3 is where it gets uncomfortable: max encodes the assumption that a finding **is** its peak slice, which is exactly right for a tear and quietly blind to an effusion. Two profiles there share an identical maximum while one carries 2.4× the evidence — drag the temperature and watch attention pooling sweep between the two failure modes. This is the direct ancestor of the RSNA task I'm working on in §2.",
+  },
+  {
     key: "detection", name: "Detecting AI Images", short: "AI-image forensics", family: "Generative & forensics",
     status: "live", component: "DetectionParadigms", year: 2024,
     note: "six lenses on a fake",
@@ -1153,7 +1172,7 @@ export const ARCHITECTURES = [
 
 /* Rail order. Anything whose family isn't listed falls to the end. */
 export const ARCH_FAMILIES = [
-  "Vision backbones", "Self-supervised", "Multimodal", "Memory & retrieval", "Sequence", "Generative & forensics",
+  "Vision backbones", "Self-supervised", "Multimodal", "Memory & retrieval", "Sequence", "Medical imaging", "Generative & forensics",
 ];
 
 export const LIVE_ARCHITECTURES = ARCHITECTURES.filter((a) => a.status === "live");

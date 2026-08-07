@@ -4366,3 +4366,517 @@ export function ResearchModal({ project, onClose }) {
     </div>
   );
 }
+
+/* ════════════════════════════════════════
+   MRNET WALKTHROUGH — the slice → series → study ladder, and the single
+   operation that does all the work on the bottom rung.
+
+   The paper (Bien et al., PLOS Medicine 2018) is the direct ancestor of the
+   2026 RSNA knee-MRI task, so this bench is aimed at one question: what
+   exactly happens when ~30 slices become one vector, and what does that
+   choice quietly decide about which findings the model can still see.
+
+   Two design rules, both load-bearing:
+
+   · Every number printed is computed at render time from MRN_GRID and
+     MRN_PROFILES below — no figure is hand-typed next to a grid it might
+     drift away from.
+   · MRN_PROFILES.focal and .sustained are built to share an identical
+     maximum (0.85) while differing 2.4× in mean. That collision is the whole
+     argument of step 3, so it lives in the data rather than in a caption.
+   ════════════════════════════════════════ */
+
+/* Post-backbone activations for one series: 10 slices × 8 features.
+   Hand-set so the column maxima land on four *different* slices — the
+   scatter is the lesson of step 2, not an accident of random numbers. */
+const MRN_GRID = [
+  [0.12, 0.08, 0.20, 0.11, 0.09, 0.72, 0.14, 0.10],
+  [0.15, 0.10, 0.24, 0.13, 0.11, 0.88, 0.17, 0.12],
+  [0.18, 0.14, 0.31, 0.15, 0.12, 0.79, 0.21, 0.15],
+  [0.22, 0.35, 0.36, 0.18, 0.14, 0.44, 0.28, 0.19],
+  [0.26, 0.91, 0.39, 0.22, 0.17, 0.21, 0.33, 0.24],
+  [0.24, 0.84, 0.41, 0.26, 0.19, 0.18, 0.36, 0.27],
+  [0.21, 0.29, 0.44, 0.31, 0.23, 0.16, 0.41, 0.31],
+  [0.19, 0.16, 0.47, 0.38, 0.29, 0.14, 0.55, 0.36],
+  [0.16, 0.12, 0.43, 0.52, 0.37, 0.12, 0.68, 0.44],
+  [0.13, 0.09, 0.35, 0.61, 0.86, 0.10, 0.74, 0.58],
+];
+/* The two features given a clinical reading in the caption. Deliberately
+   only two — the rest are unnamed because in a real network they are. */
+const MRN_FEAT_NOTE = { 1: "edge disruption — the tear", 5: "fluid signal — effusion" };
+
+const mrnCol = (j) => MRN_GRID.map((r) => r[j]);
+const mrnArgmax = (j) => {
+  const c = mrnCol(j), v = Math.max(...c);
+  return { v, at: c.indexOf(v) };
+};
+
+/* Three activation profiles down one feature's slice axis.
+   focal and sustained share max = 0.85 by construction. */
+const MRN_PROFILES = [
+  { key: "focal", label: "focal tear", blurb: "two bright slices, quiet everywhere else",
+    x: [0.05, 0.06, 0.07, 0.09, 0.85, 0.78, 0.10, 0.07, 0.05, 0.04] },
+  { key: "sustained", label: "same peak, sustained", blurb: "identical maximum, six slices wide",
+    x: [0.05, 0.06, 0.85, 0.83, 0.80, 0.79, 0.81, 0.77, 0.07, 0.05] },
+  { key: "diffuse", label: "diffuse effusion", blurb: "lit right across the stack, never spikes",
+    x: [0.38, 0.42, 0.44, 0.41, 0.45, 0.43, 0.46, 0.42, 0.40, 0.39] },
+];
+
+/* softmax(x/T) weights, and the weighted sum they produce.
+   T → 0 recovers max; T → ∞ recovers mean. That is the entire point of the
+   temperature knob in step 3, so it is computed rather than claimed. */
+function mrnAttend(x, T) {
+  const s = x.map((v) => v / T), m = Math.max(...s);
+  const e = s.map((v) => Math.exp(v - m)), Z = e.reduce((a, b) => a + b, 0);
+  const w = e.map((v) => v / Z);
+  return { w, pooled: w.reduce((a, wi, i) => a + wi * x[i], 0) };
+}
+
+/* Reported AUCs. Internal validation is single-site (Stanford, GE scanners);
+   the external pair is the Croatian set, before and after retraining. */
+const MRN_AUC = [
+  { task: "Abnormality", auc: 0.937 },
+  { task: "ACL tear", auc: 0.965 },
+  { task: "Meniscus tear", auc: 0.847 },
+];
+const MRN_SHIFT = [
+  { label: "internal", sub: "Stanford · GE", v: 0.965, col: "green" },
+  { label: "external", sub: "Croatia · Siemens", v: 0.824, col: "red" },
+  { label: "after retraining", sub: "on the new site", v: 0.911, col: "accent" },
+];
+
+const MRN_STEPS = [
+  {
+    key: "ladder", label: "the ladder",
+    title: "Slice, series, study — and the same verb twice",
+    body: "Get the vocabulary airtight first, because almost every confusion downstream starts here. A slice is one cross-section. A series is a full stack of slices sharing one angle and one setting — sagittal T2 is a series, coronal T1 is a different one — so within a series, angle and setting are locked; only the position along the knee changes. A study is one knee exam: several series bundled. The correction worth internalising is that \"various angles\" belongs at the study level, never the slice level. MRNet then climbs this ladder in two moves, and both moves are the same verb — collapse a group into one summary. Slices collapse into a series verdict by max-pooling; series collapse into an exam verdict by a learned weighted vote. Once that lands, \"three series\" can never again misread as \"three knees\": they are three camera angles on one joint.",
+    math: "slice → (max-pool) → series → (logistic regression) → study   ·   RSNA: 24,371 series ÷ 4,407 studies ≈ 5.5 series per knee",
+  },
+  {
+    key: "pool", label: "max across slices",
+    title: "The slice axis disappears; the feature axis survives",
+    body: "Here is the operation everything rests on. Run every slice through the backbone alone and you get a grid — slices down, features across. Max-pooling runs down each column independently: for every feature, keep its single highest value anywhere in the stack. Ten slices by eight features becomes eight numbers, and the slice axis is gone. The subtlety that makes it work is that different features are free to peak on different slices, and that is desirable rather than sloppy. Click any column below. Feature 1 peaks where the tear is; feature 5 peaks on a completely different slice, where fluid is brightest. The pooled vector therefore says \"strong edge disruption somewhere\" and \"strong fluid signal somewhere\" at the same time — carrying two findings that never once co-occurred on a single slice. Max-pooling never keeps a slice. It keeps values, and forgets where each one came from.",
+    math: "vⱼ = maxᵢ Xᵢⱼ   for each feature j independently   ·   (10 × 8) → (8),  argmax recorded nowhere",
+  },
+  {
+    key: "rule", label: "max is an opinion",
+    title: "\"The finding is the peak slice\" is an assumption, not a law",
+    body: "Max-pooling encodes a specific bet: whatever matters shows up as a spike. For focal findings — an ACL tear, a meniscal tear, a fracture — that is exactly right, and it is why a 2-slice signal survives instead of being diluted by 28 quiet ones. For diffuse findings it fails, and the failure is silent. Compare the first two profiles: their maxima are identical to three decimals, so max returns the same number for both, even though one carries roughly two and a half times the total evidence. Max has no notion of how many slices lit up, only of how bright the brightest was. Averaging fails in the mirror image — it dilutes the focal spike into the quiet slices around it. Attention pooling is the modern repair: learn a weight per slice and take a weighted sum, concentrating on two slices for a tear or spreading across twenty for an effusion. Drag the temperature and watch it sweep the whole range between the two failure modes.",
+    math: "max = maxᵢ xᵢ    mean = (1/n) Σ xᵢ    attention = Σᵢ wᵢxᵢ,  w = softmax(x / T)   ·   T→0 ⇒ max,  T→∞ ⇒ mean",
+  },
+  {
+    key: "fuse", label: "series → exam",
+    title: "Nine small models and a readable weighted vote",
+    body: "The second rung. MRNet trains a separate small CNN per series and per task — three series times three tasks is nine networks — then combines the three per-series probabilities with plain logistic regression: a learned weighted average, one weight per series. The choice of something so simple is deliberate. It trains in seconds, and more importantly its weights are readable: inspecting them showed axial mattering most for meniscus and coronal most for ACL, which is what a radiologist would have told you in advance. That agreement is a sanity check a large fusion network would have bought at the price of telling you nothing about why. The wrinkle for OrthoVision is structural: MRNet had exactly three clean series per knee, so a fixed three-weight combiner fitted perfectly. RSNA data is ragged — 5.5 series per study on average, some knees with four, some with fourteen, some missing a plane entirely. A fixed-width vote has nowhere to put the fourteenth series, which is an argument for attention-style pooling at the series rung too, not only at the slice rung.",
+    math: "p_task = σ( Σ_series β_s · p_s )   ·   MRNet: |series| = 3, fixed   ·   RSNA: |series| ∈ [3, 14], ragged",
+  },
+  {
+    key: "shift", label: "the number to quote",
+    title: "It looked near-perfect at home, then met a different scanner",
+    body: "The result that should shape the whole strategy. Trained and validated at one hospital on GE scanners, MRNet read ACL tears at 0.965 AUC. Pointed at a Croatian set — Siemens hardware, T1 where Stanford had T2, different labelling conventions — the same weights fell to 0.824 with no retraining, and only climbed back to 0.911 after being retrained on the new site's data. Nothing about the model changed; the machine did. That is domain shift, and the reason it matters here is arithmetic: MRNet was validated across one institution, while the RSNA test set spans sixteen across five continents. Any leaderboard score measured on data resembling the training distribution will overstate performance on unseen sites. Note also the ranking that holds across all three tasks — meniscus is the weakest at 0.847, and meniscal tears really are the hardest of the three. Expect that ordering to survive into OrthoVision.",
+    math: "ACL AUC:  0.965 internal  →  0.824 external  →  0.911 after site-specific retraining   ·   1 institution → 16",
+  },
+];
+
+export function MRNetWalkthrough() {
+  const [step, setStep] = useState(0);
+  const [featSel, setFeatSel] = useState(1);
+  const [prof, setProf] = useState("focal");
+  const [tempI, setTempI] = useState(3);
+  const sc = MRN_STEPS[step];
+  const sk = sc.key;
+
+  const arrow = (x1, y1, x2, y2, col, dash) => {
+    const a = Math.atan2(y2 - y1, x2 - x1);
+    const w = 4, len = 7;
+    return (
+      <g stroke={col || P.accent} strokeWidth="1.3" fill="none">
+        <path d={`M${x1} ${y1} L${x2} ${y2}`} strokeDasharray={dash ? "4 3" : "none"} />
+        <path d={`M${x2 - len * Math.cos(a) - w * Math.sin(a)} ${y2 - len * Math.sin(a) + w * Math.cos(a)} L${x2} ${y2} L${x2 - len * Math.cos(a) + w * Math.sin(a)} ${y2 - len * Math.sin(a) - w * Math.cos(a)}`} />
+      </g>
+    );
+  };
+  const box = (x, y, w, h, label, sub, col, soft) => (
+    <g>
+      <rect x={x} y={y} width={w} height={h} fill={soft ? P.accentSoft : P.paper2} stroke={col || P.ink} strokeWidth="1.2" />
+      <text x={x + w / 2} y={y + (sub ? h / 2 - 1 : h / 2 + 4)} textAnchor="middle" style={SK} fontSize="10" fill={col || P.ink}>{label}</text>
+      {sub && <text x={x + w / 2} y={y + h / 2 + 12} textAnchor="middle" style={SK} fontSize="8.2" fill={P.sub}>{sub}</text>}
+    </g>
+  );
+  /* one slice stack, drawn as n offset rectangles */
+  const stack = (x, y, n, w, h, col, off = 2.6) => (
+    <g>
+      {Array.from({ length: n }).map((_, i) => (
+        <rect key={i} x={x + (n - 1 - i) * off} y={y + (n - 1 - i) * off} width={w} height={h}
+          fill={i === n - 1 ? P.paper2 : P.faint} stroke={i === n - 1 ? col : P.line} strokeWidth={i === n - 1 ? 1.2 : 0.6} />
+      ))}
+    </g>
+  );
+
+  const TEMPS = [0.02, 0.05, 0.12, 0.3, 0.8, 3.0, 20];
+  const T = TEMPS[tempI];
+  const pf = MRN_PROFILES.find((p) => p.key === prof) || MRN_PROFILES[0];
+  const pMax = Math.max(...pf.x);
+  const pMean = pf.x.reduce((a, b) => a + b, 0) / pf.x.length;
+  const att = mrnAttend(pf.x, T);
+
+  const body = (() => {
+    switch (sk) {
+      case "ladder": {
+        const SER = [
+          { n: "sagittal T2", c: P.accent },
+          { n: "coronal T1", c: P.green },
+          { n: "axial PD", c: P.yellow },
+        ];
+        return (
+          <g>
+            <text x={300} y={17} textAnchor="middle" style={SK} fontSize="10.5" fill={P.sub}>every rung does the same thing — collapse a group into one summary</text>
+
+            {/* rung 1 — a single slice */}
+            <text x={68} y={44} textAnchor="middle" style={SK} fontSize="8.6" fill={P.sub} letterSpacing="0.1em">SLICE</text>
+            <rect x={40} y={54} width={56} height={56} fill={P.paper2} stroke={P.ink} strokeWidth="1.3" />
+            {Array.from({ length: 7 }).map((_, i) => (
+              <g key={i} stroke={P.line} strokeWidth="0.4">
+                <line x1={40 + (i + 1) * 7} y1={54} x2={40 + (i + 1) * 7} y2={110} />
+                <line x1={40} y1={54 + (i + 1) * 7} x2={96} y2={54 + (i + 1) * 7} />
+              </g>
+            ))}
+            <text x={68} y={126} textAnchor="middle" style={SK} fontSize="8.2" fill={P.ink}>one cross-section</text>
+            <text x={68} y={138} textAnchor="middle" style={SK} fontSize="7.8" fill={P.sub}>no label of its own</text>
+
+            {arrow(104, 82, 138, 82)}
+            <text x={121} y={74} textAnchor="middle" style={SK} fontSize="7.6" fill={P.accent}>×30</text>
+
+            {/* rung 2 — a series */}
+            <text x={196} y={44} textAnchor="middle" style={SK} fontSize="8.6" fill={P.sub} letterSpacing="0.1em">SERIES</text>
+            {stack(146, 54, 5, 76, 56, P.accent)}
+            <text x={196} y={132} textAnchor="middle" style={SK} fontSize="8.2" fill={P.ink}>one angle, one setting</text>
+            <text x={196} y={144} textAnchor="middle" style={SK} fontSize="7.8" fill={P.sub}>both locked inside a series</text>
+
+            {arrow(240, 82, 276, 82)}
+            <text x={258} y={74} textAnchor="middle" style={SK} fontSize="7.6" fill={P.accent}>×5.5</text>
+
+            {/* rung 3 — a study */}
+            <text x={352} y={44} textAnchor="middle" style={SK} fontSize="8.6" fill={P.sub} letterSpacing="0.1em">STUDY</text>
+            <rect x={286} y={50} width={134} height={92} fill="none" stroke={P.ink} strokeWidth="1.1" strokeDasharray="4 3" />
+            {SER.map((s, i) => (
+              <g key={s.n}>
+                {stack(296, 58 + i * 28, 3, 44, 20, s.c, 1.8)}
+                <text x={350} y={72 + i * 28} style={SK} fontSize="8" fill={s.c}>{s.n}</text>
+              </g>
+            ))}
+            <text x={352} y={156} textAnchor="middle" style={SK} fontSize="8.2" fill={P.ink}>one knee exam</text>
+            <text x={352} y={168} textAnchor="middle" style={SK} fontSize="7.8" fill={P.sub}>angle varies BETWEEN series</text>
+
+            {arrow(426, 96, 458, 96)}
+            {box(462, 74, 106, 44, "one verdict", "per finding", P.ink, true)}
+            <text x={515} y={132} textAnchor="middle" style={SK} fontSize="7.8" fill={P.sub}>labels attach here</text>
+
+            <line x1={40} y1={196} x2={568} y2={196} stroke={P.line} strokeWidth="0.8" />
+            <text x={40} y={216} style={SK} fontSize="9.4" fill={P.ink}>the two collapses:  slices → series by <tspan fill={P.accent}>max-pooling</tspan>,  series → study by a <tspan fill={P.accent}>learned weighted vote</tspan>.</text>
+            <text x={40} y={236} style={SK} fontSize="9.2" fill={P.sub}>“various angles” is a property of the <tspan fill={P.ink}>study</tspan>, never of a slice. inside one series, angle and setting never change.</text>
+            <text x={40} y={262} style={SK} fontSize="9.2" fill={P.red}>because the label lives at study level, you cannot train slice-by-slice — a lone slice has no label to learn from.</text>
+            <text x={40} y={280} style={SK} fontSize="8.6" fontStyle="italic" fill={P.sub}>which is also why the split must be made on StudyInstanceUID: share a knee across the split and the model recognises it rather than reads it.</text>
+          </g>
+        );
+      }
+
+      case "pool": {
+        const GX = 96, GY = 48, CW = 46, CH = 13.6, NC = 8, NR = 10;
+        const sel = mrnArgmax(featSel);
+        return (
+          <g>
+            <text x={300} y={16} textAnchor="middle" style={SK} fontSize="10.5" fill={P.sub}>one series after the backbone — click a feature column</text>
+
+            {/* column headers */}
+            {Array.from({ length: NC }).map((_, j) => (
+              <text key={j} x={GX + j * CW + CW / 2} y={GY - 6} textAnchor="middle" style={SK} fontSize="8.4"
+                fill={j === featSel ? P.accent : P.sub}>f{j}</text>
+            ))}
+            {/* row labels */}
+            {Array.from({ length: NR }).map((_, i) => (
+              <text key={i} x={GX - 7} y={GY + i * CH + 10} textAnchor="end" style={SK} fontSize="7.8"
+                fill={i === sel.at ? P.accent : P.sub}>slice_{i}</text>
+            ))}
+
+            {/* the grid itself */}
+            {MRN_GRID.map((row, i) => row.map((v, j) => {
+              const win = j === featSel && i === sel.at;
+              return (
+                <rect key={`${i}-${j}`} x={GX + j * CW} y={GY + i * CH} width={CW - 1} height={CH - 1}
+                  fill={j === featSel ? P.accent : P.ink} fillOpacity={0.05 + v * 0.72}
+                  stroke={win ? P.red : P.line} strokeWidth={win ? 1.6 : 0.3}
+                  style={{ cursor: "pointer" }} onClick={() => setFeatSel(j)} />
+              );
+            }))}
+
+            {/* the collapse */}
+            {Array.from({ length: NC }).map((_, j) => (
+              <g key={j} opacity={j === featSel ? 1 : 0.32}>
+                {arrow(GX + j * CW + CW / 2, GY + NR * CH + 2, GX + j * CW + CW / 2, GY + NR * CH + 20,
+                  j === featSel ? P.accent : P.line)}
+              </g>
+            ))}
+
+            {/* the pooled vector */}
+            {Array.from({ length: NC }).map((_, j) => {
+              const m = mrnArgmax(j);
+              return (
+                <g key={j}>
+                  <rect x={GX + j * CW} y={GY + NR * CH + 22} width={CW - 1} height={20}
+                    fill={j === featSel ? P.accent : P.ink} fillOpacity={0.06 + m.v * 0.7}
+                    stroke={j === featSel ? P.accent : P.ink} strokeWidth={j === featSel ? 1.5 : 0.7} />
+                  <text x={GX + j * CW + CW / 2} y={GY + NR * CH + 36} textAnchor="middle" style={SK} fontSize="8"
+                    fill={m.v > 0.55 ? "#fff" : P.ink}>{m.v.toFixed(2)}</text>
+                  <text x={GX + j * CW + CW / 2} y={GY + NR * CH + 54} textAnchor="middle" style={SK} fontSize="7"
+                    fill={j === featSel ? P.red : P.sub}>s{m.at}</text>
+                </g>
+              );
+            })}
+            <text x={GX - 7} y={GY + NR * CH + 36} textAnchor="end" style={SK} fontSize="8" fill={P.ink}>pooled</text>
+            <text x={GX - 7} y={GY + NR * CH + 54} textAnchor="end" style={SK} fontSize="7" fill={P.sub}>won by</text>
+
+            <text x={GX + NC * CW + 8} y={GY + 42} style={SK} fontSize="8.4" fill={P.accent}>f{featSel} → {sel.v.toFixed(2)}</text>
+            <text x={GX + NC * CW + 8} y={GY + 56} style={SK} fontSize="8" fill={P.red}>peaks on slice_{sel.at}</text>
+            {MRN_FEAT_NOTE[featSel] && (
+              <text x={GX + NC * CW + 8} y={GY + 72} style={SK} fontSize="7.6" fill={P.sub}>{MRN_FEAT_NOTE[featSel]}</text>
+            )}
+
+            <text x={40} y={280} style={SK} fontSize="9.2" fill={P.ink}>
+              the winners sit on slices <tspan fill={P.accent}>{[...new Set(Array.from({ length: NC }, (_, j) => mrnArgmax(j).at))].sort((a, b) => a - b).join(", ")}</tspan> — different features, different slices, and that is the point.
+            </text>
+          </g>
+        );
+      }
+
+      case "rule": {
+        const X0 = 52, BW = 25, GAP = 7, BASE = 188, HMAX = 118;
+        const sx = (i) => X0 + i * (BW + GAP);
+        const wMax = Math.max(...att.w);
+        const RX = 392, RW = 168;
+        const rows = [
+          { k: "max", v: pMax, c: P.red, note: "peak only" },
+          { k: "mean", v: pMean, c: P.sub, note: "every slice equally" },
+          { k: "attention", v: att.pooled, c: P.accent, note: `softmax(x / ${T})` },
+        ];
+        return (
+          <g>
+            <text x={300} y={16} textAnchor="middle" style={SK} fontSize="10.5" fill={P.sub}>one feature's activation down the slice axis — {pf.blurb}</text>
+
+            {/* the profile */}
+            {pf.x.map((v, i) => (
+              <g key={i}>
+                <rect x={sx(i)} y={BASE - v * HMAX} width={BW} height={v * HMAX}
+                  fill={P.ink} fillOpacity={0.16 + v * 0.5} stroke={P.line} strokeWidth="0.4" />
+                <text x={sx(i) + BW / 2} y={BASE + 11} textAnchor="middle" style={SK} fontSize="7" fill={P.sub}>{i}</text>
+              </g>
+            ))}
+            <line x1={X0 - 4} y1={BASE} x2={sx(9) + BW + 4} y2={BASE} stroke={P.ink} strokeWidth="0.9" />
+            <text x={X0 - 8} y={BASE - HMAX + 4} textAnchor="end" style={SK} fontSize="7.4" fill={P.sub}>1.0</text>
+            <text x={X0 - 8} y={BASE + 3} textAnchor="end" style={SK} fontSize="7.4" fill={P.sub}>0</text>
+
+            {/* where attention is putting its mass */}
+            <path d={`M${pf.x.map((_, i) => `${sx(i) + BW / 2} ${BASE - 6 - (att.w[i] / wMax) * 26}`).join(" L")}`}
+              fill="none" stroke={P.accent} strokeWidth="1.5" strokeDasharray="3 2" />
+            {pf.x.map((_, i) => (
+              <circle key={i} cx={sx(i) + BW / 2} cy={BASE - 6 - (att.w[i] / wMax) * 26} r="1.9" fill={P.accent} />
+            ))}
+            {/* legend for the dashed overlay — parked top-left, clear of the
+                readout panel on the right */}
+            <line x1={X0} y1={41} x2={X0 + 18} y2={41} stroke={P.accent} strokeWidth="1.5" strokeDasharray="3 2" />
+            <circle cx={X0 + 9} cy={41} r="1.9" fill={P.accent} />
+            <text x={X0 + 24} y={44} style={SK} fontSize="7.6" fill={P.accent}>attention weight per slice</text>
+
+            {/* the three readouts */}
+            <line x1={RX - 14} y1={34} x2={RX - 14} y2={196} stroke={P.line} strokeWidth="0.8" />
+            {rows.map((r, i) => (
+              <g key={r.k}>
+                <text x={RX} y={48 + i * 52} style={SK} fontSize="9" fill={r.c}>{r.k}</text>
+                <text x={RX + RW} y={48 + i * 52} textAnchor="end" style={SK} fontSize="11" fill={P.ink}>{r.v.toFixed(3)}</text>
+                <rect x={RX} y={54 + i * 52} width={RW} height={9} fill={P.faint} stroke="none" />
+                <rect x={RX} y={54 + i * 52} width={RW * r.v} height={9} fill={r.c} fillOpacity="0.55" stroke="none" />
+                <text x={RX} y={76 + i * 52} style={SK} fontSize="7.4" fill={P.sub}>{r.note}</text>
+              </g>
+            ))}
+
+            <line x1={40} y1={212} x2={568} y2={212} stroke={P.line} strokeWidth="0.8" />
+            <text x={40} y={232} style={SK} fontSize="9.2" fill={P.ink}>
+              max = <tspan fill={P.red}>{pMax.toFixed(2)}</tspan> · mean = <tspan fill={P.sub}>{pMean.toFixed(3)}</tspan> · attention at T={T} = <tspan fill={P.accent}>{att.pooled.toFixed(3)}</tspan>
+            </text>
+            <text x={40} y={252} style={SK} fontSize="9" fill={P.sub}>
+              {prof === "focal" && "a two-slice finding survives intact — this is the case max-pooling was designed for."}
+              {prof === "sustained" && "same max as the focal profile, 2.4× the mean. max returns an identical number for a very different volume."}
+              {prof === "diffuse" && "nothing ever spikes, so max reports 0.46 and the fact that all ten slices lit up is thrown away."}
+            </text>
+            <text x={40} y={272} style={SK} fontSize="8.6" fontStyle="italic" fill={P.accent}>
+              {T <= 0.05 ? "T is tiny — attention has collapsed onto the argmax. this IS max-pooling."
+                : T >= 3 ? "T is large — the weights have flattened. this IS mean-pooling."
+                  : "between the two extremes: weight concentrated, but not all on one slice."}
+            </text>
+          </g>
+        );
+      }
+
+      case "fuse": {
+        const SER = [
+          { n: "sagittal T2", p: 0.71, c: P.accent, y: 52 },
+          { n: "coronal T1", p: 0.88, c: P.green, y: 104 },
+          { n: "axial PD", p: 0.34, c: P.yellow, y: 156 },
+        ];
+        return (
+          <g>
+            <text x={300} y={16} textAnchor="middle" style={SK} fontSize="10.5" fill={P.sub}>three views of ONE knee — not three knees</text>
+
+            {SER.map((s) => (
+              <g key={s.n}>
+                {stack(34, s.y, 3, 74, 34, s.c, 2)}
+                <text x={71} y={s.y + 21} textAnchor="middle" style={SK} fontSize="8" fill={s.c}>{s.n}</text>
+                {arrow(114, s.y + 17, 140, s.y + 17, P.line)}
+                {box(142, s.y - 1, 92, 36, "CNN", "+ max-pool", P.ink)}
+                {arrow(238, s.y + 17, 264, s.y + 17, P.line)}
+                <text x={286} y={s.y + 21} textAnchor="middle" style={SK} fontSize="10" fill={P.ink}>{s.p.toFixed(2)}</text>
+                {arrow(306, s.y + 17, 356, 122, P.line)}
+              </g>
+            ))}
+
+            {box(358, 96, 118, 52, "logistic", "regression", P.accent, true)}
+            {arrow(480, 122, 508, 122)}
+            <text x={548} y={118} textAnchor="middle" style={SK} fontSize="13" fill={P.ink}>0.79</text>
+            <text x={548} y={134} textAnchor="middle" style={SK} fontSize="7.6" fill={P.sub}>ACL tear</text>
+
+            <text x={417} y={166} textAnchor="middle" style={SK} fontSize="7.8" fill={P.sub}>one weight per series</text>
+            <text x={417} y={177} textAnchor="middle" style={SK} fontSize="7.8" fill={P.accent}>and they are readable</text>
+
+            <text x={34} y={206} style={SK} fontSize="8.8" fill={P.sub}>3 series × 3 tasks = <tspan fill={P.ink}>9 small CNNs</tspan>, then a vote that trains in seconds</text>
+
+            <line x1={34} y1={218} x2={568} y2={218} stroke={P.line} strokeWidth="0.8" />
+            <text x={34} y={236} style={SK} fontSize="9.2" fill={P.ink}>inspecting the learned weights: <tspan fill={P.accent}>axial mattered most for meniscus, coronal for ACL</tspan> — matching radiologist intuition.</text>
+            <text x={34} y={254} style={SK} fontSize="9" fill={P.sub}>a big fusion network would score the same and tell you nothing about why. that readability is the reason to keep it dumb.</text>
+            <text x={34} y={274} style={SK} fontSize="9" fill={P.red}>the wrinkle for RSNA: MRNet always had exactly 3 series. real data is ragged — 3 to 14 per knee, and planes missing.</text>
+            <text x={34} y={288} style={SK} fontSize="9" fill={P.red}>a fixed 3-weight vote has nowhere to put the 14th — an argument for attention at the series rung too, not just the slice rung.</text>
+          </g>
+        );
+      }
+
+      case "shift": {
+        /* bars kept inside x < 420 so the internal-AUC table at x = 448 has
+           clear air — at the original widths the third bar ran under it */
+        const BX = 76, BW = 84, GAP = 44, BASE = 196, Y0 = 0.75, HMAX = 132;
+        const hOf = (v) => ((v - Y0) / (1 - Y0)) * HMAX;
+        const COL = { green: P.green, red: P.red, accent: P.accent };
+        return (
+          <g>
+            <text x={300} y={16} textAnchor="middle" style={SK} fontSize="10.5" fill={P.sub}>ACL tear — the same weights, three settings</text>
+
+            {/* truncated axis, called out rather than hidden */}
+            <line x1={BX - 26} y1={BASE} x2={424} y2={BASE} stroke={P.ink} strokeWidth="0.9" />
+            {[0.80, 0.85, 0.90, 0.95, 1.0].map((t) => (
+              <g key={t}>
+                <line x1={BX - 26} y1={BASE - hOf(t)} x2={424} y2={BASE - hOf(t)} stroke={P.line} strokeWidth="0.4" strokeDasharray="2 3" />
+                <text x={BX - 30} y={BASE - hOf(t) + 3} textAnchor="end" style={SK} fontSize="7.2" fill={P.sub}>{t.toFixed(2)}</text>
+              </g>
+            ))}
+            <text x={BX - 30} y={BASE + 3} textAnchor="end" style={SK} fontSize="7.2" fill={P.red}>0.75</text>
+
+            {MRN_SHIFT.map((s, i) => {
+              const x = BX + i * (BW + GAP);
+              return (
+                <g key={s.label}>
+                  <rect x={x} y={BASE - hOf(s.v)} width={BW} height={hOf(s.v)} fill={COL[s.col]} fillOpacity="0.3" stroke={COL[s.col]} strokeWidth="1.3" />
+                  <text x={x + BW / 2} y={BASE - hOf(s.v) - 8} textAnchor="middle" style={SK} fontSize="12" fill={COL[s.col]}>{s.v.toFixed(3)}</text>
+                  <text x={x + BW / 2} y={BASE + 14} textAnchor="middle" style={SK} fontSize="8.6" fill={P.ink}>{s.label}</text>
+                  <text x={x + BW / 2} y={BASE + 25} textAnchor="middle" style={SK} fontSize="7.4" fill={P.sub}>{s.sub}</text>
+                </g>
+              );
+            })}
+
+            {/* the drop */}
+            {arrow(BX + BW + 6, BASE - hOf(0.965) - 2, BX + BW + GAP - 6, BASE - hOf(0.824) - 2, P.red)}
+            <text x={BX + BW + GAP / 2} y={BASE - hOf(0.9) - 26} textAnchor="middle" style={SK} fontSize="9.6" fill={P.red}>−0.141</text>
+            <text x={BX + BW + GAP / 2} y={BASE - hOf(0.9) - 15} textAnchor="middle" style={SK} fontSize="7.4" fill={P.red}>no retraining</text>
+
+            <line x1={440} y1={44} x2={440} y2={186} stroke={P.line} strokeWidth="0.8" />
+            <text x={452} y={54} style={SK} fontSize="8" fill={P.sub} letterSpacing="0.08em">INTERNAL — ALL THREE TASKS</text>
+            {MRN_AUC.map((a, i) => (
+              <g key={a.task}>
+                <text x={452} y={72 + i * 15} style={SK} fontSize="7.8" fill={a.auc < 0.9 ? P.red : P.ink}>{a.task}</text>
+                <text x={568} y={72 + i * 15} textAnchor="end" style={SK} fontSize="7.8" fill={a.auc < 0.9 ? P.red : P.ink}>{a.auc.toFixed(3)}</text>
+              </g>
+            ))}
+            <text x={452} y={136} style={SK} fontSize="7.2" fontStyle="italic" fill={P.sub}>meniscus is genuinely the</text>
+            <text x={452} y={146} style={SK} fontSize="7.2" fontStyle="italic" fill={P.sub}>hardest of the three — expect</text>
+            <text x={452} y={156} style={SK} fontSize="7.2" fontStyle="italic" fill={P.sub}>that ordering to survive</text>
+
+            <line x1={34} y1={234} x2={568} y2={234} stroke={P.line} strokeWidth="0.8" />
+            <text x={34} y={252} style={SK} fontSize="9.2" fill={P.ink}>y-axis starts at <tspan fill={P.red}>0.75</tspan>, not 0 — the drop is real, but a truncated axis always flatters it. read the numbers, not the bars.</text>
+            <text x={34} y={272} style={SK} fontSize="9.2" fill={P.accent}>MRNet was validated across 1 institution. the RSNA test set spans 16, on 5 continents. a leaderboard score will overstate what holds elsewhere.</text>
+          </g>
+        );
+      }
+
+      default: return null;
+    }
+  })();
+
+  const navBtn = { ...SK, fontSize: "0.8rem", padding: "2px 10px", border: `1px solid ${P.line}`, background: P.paper2, color: P.ink, cursor: "pointer" };
+  const pill = (on) => ({ ...SK, fontSize: "0.68rem", padding: "3px 11px", cursor: "pointer", border: `1px solid ${on ? P.accent : P.line}`, background: on ? P.accentSoft : P.paper2, color: on ? P.accent : P.sub });
+  const N = MRN_STEPS.length;
+
+  return (
+    <div>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 10, marginBottom: 10 }}>
+        <span style={{ ...SK, fontSize: "0.6rem", color: P.sub, textTransform: "uppercase", letterSpacing: "0.08em" }}>MRNet · Bien et al. 2018 · the ancestor of the RSNA knee task</span>
+        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+          <span style={{ ...SK, fontSize: "0.62rem", color: P.sub, textTransform: "uppercase", letterSpacing: "0.06em" }}>step {step + 1} / {N}</span>
+          <button onClick={() => setStep((step + N - 1) % N)} aria-label="Previous step" style={navBtn}>←</button>
+          <button onClick={() => setStep((step + 1) % N)} aria-label="Next step" style={navBtn}>→</button>
+        </div>
+      </div>
+
+      {sk === "pool" && (
+        <div style={{ display: "flex", gap: 6, marginBottom: 10, flexWrap: "wrap", alignItems: "center" }}>
+          <span style={{ ...SK, fontSize: "0.62rem", color: P.sub }}>inspect feature:</span>
+          {MRN_GRID[0].map((_, j) => (
+            <button key={j} onClick={() => setFeatSel(j)} style={pill(j === featSel)}>f{j}</button>
+          ))}
+        </div>
+      )}
+
+      {sk === "rule" && (
+        <div style={{ display: "flex", gap: 8, marginBottom: 10, flexWrap: "wrap", alignItems: "center" }}>
+          {MRN_PROFILES.map((p) => (
+            <button key={p.key} onClick={() => setProf(p.key)} style={pill(prof === p.key)}>{p.label}</button>
+          ))}
+          <span style={{ ...SK, fontSize: "0.62rem", color: P.sub, marginLeft: 6 }}>T =</span>
+          <input type="range" min={0} max={TEMPS.length - 1} step={1} value={tempI} onChange={(e) => setTempI(+e.target.value)} aria-label="attention temperature" style={{ accentColor: P.accent, width: 120 }} />
+          <span style={{ ...SK, fontSize: "0.66rem", color: P.ink, minWidth: 40 }}>{T}</span>
+          <span style={{ ...SK, fontSize: "0.62rem", color: P.accent }}>{T <= 0.05 ? "→ max" : T >= 3 ? "→ mean" : "between"}</span>
+        </div>
+      )}
+
+      <div style={{ border: `1px solid ${P.line}`, borderTop: `2px solid ${P.ink}`, background: P.paper2 }}>
+        <div style={{ background: "#fff" }}>
+          <div style={{ aspectRatio: "600 / 300" }}>
+            <svg viewBox="0 0 600 300" width="100%" height="100%" role="img" aria-label={`MRNet walkthrough step ${step + 1}: ${sc.label}`} style={{ display: "block" }} strokeLinecap="round" strokeLinejoin="round">
+              {body}
+            </svg>
+          </div>
+        </div>
+        <div style={{ padding: "0.9rem 1.1rem 1rem" }}>
+          <div style={{ ...DISP, fontWeight: 600, fontSize: "1rem", color: P.ink, marginBottom: 4 }}>{sc.title}</div>
+          <p style={{ ...BODY, fontSize: "0.88rem", color: P.sub, lineHeight: 1.65, textWrap: "pretty", margin: 0 }}>
+            <span style={{ ...SK, fontSize: "0.6rem", color: P.accent, textTransform: "uppercase", letterSpacing: "0.08em", marginRight: 6 }}>step {step + 1}</span>
+            {sc.body}
+          </p>
+          <div style={{ ...SK, fontSize: "0.66rem", color: P.ink, marginTop: 9, background: P.faint, padding: "6px 9px", display: "inline-block" }}>{sc.math}</div>
+        </div>
+      </div>
+
+      <div style={{ display: "flex", gap: 6, marginTop: 10, flexWrap: "wrap" }}>
+        {MRN_STEPS.map((s, j) => (
+          <button key={s.key} onClick={() => setStep(j)} style={{ ...SK, fontSize: "0.62rem", padding: "4px 9px", cursor: "pointer", border: `1px solid ${j === step ? P.accent : P.line}`, background: j === step ? P.accentSoft : "#fff", color: j === step ? P.accent : P.sub }}>{j + 1}. {s.label}</button>
+        ))}
+      </div>
+    </div>
+  );
+}
