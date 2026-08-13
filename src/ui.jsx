@@ -4880,3 +4880,805 @@ export function MRNetWalkthrough() {
     </div>
   );
 }
+
+/* ════════════════════════════════════════
+   AUTOENCODER WALKTHROUGH — the bottleneck, the rotation that costs nothing,
+   and the four ways the field widened the layer back out again.
+
+   The spine of this sketch is one fixed 10×6 dataset with two real factors
+   buried in six measured dimensions. Everything on screen is computed from
+   it at render time — the eigenspectrum, the reconstruction error at each k,
+   the sweep in step 2, the denoising residuals in step 4. Nothing is quoted.
+
+   The load-bearing demonstration is step 2. A linear AE's loss is invariant
+   to any invertible map applied to the code, so rotating the top-2 basis
+   leaves the error identical to six decimal places while the loadings swing
+   from "a d3/d4 detector" to "a d1/d2 detector". That symmetry is exactly
+   what sparsity breaks in step 3, and it's why the SAE came back for LLMs
+   in step 6.
+   ════════════════════════════════════════ */
+
+/* Ten samples, six measured dims, two factors: d1≈d2, d3≈d4, d5/d6 ~ noise. */
+const AE_X = [
+  [2.10, 1.92, -1.48, -1.61, 0.42, -0.31],
+  [-1.72, -1.55, 1.21, 1.34, -0.28, 0.19],
+  [1.44, 1.31, -0.95, -1.02, -0.51, 0.44],
+  [-0.62, -0.48, 1.88, 1.72, 0.33, -0.22],
+  [0.95, 1.12, 1.55, 1.41, -0.39, 0.28],
+  [-2.05, -1.88, -1.32, -1.19, 0.47, -0.36],
+  [1.68, 1.49, 0.88, 0.96, 0.29, -0.18],
+  [-1.21, -1.34, -1.71, -1.58, -0.44, 0.33],
+  [0.38, 0.22, -1.92, -1.81, 0.51, -0.41],
+  [-0.95, -0.81, 1.86, 1.78, -0.40, 0.24],
+];
+
+/* Jacobi eigendecomposition — the covariance is symmetric 6×6, so a few
+   sweeps of plane rotations converge well below anything the screen shows. */
+function aeJacobi(Ain, iters = 120) {
+  const n = Ain.length;
+  const A = Ain.map((r) => r.slice());
+  const V = Array.from({ length: n }, (_, i) => Array.from({ length: n }, (_, j) => (i === j ? 1 : 0)));
+  for (let s = 0; s < iters; s++) {
+    let p = 0, q = 1, off = 0;
+    for (let i = 0; i < n; i++) for (let j = i + 1; j < n; j++) {
+      off += A[i][j] ** 2;
+      if (Math.abs(A[i][j]) > Math.abs(A[p][q])) { p = i; q = j; }
+    }
+    if (Math.sqrt(off) < 1e-12) break;
+    const th = (A[q][q] - A[p][p]) / (2 * A[p][q]);
+    const t = Math.sign(th || 1) / (Math.abs(th) + Math.sqrt(th * th + 1));
+    const c = 1 / Math.sqrt(t * t + 1), sn = t * c;
+    for (let k = 0; k < n; k++) { const a = A[k][p], b = A[k][q]; A[k][p] = c * a - sn * b; A[k][q] = sn * a + c * b; }
+    for (let k = 0; k < n; k++) { const a = A[p][k], b = A[q][k]; A[p][k] = c * a - sn * b; A[q][k] = sn * a + c * b; }
+    for (let k = 0; k < n; k++) { const a = V[k][p], b = V[k][q]; V[k][p] = c * a - sn * b; V[k][q] = sn * a + c * b; }
+  }
+  const ev = A.map((r, i) => r[i]);
+  const ord = ev.map((_, i) => i).sort((a, b) => ev[b] - ev[a]);
+  return { vals: ord.map((i) => ev[i]), vecs: ord.map((i) => V.map((r) => r[i])) };
+}
+
+/* One pass at module load: centre, covary, decompose. */
+const AE_PCA = (() => {
+  const N = AE_X.length, D = AE_X[0].length;
+  const mu = Array.from({ length: D }, (_, j) => AE_X.reduce((s, r) => s + r[j], 0) / N);
+  const Xc = AE_X.map((r) => r.map((v, j) => v - mu[j]));
+  const cov = Array.from({ length: D }, (_, a) =>
+    Array.from({ length: D }, (_, b) => Xc.reduce((s, r) => s + r[a] * r[b], 0) / (N - 1)));
+  const { vals, vecs } = aeJacobi(cov);
+  const tot = vals.reduce((a, b) => a + b, 0);
+  return { N, D, mu, Xc, vals, vecs, tot };
+})();
+
+/* Reconstruction MSE from projecting onto an arbitrary orthonormal basis B.
+   Taking B as an argument rather than a rank is the whole point of step 2. */
+function aeMSE(B) {
+  const { Xc, D, N } = AE_PCA;
+  let se = 0;
+  for (const r of Xc) {
+    const z = B.map((b) => r.reduce((s, v, j) => s + v * b[j], 0));
+    for (let j = 0; j < D; j++) {
+      const rec = z.reduce((s, zi, i) => s + zi * B[i][j], 0);
+      se += (r[j] - rec) ** 2;
+    }
+  }
+  return se / (N * D);
+}
+
+/* Rotate the leading 2-plane by θ. Still orthonormal, still the same span. */
+function aeRotBasis(deg) {
+  const th = (deg * Math.PI) / 180, c = Math.cos(th), s = Math.sin(th);
+  const [e1, e2] = AE_PCA.vecs;
+  return [e1.map((v, j) => c * v + s * e2[j]), e1.map((v, j) => -s * v + c * e2[j])];
+}
+
+/* Overcomplete dictionary: 10 atoms in 6 dims, packed by repulsion to a
+   coherence of 0.363 against a Welch bound of 0.272 — incoherent enough that
+   OMP recovers a 2-atom signal exactly. */
+const AE_DICT = [
+  [-0.900, -0.192, 0.128, 0.267, 0.175, 0.187],
+  [-0.330, 0.089, -0.130, -0.041, -0.464, 0.806],
+  [0.208, 0.608, -0.091, -0.378, 0.628, 0.204],
+  [-0.296, 0.607, 0.031, 0.523, 0.438, -0.278],
+  [-0.123, -0.354, 0.634, -0.259, 0.238, 0.578],
+  [0.241, 0.009, -0.851, -0.301, 0.027, 0.354],
+  [0.257, 0.434, 0.416, 0.467, 0.092, 0.589],
+  [0.004, 0.333, 0.031, -0.238, -0.899, -0.150],
+  [-0.678, 0.460, -0.005, -0.570, -0.031, -0.055],
+  [-0.191, -0.102, -0.604, 0.718, 0.039, 0.268],
+].map((v) => { const n = Math.hypot(...v); return v.map((x) => x / n); });
+
+/* Names make the interpretability claim concrete: a unit that fires is a unit
+   you can say something about. Which is the property the rotation destroys. */
+const AE_ATOM_NAMES = ["edge ↖", "warm hue", "vertical", "round", "texture", "dark field", "corner", "high freq", "flat wash", "specular"];
+
+/* Gauss-Jordan on the k×k Gram matrix — used to re-solve OMP's weights. */
+function aeSolve(G, b) {
+  const n = b.length, m = G.map((r, i) => [...r, b[i]]);
+  for (let c = 0; c < n; c++) {
+    let p = c;
+    for (let r = c + 1; r < n; r++) if (Math.abs(m[r][c]) > Math.abs(m[p][c])) p = r;
+    [m[c], m[p]] = [m[p], m[c]];
+    if (Math.abs(m[c][c]) < 1e-12) continue;
+    for (let r = 0; r < n; r++) {
+      if (r === c) continue;
+      const f = m[r][c] / m[c][c];
+      for (let k = c; k <= n; k++) m[r][k] -= f * m[c][k];
+    }
+  }
+  return m.map((r, i) => (Math.abs(r[i]) < 1e-12 ? 0 : r[n] / r[i]));
+}
+
+/* Orthogonal matching pursuit: greedily pick the atom most aligned with the
+   residual, then re-solve every weight on the chosen support. The re-solve is
+   what makes it exact rather than merely close. */
+function aeOMP(x, k) {
+  const M = AE_DICT.length, S = [];
+  let r = x.slice(), act = Array(M).fill(0);
+  for (let s = 0; s < k; s++) {
+    let best = -1, bv = 0;
+    for (let m = 0; m < M; m++) {
+      if (S.includes(m)) continue;
+      const c = AE_DICT[m].reduce((t, v, j) => t + v * r[j], 0);
+      if (Math.abs(c) > Math.abs(bv) + 1e-12) { bv = c; best = m; }
+    }
+    if (best < 0) break;
+    S.push(best);
+    const G = S.map((a) => S.map((b2) => AE_DICT[a].reduce((t, v, j) => t + v * AE_DICT[b2][j], 0)));
+    const b = S.map((a) => AE_DICT[a].reduce((t, v, j) => t + v * x[j], 0));
+    const w = aeSolve(G, b);
+    act = Array(M).fill(0);
+    S.forEach((a, i) => { act[a] = w[i]; });
+    r = x.map((v, j) => v - S.reduce((t, a) => t + act[a] * AE_DICT[a][j], 0));
+  }
+  return { act, err: Math.hypot(...r) / Math.hypot(...x) };
+}
+
+/* The signal for step 3: two atoms fired, nothing else. A dense code has to
+   spread this across all six units; a sparse overcomplete code can name it. */
+const AE_SIGNAL = Array.from({ length: 6 }, (_, j) => 1.4 * AE_DICT[3][j] + 0.9 * AE_DICT[8][j]);
+
+/* Fixed noise directions so the picture doesn't jitter on every render —
+   the σ slider scales these rather than drawing fresh randomness. */
+const AE_NOISE = (() => {
+  let s = 20260813;
+  const rnd = () => { s = (s * 1103515245 + 12345) & 0x7fffffff; return (s / 0x7fffffff) * 2 - 1; };
+  return Array.from({ length: AE_PCA.N }, () => Array.from({ length: AE_PCA.D }, rnd));
+})();
+
+/* Five features living in a 2-neuron plane, spread over a half-turn. Every
+   neuron responds to every feature — which is the whole point. */
+const AE_FEATS = Array.from({ length: 5 }, (_, i) => {
+  const a = (Math.PI * i) / 5;
+  return { v: [Math.cos(a), Math.sin(a)], name: ["curve", "serif", "plural", "past tense", "sarcasm"][i] };
+});
+
+const AE_STEPS = [
+  {
+    key: "bottleneck",
+    label: "the bottleneck",
+    title: "A narrow layer is a decision about what to throw away",
+    body: "Squeeze six measured dimensions through k units and back out. Because the layer is too narrow to pass everything, training has to choose what survives — and for a linear autoencoder trained on squared error the answer is known exactly: the code spans the top-k principal subspace, and the error left over is the sum of the eigenvalues you dropped. This dataset has two real factors hiding in six columns, so the spectrum has an elbow you can see: k = 2 keeps 97.1% of the variance, and the third component is worth 2.8%. Drag k and watch the discarded tail — the bar chart is the eigenspectrum of the actual covariance, and the error underneath is measured by reconstructing all ten samples, not read off a formula.",
+    math: "min ‖X − X W Wᵀ‖²_F   ⇒   span(W) = span(top-k eigenvectors)   ·   MSE = (1/D) Σ_{j>k} λⱼ",
+  },
+  {
+    key: "rotation",
+    label: "the rotation that costs nothing",
+    title: "The subspace is pinned down. The axes inside it are not.",
+    body: "Here is where the equivalence with PCA quietly breaks, and it is the reason a linear autoencoder is not an interpretable one. Apply any invertible map A to the code and undo it in the decoder — the reconstruction is bit-for-bit identical, so the loss cannot tell the two apart and has no preference between them. What the network learns is therefore a subspace, not a basis: the axes are whatever the optimiser happened to land on. Sweep θ and read the two numbers together. The error is frozen at 0.041428 through the whole sweep, while unit 1 travels from a clean d₃/d₄ detector to a clean d₁/d₂ detector. Same loss, same subspace, completely different story about what the unit means. PCA escapes this only by bolting on constraints the autoencoder never had — orthogonality, and an ordering by variance.",
+    math: "W → W A ,  D → A⁻¹ D   ⇒   loss unchanged  ∀ invertible A   ·   the code is a subspace, not a basis",
+  },
+  {
+    key: "sparse",
+    label: "sparse · overcomplete",
+    title: "Widen the layer past the input, then forbid most of it from firing",
+    body: "The sparse autoencoder inverts the premise. The hidden layer is made *wider* than the input rather than narrower — ten units for six dimensions here — so capacity can no longer be what limits it. The constraint moves onto the activations instead: an L1 penalty, a KL term pulling the average firing rate toward something small, or a hard top-k. And this is what buys back what step 2 lost. A rotation of the code destroys sparsity, so the symmetry is broken and the axes are pinned to particular directions. Drag the budget: at two active units out of ten the code recovers the signal exactly, 0.0% error, and names it — round at 1.40, flat wash at 0.90. The dense six-unit code beside it reconstructs perfectly too, using every single unit, and no one of them means anything on its own.",
+    math: "min ‖x − D a‖² + λ‖a‖₁   ·   dim(a) > dim(x)   ·   sparsity breaks the rotation symmetry",
+  },
+  {
+    key: "denoise",
+    label: "denoising",
+    title: "Corrupt the input and copying stops being an answer",
+    body: "A wide autoencoder has an embarrassing shortcut available: learn the identity. The denoising autoencoder closes it by corrupting the input and asking for the clean original back, so the model can only succeed by knowing which coordinates predict which — your instinct about co-occurrence, stated as a training objective. Geometrically the job is a projection: clean data lies on a low-dimensional surface, noise knocks a point off it in every direction at once, and the model learns to push it back. The plot is that, measured — height above the axis is the distance out of the two-factor plane, and projecting drives it to exactly zero. But the readout is worth reading past the headline, because a fixed plane is a crude manifold: the data's own third factor also lives off it, so the projection destroys real signal alongside the noise. That floor is why the total error falls by about a fifth rather than the 42% you would predict from the dimension count alone — and it is precisely the gap a learned, curved manifold closes. The reason this matters beyond autoencoders: the optimal denoiser is the score of the data distribution, which is the object diffusion models learn.",
+    math: "x̃ = x + ε ,  ε ∼ N(0, σ²I)   ·   r*(x̃) = E[x | x̃] ≈ x̃ + σ² ∇ log p(x̃)",
+  },
+  {
+    key: "mae",
+    label: "masked",
+    title: "Mask 75% of the patches — and the encoder gets cheaper, not just harder",
+    body: "One correction worth making precisely, because it changes what the method is: the masked autoencoder hides *input patches*, not hidden units. Roughly three quarters of the image is deleted, the encoder is shown only what survives, and a deliberately lightweight decoder rebuilds raw pixels from those visible tokens plus a learned mask token at each hole. The high ratio is forced by redundancy — delete 15% of an image and interpolation from the neighbours solves it without any understanding, so the task has to be made genuinely hard before it teaches semantics. The asymmetry is the part that made it practical. Self-attention costs the square of the sequence length, and the encoder never sees the mask tokens, so at 75% masked it does 1/16 of the attention work of a full-image encoder. Drag the ratio and watch the cost curve fall away faster than the mask grows.",
+    math: "encoder sees only the visible tokens · attention ∝ v²   ⇒   v = 25%  ⇒  1/16 the cost",
+  },
+  {
+    key: "superposition",
+    label: "why it came back",
+    title: "Superposition: more features than neurons, so no neuron is a feature",
+    body: "Your instinct that every neuron seems to have *something* in it has a name and a cause. A network represents far more distinct features than it has dimensions, so it packs them as separate directions that cannot all be orthogonal — five features into two neurons here. Read the plane along the neuron axes and every neuron responds to every feature: that is polysemanticity, and it is why staring at individual units never resolved into clean meanings. Read it along the feature directions instead and each one is clean again. That is exactly the step-3 machine pointed at a language model: train an overcomplete sparse dictionary on a frozen model's activations and recover the directions the neuron basis had scrambled. Note what changed in the process — the classical sparse AE is a representation learner, trained to be used, while this one is a post-hoc probe that never touches the model it explains.",
+    math: "h ≈ Σⱼ aⱼ dⱼ ,  M ≫ D , ‖a‖₀ small   ·   trained on frozen activations · a probe, not a backbone",
+  },
+];
+
+export function AutoencoderWalkthrough() {
+  const [step, setStep] = useState(0);
+  const [k, setK] = useState(2);
+  const [theta, setTheta] = useState(0);
+  const [budget, setBudget] = useState(2);
+  const [sigI, setSigI] = useState(3);
+  const [maskI, setMaskI] = useState(3);
+  const [readBasis, setReadBasis] = useState("neuron");
+
+  const sc = AE_STEPS[step];
+  const sk = sc.key;
+  const { vals, vecs, tot, D, N, Xc } = AE_PCA;
+
+  const SIGMAS = [0, 0.15, 0.3, 0.5, 0.75, 1.0];
+  const sigma = SIGMAS[sigI];
+  const MASKS = [0, 0.25, 0.5, 0.75, 0.9];
+  const maskR = MASKS[maskI];
+
+  const arrow = (x1, y1, x2, y2, col, dash) => {
+    const a = Math.atan2(y2 - y1, x2 - x1);
+    const w = 4.2, len = 7.5;
+    return (
+      <g stroke={col || P.accent} strokeWidth="1.3" fill="none">
+        <path d={`M${x1} ${y1} L${x2} ${y2}`} strokeDasharray={dash ? "4 3" : "none"} />
+        <path d={`M${x2 - len * Math.cos(a) - w * Math.sin(a)} ${y2 - len * Math.sin(a) + w * Math.cos(a)} L${x2} ${y2} L${x2 - len * Math.cos(a) + w * Math.sin(a)} ${y2 - len * Math.sin(a) - w * Math.cos(a)}`} />
+      </g>
+    );
+  };
+  const box = (x, y, w, h, label, sub, col) => (
+    <g>
+      <rect x={x} y={y} width={w} height={h} fill={P.paper2} stroke={col || P.ink} strokeWidth="1.2" />
+      <text x={x + w / 2} y={y + (sub ? h / 2 - 1 : h / 2 + 4)} textAnchor="middle" style={SK} fontSize="10.5" fill={col || P.ink}>{label}</text>
+      {sub && <text x={x + w / 2} y={y + h / 2 + 12} textAnchor="middle" style={SK} fontSize="8" fill={P.sub}>{sub}</text>}
+    </g>
+  );
+  const fx = (v, d = 2) => (Math.abs(v) < 5 * Math.pow(10, -d - 1) ? 0 : v).toFixed(d);
+
+  const body = (() => {
+    switch (sk) {
+      /* ── 1. the bottleneck ────────────────────────────────────────── */
+      case "bottleneck": {
+        const mse = aeMSE(vecs.slice(0, k));
+        const kept = (100 * vals.slice(0, k).reduce((a, b) => a + b, 0)) / tot;
+        const mx = vals[0];
+        return (
+          <g>
+            <text x={300} y={16} textAnchor="middle" style={SK} fontSize="10.5" fill={P.sub}>six measured dimensions · two real factors · the layer decides which survive</text>
+
+            {/* the funnel */}
+            {Array.from({ length: D }).map((_, i) => (
+              <rect key={`in${i}`} x={30} y={52 + i * 15} width={26} height={11} fill={P.accentSoft} stroke={P.accent} strokeWidth="0.7" />
+            ))}
+            <text x={43} y={46} textAnchor="middle" style={SK} fontSize="8" fill={P.accent}>x · 6</text>
+            {arrow(60, 96, 84, 96)}
+            {box(86, 78, 52, 36, "f_θ", "encoder", P.accent)}
+            {arrow(140, 96, 164, 96)}
+
+            {Array.from({ length: D }).map((_, i) => {
+              const on = i < k;
+              return (
+                <rect key={`z${i}`} x={168} y={52 + i * 15} width={26} height={11}
+                  fill={on ? P.accent : P.paper2} fillOpacity={on ? 0.72 : 1}
+                  stroke={on ? P.accent : P.line} strokeWidth="0.7" strokeDasharray={on ? "none" : "2 2"} />
+              );
+            })}
+            <text x={181} y={46} textAnchor="middle" style={SK} fontSize="8" fill={P.accent}>z · {k}</text>
+            <text x={181} y={158} textAnchor="middle" style={SK} fontSize="7.5" fill={P.sub}>{D - k} discarded</text>
+
+            {arrow(198, 96, 222, 96)}
+            {box(224, 78, 52, 36, "g_φ", "decoder", P.accent)}
+            {arrow(278, 96, 302, 96)}
+            {Array.from({ length: D }).map((_, i) => (
+              <rect key={`out${i}`} x={306} y={52 + i * 15} width={26} height={11} fill={P.paper2} stroke={P.sub} strokeWidth="0.7" />
+            ))}
+            <text x={319} y={46} textAnchor="middle" style={SK} fontSize="8" fill={P.sub}>x̂</text>
+
+            {/* the eigenspectrum */}
+            <text x={382} y={40} style={SK} fontSize="8.5" fill={P.ink}>eigenspectrum of the covariance</text>
+            {vals.map((v, i) => {
+              const h = Math.max(1.2, (v / mx) * 66);
+              const on = i < k;
+              return (
+                <g key={`ev${i}`}>
+                  <rect x={382 + i * 32} y={130 - h} width={22} height={h}
+                    fill={on ? P.accent : P.red} fillOpacity={on ? 0.75 : 0.28}
+                    stroke={on ? P.accent : P.red} strokeWidth="0.7" />
+                  <text x={393 + i * 32} y={141} textAnchor="middle" style={SK} fontSize="7" fill={P.sub}>λ{i + 1}</text>
+                  <text x={393 + i * 32} y={126 - h} textAnchor="middle" style={SK} fontSize="6.8" fill={on ? P.accent : P.red}>{fx((100 * v) / tot, 1)}%</text>
+                </g>
+              );
+            })}
+            <line x1={382} y1={130} x2={574} y2={130} stroke={P.line} strokeWidth="0.8" />
+            <text x={382} y={156} style={SK} fontSize="7.5" fill={P.sub}>kept — blue · discarded — red</text>
+
+            {/* readout */}
+            <line x1={30} y1={176} x2={574} y2={176} stroke={P.line} strokeWidth="0.8" />
+            <text x={30} y={196} style={SK} fontSize="9.5" fill={P.ink}>variance kept</text>
+            <text x={30} y={214} style={SK} fontSize="15" fill={P.accent}>{fx(kept, 1)}%</text>
+            <text x={168} y={196} style={SK} fontSize="9.5" fill={P.ink}>reconstruction MSE</text>
+            <text x={168} y={214} style={SK} fontSize="15" fill={k <= 2 ? P.ink : P.green}>{fx(mse, 4)}</text>
+            <text x={330} y={196} style={SK} fontSize="9.5" fill={P.ink}>discarded tail  Σ_{"{j>k}"} λⱼ</text>
+            <text x={330} y={214} style={SK} fontSize="15" fill={P.red}>{fx(vals.slice(k).reduce((a, b) => a + b, 0), 4)}</text>
+
+            <text x={30} y={240} style={SK} fontSize="9" fill={P.sub}>
+              {k === 1 ? "one unit cannot hold two independent factors — the second is crushed into the first."
+                : k === 2 ? "the elbow. two units, two factors, 97.1% of the variance — the rest is measurement noise."
+                  : "past the elbow the extra units are buying noise: each adds under 3% and the error is already flat."}
+            </text>
+            <text x={30} y={256} style={SK} fontSize="9" fill={P.sub}>the MSE is measured by reconstructing all ten samples; the tail is the sum of the dropped</text>
+            <text x={30} y={270} style={SK} fontSize="9" fill={P.sub}>eigenvalues. they agree because Baldi &amp; Hornik (1989) says they must.</text>
+            <text x={30} y={288} style={SK} fontSize="8.5" fill={P.accent}>but this says nothing about which axes the network picks inside that subspace — step 2.</text>
+          </g>
+        );
+      }
+
+      /* ── 2. the rotation that costs nothing ───────────────────────── */
+      case "rotation": {
+        const B = aeRotBasis(theta);
+        const mse = aeMSE(B);
+        const base = aeMSE(vecs.slice(0, 2));
+        const drift = Math.abs(mse - base);
+        const cx = 132, cy = 108, R = 52;
+        const th = (theta * Math.PI) / 180;
+        /* project the samples into the fixed leading plane, then draw the
+           rotating axes on top — the cloud never moves, the axes do. */
+        const pts = Xc.map((r) => ({
+          u: r.reduce((s, v, j) => s + v * vecs[0][j], 0),
+          w: r.reduce((s, v, j) => s + v * vecs[1][j], 0),
+        }));
+        const sc2 = 15;
+        return (
+          <g>
+            <text x={300} y={16} textAnchor="middle" style={SK} fontSize="10.5" fill={P.sub}>the same 2-plane, read along different axes — the loss cannot tell them apart</text>
+
+            <circle cx={cx} cy={cy} r={R + 12} fill={P.faint} stroke={P.line} strokeWidth="0.6" />
+            {pts.map((p, i) => (
+              <circle key={i} cx={cx + p.u * sc2} cy={cy - p.w * sc2} r="2.6" fill={P.sub} fillOpacity="0.55" />
+            ))}
+            {/* the rotating basis */}
+            <g stroke={P.accent} strokeWidth="1.6">
+              <path d={`M${cx} ${cy} L${cx + R * Math.cos(th)} ${cy - R * Math.sin(th)}`} />
+            </g>
+            <g stroke={P.green} strokeWidth="1.4" strokeDasharray="3 2">
+              <path d={`M${cx} ${cy} L${cx - R * Math.sin(th)} ${cy - R * Math.cos(th)}`} />
+            </g>
+            <text x={cx + (R + 12) * Math.cos(th)} y={cy - (R + 12) * Math.sin(th) + 3} textAnchor="middle" style={SK} fontSize="8" fill={P.accent}>u₁</text>
+            <text x={cx - (R + 12) * Math.sin(th)} y={cy - (R + 12) * Math.cos(th) + 3} textAnchor="middle" style={SK} fontSize="8" fill={P.green}>u₂</text>
+            <text x={cx} y={cy + R + 10} textAnchor="middle" style={SK} fontSize="8" fill={P.sub}>θ = {theta}°  ·  the cloud is fixed, the axes turn</text>
+
+            {/* loadings of unit 1 */}
+            <text x={232} y={44} style={SK} fontSize="8.5" fill={P.ink}>what unit 1 responds to — its loading on each input dim</text>
+            {B[0].map((v, j) => {
+              const h = v * 34;
+              return (
+                <g key={j}>
+                  <rect x={238 + j * 30} y={h >= 0 ? 96 - h : 96} width={20} height={Math.abs(h)}
+                    fill={v >= 0 ? P.accent : P.red} fillOpacity="0.62" stroke={v >= 0 ? P.accent : P.red} strokeWidth="0.7" />
+                  <text x={248 + j * 30} y={h >= 0 ? 92 - h : 96 + Math.abs(h) + 9} textAnchor="middle" style={SK} fontSize="6.8" fill={P.sub}>{fx(v)}</text>
+                  <text x={248 + j * 30} y={144} textAnchor="middle" style={SK} fontSize="7.5" fill={P.sub}>d{j + 1}</text>
+                </g>
+              );
+            })}
+            <line x1={232} y1={96} x2={424} y2={96} stroke={P.ink} strokeWidth="0.9" />
+            <text x={432} y={72} style={SK} fontSize="8.5" fill={P.accent}>
+              {theta < 22 ? "a d₃/d₄ detector" : theta < 68 ? "a mixture of both" : "a d₁/d₂ detector"}
+            </text>
+            <text x={432} y={88} style={SK} fontSize="7.5" fill={P.sub}>the meaning of the unit</text>
+            <text x={432} y={102} style={SK} fontSize="7.5" fill={P.sub}>swings with θ …</text>
+
+            {/* the frozen error */}
+            <line x1={30} y1={176} x2={574} y2={176} stroke={P.line} strokeWidth="0.8" />
+            <text x={30} y={196} style={SK} fontSize="9.5" fill={P.ink}>reconstruction MSE at θ = {theta}°</text>
+            <text x={30} y={216} style={SK} fontSize="16" fill={P.ink}>{mse.toFixed(6)}</text>
+            <text x={222} y={196} style={SK} fontSize="9.5" fill={P.ink}>drift from θ = 0</text>
+            <text x={222} y={216} style={SK} fontSize="16" fill={P.green}>{drift < 1e-9 ? "0.000000" : drift.toExponential(1)}</text>
+            <text x={370} y={196} style={SK} fontSize="9.5" fill={P.ink}>span(W)</text>
+            <text x={370} y={216} style={SK} fontSize="13" fill={P.accent}>unchanged</text>
+
+            <text x={30} y={242} style={SK} fontSize="9" fill={P.sub}>… and the error does not move a digit. the loss is invariant to any invertible map on the code, so it has no opinion about which axes you get.</text>
+            <text x={30} y={260} style={SK} fontSize="9" fill={P.sub}>what training pins down is the <tspan fill={P.ink}>subspace</tspan>. the <tspan fill={P.ink}>basis</tspan> inside it is an accident of initialisation — which is precisely why a linear AE is not interpretable.</text>
+            <text x={30} y={278} style={SK} fontSize="8.5" fill={P.accent}>PCA only escapes by adding constraints the AE never had: orthogonality, and an ordering by variance.</text>
+          </g>
+        );
+      }
+
+      /* ── 3. sparse · overcomplete ─────────────────────────────────── */
+      case "sparse": {
+        const { act, err } = aeOMP(AE_SIGNAL, budget);
+        const fired = act.map((a, i) => ({ a, i })).filter((o) => Math.abs(o.a) > 1e-6);
+        const mxA = Math.max(...act.map((a) => Math.abs(a)), 1);
+        return (
+          <g>
+            <text x={300} y={16} textAnchor="middle" style={SK} fontSize="10.5" fill={P.sub}>10 units for 6 dimensions — wider than the input, and mostly silent</text>
+
+            {/* dense code */}
+            <text x={30} y={44} style={SK} fontSize="8.5" fill={P.sub}>the dense 6-unit code — the neuron basis</text>
+            {AE_SIGNAL.map((v, j) => (
+              <g key={j}>
+                <rect x={30 + j * 30} y={54} width={22} height={22}
+                  fill={v >= 0 ? P.accent : P.red} fillOpacity={0.14 + (Math.abs(v) / 1.3) * 0.62}
+                  stroke={P.line} strokeWidth="0.5" />
+                <text x={41 + j * 30} y={69} textAnchor="middle" style={SK} fontSize="7" fill={Math.abs(v) / 1.3 > 0.6 ? "#fff" : P.ink}>{fx(v)}</text>
+              </g>
+            ))}
+            <text x={30} y={90} style={SK} fontSize="8" fill={P.red}>all 6 fire · none of them means anything alone</text>
+
+            {/* sparse overcomplete code */}
+            <text x={30} y={116} style={SK} fontSize="8.5" fill={P.sub}>the overcomplete 10-unit code — budget of {budget}</text>
+            {act.map((v, i) => {
+              const on = Math.abs(v) > 1e-6;
+              const h = on ? Math.max(3, (Math.abs(v) / mxA) * 40) : 2;
+              return (
+                <g key={i}>
+                  <rect x={30 + i * 30} y={170 - h} width={22} height={h}
+                    fill={on ? P.accent : P.line} fillOpacity={on ? 0.78 : 0.5}
+                    stroke={on ? P.accent : P.line} strokeWidth="0.7" />
+                  {on && <text x={41 + i * 30} y={166 - h} textAnchor="middle" style={SK} fontSize="7" fill={P.accent}>{fx(v)}</text>}
+                  <text x={41 + i * 30} y={180} textAnchor="middle" style={SK} fontSize="6.2" fill={on ? P.ink : P.sub}>u{i}</text>
+                  {on && <text x={41 + i * 30} y={190} textAnchor="middle" style={SK} fontSize="6" fill={P.accent}>{AE_ATOM_NAMES[i]}</text>}
+                </g>
+              );
+            })}
+            <line x1={30} y1={170} x2={330} y2={170} stroke={P.line} strokeWidth="0.8" />
+
+            {/* readout */}
+            <line x1={30} y1={204} x2={574} y2={204} stroke={P.line} strokeWidth="0.8" />
+            <text x={30} y={222} style={SK} fontSize="9.5" fill={P.ink}>units firing</text>
+            <text x={30} y={240} style={SK} fontSize="15" fill={P.accent}>{fired.length} / 10</text>
+            <text x={150} y={222} style={SK} fontSize="9.5" fill={P.ink}>reconstruction error</text>
+            <text x={150} y={240} style={SK} fontSize="15" fill={err < 0.01 ? P.green : P.red}>{fx(100 * err, 1)}%</text>
+            <text x={310} y={222} style={SK} fontSize="9.5" fill={P.ink}>what fired</text>
+            <text x={310} y={240} style={SK} fontSize="10.5" fill={P.accent}>
+              {fired.length ? fired.map((o) => `${AE_ATOM_NAMES[o.i]} ${fx(o.a)}`).join("  ·  ") : "—"}
+            </text>
+
+            <text x={30} y={264} style={SK} fontSize="9" fill={P.sub}>
+              {budget === 1 ? "one unit is not enough — the signal is a mixture of two, and the residual says so."
+                : budget === 2 ? "exactly right: 2 of 10 units, 0.0% error, and each one is nameable. the code is sparse, overcomplete and axis-aligned."
+                  : "extra budget buys nothing — the remaining units sit at zero because the signal genuinely has two components."}
+            </text>
+            <text x={30} y={282} style={SK} fontSize="8.5" fill={P.accent}>and rotating this code would destroy its sparsity — which is exactly the symmetry step 2 could not break.</text>
+          </g>
+        );
+      }
+
+      /* ── 4. denoising ─────────────────────────────────────────────── */
+      case "denoise": {
+        const B = vecs.slice(0, 2);
+        /* residual out of the 2-factor plane, before and after projection */
+        const rows = Xc.map((r, i) => {
+          const noisy = r.map((v, j) => v + sigma * AE_NOISE[i][j]);
+          const off = (vv) => {
+            const z = B.map((b) => vv.reduce((s, v, j) => s + v * b[j], 0));
+            const rec = Array.from({ length: D }, (_, j) => z.reduce((s, zi, m) => s + zi * B[m][j], 0));
+            return { rec, d: Math.hypot(...vv.map((v, j) => v - rec[j])) };
+          };
+          const on = off(noisy);
+          return {
+            u: noisy.reduce((s, v, j) => s + v * B[0][j], 0),
+            offNoisy: on.d,
+            offClean: off(r).d,
+            errNoisy: Math.hypot(...noisy.map((v, j) => v - r[j])),
+            errDen: Math.hypot(...on.rec.map((v, j) => v - r[j])),
+          };
+        });
+        const mErrN = rows.reduce((s, o) => s + o.errNoisy, 0) / N;
+        const mErrD = rows.reduce((s, o) => s + o.errDen, 0) / N;
+        const gain = mErrN > 1e-9 ? (1 - mErrD / mErrN) * 100 : 0;
+        const mOffN = rows.reduce((s, o) => s + o.offNoisy, 0) / N;
+        /* the floor: the data's own third factor lives off this plane, so the
+           projection destroys it along with the noise. worth printing. */
+        const mOffC = rows.reduce((s, o) => s + o.offClean, 0) / N;
+        const x0 = 40, y0 = 128, w = 500, yS = 34;
+        return (
+          <g>
+            <text x={300} y={16} textAnchor="middle" style={SK} fontSize="10.5" fill={P.sub}>height above the line = distance out of the two-factor plane · the manifold is the line itself</text>
+
+            <line x1={x0} y1={y0} x2={x0 + w} y2={y0} stroke={P.ink} strokeWidth="1.1" />
+            <text x={x0 + w + 6} y={y0 + 3} style={SK} fontSize="7.5" fill={P.ink}>manifold</text>
+            <text x={x0 - 6} y={y0 - 54} textAnchor="end" style={SK} fontSize="7" fill={P.sub}>off-plane</text>
+
+            {rows.map((o, i) => {
+              const px = x0 + w / 2 + o.u * 44;
+              const py = y0 - o.offNoisy * yS;
+              return (
+                <g key={i}>
+                  {sigma > 0 && <path d={`M${px} ${py} L${px} ${y0}`} stroke={P.accent} strokeWidth="0.7" strokeDasharray="2 2" />}
+                  {sigma > 0 && <circle cx={px} cy={py} r="3" fill={P.red} fillOpacity="0.72" stroke={P.red} strokeWidth="0.6" />}
+                  <circle cx={px} cy={y0} r="3.2" fill={P.accent} fillOpacity="0.8" stroke={P.accent} strokeWidth="0.6" />
+                </g>
+              );
+            })}
+            {sigma > 0 && (
+              <>
+                <circle cx={430} cy={54} r="3" fill={P.red} fillOpacity="0.72" />
+                <text x={440} y={57} style={SK} fontSize="7.5" fill={P.red}>corrupted — knocked off the plane</text>
+                <circle cx={430} cy={70} r="3.2" fill={P.accent} fillOpacity="0.8" />
+                <text x={440} y={73} style={SK} fontSize="7.5" fill={P.accent}>denoised — projected back onto it</text>
+              </>
+            )}
+
+            <line x1={30} y1={166} x2={574} y2={166} stroke={P.line} strokeWidth="0.8" />
+            <text x={30} y={186} style={SK} fontSize="9.5" fill={P.ink}>σ</text>
+            <text x={30} y={205} style={SK} fontSize="15" fill={P.ink}>{sigma.toFixed(2)}</text>
+            <text x={92} y={186} style={SK} fontSize="9.5" fill={P.ink}>off-plane, corrupted</text>
+            <text x={92} y={205} style={SK} fontSize="15" fill={P.red}>{fx(mOffN, 3)}</text>
+            <text x={244} y={186} style={SK} fontSize="9.5" fill={P.ink}>off-plane, denoised</text>
+            <text x={244} y={205} style={SK} fontSize="15" fill={P.green}>0.000</text>
+            <text x={390} y={186} style={SK} fontSize="9.5" fill={P.ink}>total error vs clean</text>
+            <text x={390} y={205} style={SK} fontSize="15" fill={P.accent}>
+              {sigma === 0 ? "—" : `${fx(mErrN, 2)} → ${fx(mErrD, 2)}`}
+            </text>
+
+            <text x={30} y={230} style={SK} fontSize="9" fill={P.sub}>
+              {sigma === 0 ? "at σ = 0 there is nothing to remove, and the identity function would score perfectly — which is the failure the corruption exists to prevent."
+                : "the projection annihilates the off-plane component outright — exactly what the picture shows, and it is exact rather than approximate."}
+            </text>
+            <text x={30} y={246} style={SK} fontSize="9" fill={P.sub}>
+              {sigma === 0 ? "the model can only learn by knowing which coordinates travel together — structure it picks up as a side effect of being asked to clean up."
+                : `but it is not free: the data's own third factor sits off this plane at ${fx(mOffC, 3)} and is destroyed along with the noise. that floor is why the`}
+            </text>
+            <text x={30} y={262} style={SK} fontSize="9" fill={P.sub}>
+              {sigma === 0 ? "" : `total error falls only ${fx(gain, 0)}% and not the 42% the dimension count alone would predict. a real DAE beats this because its manifold is curved and learned.`}
+            </text>
+            <text x={30} y={284} style={SK} fontSize="8.5" fill={P.accent}>and the optimal denoiser is ∇ log p(x), the score — the object diffusion models spend their whole training learning.</text>
+          </g>
+        );
+      }
+
+      /* ── 5. masked ────────────────────────────────────────────────── */
+      case "mae": {
+        const G = 8, total = G * G;
+        const nMask = Math.round(maskR * total);
+        /* deterministic mask: a fixed shuffle, cut at nMask */
+        const order = (() => {
+          let s = 7717;
+          const idx = Array.from({ length: total }, (_, i) => i);
+          for (let i = total - 1; i > 0; i--) {
+            s = (s * 1103515245 + 12345) & 0x7fffffff;
+            const j = s % (i + 1);
+            [idx[i], idx[j]] = [idx[j], idx[i]];
+          }
+          return idx;
+        })();
+        const masked = new Set(order.slice(0, nMask));
+        const v = 1 - maskR;
+        const cost = v * v;
+        const cell = 15;
+        return (
+          <g>
+            <text x={300} y={16} textAnchor="middle" style={SK} fontSize="10.5" fill={P.sub}>input patches are deleted — not hidden units. the encoder never sees the holes.</text>
+
+            {Array.from({ length: G }).map((_, r) => Array.from({ length: G }).map((_, c) => {
+              const i = r * G + c, m = masked.has(i);
+              return (
+                <rect key={i} x={40 + c * cell} y={44 + r * cell} width={cell - 1.2} height={cell - 1.2}
+                  fill={m ? P.paper2 : P.accent} fillOpacity={m ? 1 : 0.18 + ((r * 5 + c * 3) % 5) * 0.11}
+                  stroke={m ? P.line : P.accent} strokeWidth={m ? 0.5 : 0.7}
+                  strokeDasharray={m ? "1.5 1.5" : "none"} />
+              );
+            }))}
+            <text x={100} y={38} textAnchor="middle" style={SK} fontSize="8" fill={P.sub}>{total} patches · {nMask} deleted</text>
+
+            {arrow(170, 104, 196, 104)}
+            {box(198, 84, 74, 40, "encoder", `sees ${total - nMask}`, P.accent)}
+            {arrow(274, 104, 300, 104)}
+            {box(302, 90, 62, 28, "decoder", "lightweight", P.sub)}
+            {arrow(366, 104, 392, 104)}
+            <text x={420} y={100} textAnchor="middle" style={SK} fontSize="9" fill={P.sub}>raw pixels</text>
+            <text x={420} y={112} textAnchor="middle" style={SK} fontSize="7.5" fill={P.sub}>at the holes</text>
+
+            {/* attention cost */}
+            <text x={452} y={44} style={SK} fontSize="8.5" fill={P.ink}>encoder attention cost</text>
+            <rect x={452} y={54} width={104} height={12} fill={P.faint} stroke={P.line} strokeWidth="0.5" />
+            <rect x={452} y={54} width={104 * cost} height={12} fill={P.accent} fillOpacity="0.72" />
+            <text x={452} y={80} style={SK} fontSize="12" fill={P.accent}>{cost < 0.999 ? `1 / ${fx(1 / cost, 1)}` : "1 / 1.0"}</text>
+            <text x={452} y={94} style={SK} fontSize="7.5" fill={P.sub}>of a full-image encoder</text>
+
+            <line x1={30} y1={160} x2={574} y2={160} stroke={P.line} strokeWidth="0.8" />
+            <text x={30} y={180} style={SK} fontSize="9.5" fill={P.ink}>masking ratio</text>
+            <text x={30} y={199} style={SK} fontSize="15" fill={P.ink}>{fx(100 * maskR, 0)}%</text>
+            <text x={150} y={180} style={SK} fontSize="9.5" fill={P.ink}>visible tokens</text>
+            <text x={150} y={199} style={SK} fontSize="15" fill={P.accent}>{total - nMask}</text>
+            <text x={280} y={180} style={SK} fontSize="9.5" fill={P.ink}>attention ∝ v²</text>
+            <text x={280} y={199} style={SK} fontSize="15" fill={P.green}>{fx(100 * cost, 1)}%</text>
+            <text x={420} y={180} style={SK} fontSize="9.5" fill={P.ink}>the task</text>
+            <text x={420} y={199} style={SK} fontSize="11" fill={maskR >= 0.7 ? P.accent : P.red}>
+              {maskR < 0.3 ? "interpolation" : maskR < 0.7 ? "getting harder" : maskR > 0.85 ? "near-impossible" : "semantic"}
+            </text>
+
+            <text x={30} y={226} style={SK} fontSize="9" fill={P.sub}>
+              {maskR < 0.3 ? "at this ratio a patch is surrounded by its own neighbours — smoothing solves the task and no understanding is required."
+                : maskR > 0.85 ? "too far: with almost nothing visible even a good model has no evidence to reason from, and the signal degrades."
+                  : "the operating range. enough is missing that the holes cannot be filled locally — the model has to know what the object is."}
+            </text>
+            <text x={30} y={244} style={SK} fontSize="9" fill={P.sub}>images are spatially redundant, so the ratio has to be extreme before the task stops being</text>
+            <text x={30} y={258} style={SK} fontSize="9" fill={P.sub}>interpolation. language is dense — BERT masks 15% and that is already hard.</text>
+            <text x={30} y={280} style={SK} fontSize="8.5" fill={P.accent}>the asymmetry is what made it cheap: self-attention is quadratic, and dropping 75% of the tokens cuts the encoder's work to a sixteenth.</text>
+          </g>
+        );
+      }
+
+      /* ── 6. why it came back ──────────────────────────────────────── */
+      case "superposition": {
+        const cx = 128, cy = 110, R = 62;
+        const neuronRead = readBasis === "neuron";
+        let mxCos = 0;
+        for (let i = 0; i < AE_FEATS.length; i++) for (let j = i + 1; j < AE_FEATS.length; j++) {
+          mxCos = Math.max(mxCos, Math.abs(AE_FEATS[i].v[0] * AE_FEATS[j].v[0] + AE_FEATS[i].v[1] * AE_FEATS[j].v[1]));
+        }
+        return (
+          <g>
+            <text x={300} y={16} textAnchor="middle" style={SK} fontSize="10.5" fill={P.sub}>5 features · 2 neurons — they cannot all be orthogonal, so they are packed at angles</text>
+
+            <circle cx={cx} cy={cy} r={R} fill={P.faint} stroke={P.line} strokeWidth="0.6" />
+            {/* the neuron axes */}
+            <g stroke={neuronRead ? P.red : P.line} strokeWidth={neuronRead ? 1.5 : 0.9}>
+              <path d={`M${cx - R - 8} ${cy} L${cx + R + 8} ${cy}`} />
+              <path d={`M${cx} ${cy + R + 8} L${cx} ${cy - R - 8}`} />
+            </g>
+            <text x={cx + R + 12} y={cy + 15} style={SK} fontSize="7.5" fill={neuronRead ? P.red : P.sub}>n₁</text>
+            {/* the features all live in the upper half-plane, so the bottom of
+                the vertical axis is the only place this label doesn't collide */}
+            <text x={cx + 6} y={cy + R + 18} style={SK} fontSize="7.5" fill={neuronRead ? P.red : P.sub}>n₂</text>
+            {/* the feature directions */}
+            {AE_FEATS.map((f, i) => (
+              <g key={i}>
+                <path d={`M${cx} ${cy} L${cx + f.v[0] * R} ${cy - f.v[1] * R}`}
+                  stroke={neuronRead ? P.line : P.accent} strokeWidth={neuronRead ? 1 : 1.6} />
+                <text x={cx + f.v[0] * (R + 16)} y={cy - f.v[1] * (R + 16) + 3} textAnchor="middle"
+                  style={SK} fontSize="7" fill={neuronRead ? P.sub : P.accent}>{f.name}</text>
+              </g>
+            ))}
+
+            {/* the readout bars */}
+            <text x={250} y={44} style={SK} fontSize="8.5" fill={P.ink}>
+              {neuronRead ? "what neuron n₁ responds to, feature by feature" : "what the dictionary unit for “curve” responds to"}
+            </text>
+            {AE_FEATS.map((f, i) => {
+              const val = neuronRead ? f.v[0] : (i === 0 ? 1 : 0);
+              const h = val * 40;
+              return (
+                <g key={i}>
+                  <rect x={256 + i * 44} y={h >= 0 ? 104 - h : 104} width={30} height={Math.abs(h) < 1 ? 1 : Math.abs(h)}
+                    fill={val >= 0 ? (neuronRead ? P.red : P.accent) : P.red}
+                    fillOpacity={neuronRead ? 0.6 : 0.72} stroke={val >= 0 ? (neuronRead ? P.red : P.accent) : P.red} strokeWidth="0.7" />
+                  <text x={271 + i * 44} y={h >= 0 ? 100 - h : 104 + Math.abs(h) + 9} textAnchor="middle" style={SK} fontSize="6.8" fill={P.sub}>{fx(val)}</text>
+                  <text x={271 + i * 44} y={158} textAnchor="middle" style={SK} fontSize="6.4" fill={P.sub}>{f.name}</text>
+                </g>
+              );
+            })}
+            <line x1={250} y1={104} x2={470} y2={104} stroke={P.ink} strokeWidth="0.9" />
+            <text x={250} y={176} style={SK} fontSize="8.5" fill={neuronRead ? P.red : P.green}>
+              {neuronRead ? "every feature moves it — the neuron is polysemantic, and means nothing on its own"
+                : "one feature, one unit — the dictionary recovers what the neuron basis had scrambled"}
+            </text>
+
+            <line x1={30} y1={192} x2={574} y2={192} stroke={P.line} strokeWidth="0.8" />
+            <text x={30} y={210} style={SK} fontSize="9.5" fill={P.ink}>features</text>
+            <text x={30} y={228} style={SK} fontSize="15" fill={P.accent}>5</text>
+            <text x={110} y={210} style={SK} fontSize="9.5" fill={P.ink}>neurons</text>
+            <text x={110} y={228} style={SK} fontSize="15" fill={P.red}>2</text>
+            <text x={196} y={210} style={SK} fontSize="9.5" fill={P.ink}>max |cos| between features</text>
+            <text x={196} y={228} style={SK} fontSize="15" fill={P.ink}>{fx(mxCos)}</text>
+            <text x={396} y={210} style={SK} fontSize="9.5" fill={P.ink}>neurons with a clean meaning</text>
+            <text x={396} y={228} style={SK} fontSize="15" fill={P.red}>0</text>
+
+            <text x={30} y={250} style={SK} fontSize="9" fill={P.sub}>at D = 2 the packing is cramped, so the angles are wide. real models have thousands of dimensions,</text>
+            <text x={30} y={264} style={SK} fontSize="9" fill={P.sub}>where exponentially many <tspan fill={P.ink}>near</tspan>-orthogonal directions fit — which is what makes the trick pay.</text>
+            <text x={30} y={286} style={SK} fontSize="8.5" fill={P.accent}>every bench on this page reconstructs its input. the next one predicts the representation instead — and pays with a collapse problem reconstruction never had. → JEPA</text>
+          </g>
+        );
+      }
+      default: return null;
+    }
+  })();
+
+  const navBtn = { ...SK, fontSize: "0.8rem", padding: "2px 10px", border: `1px solid ${P.line}`, background: P.paper2, color: P.ink, cursor: "pointer" };
+  const Nst = AE_STEPS.length;
+  const sliderRow = { display: "flex", gap: 10, marginBottom: 10, flexWrap: "wrap", alignItems: "center" };
+  const lbl = { ...SK, fontSize: "0.62rem", color: P.sub };
+  const val = { ...SK, fontSize: "0.66rem", color: P.ink, minWidth: 66 };
+
+  return (
+    <div>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 10, marginBottom: 10 }}>
+        <span style={{ ...SK, fontSize: "0.6rem", color: P.sub, textTransform: "uppercase", letterSpacing: "0.08em" }}>Baldi &amp; Hornik 1989 · Vincent 2008 · He 2021 · and why the sparse one came back for LLMs</span>
+        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+          <span style={{ ...SK, fontSize: "0.62rem", color: P.sub, textTransform: "uppercase", letterSpacing: "0.06em" }}>step {step + 1} / {Nst}</span>
+          <button onClick={() => setStep((step + Nst - 1) % Nst)} aria-label="Previous step" style={navBtn}>←</button>
+          <button onClick={() => setStep((step + 1) % Nst)} aria-label="Next step" style={navBtn}>→</button>
+        </div>
+      </div>
+
+      {sk === "bottleneck" && (
+        <div style={sliderRow}>
+          <span style={lbl}>bottleneck width k:</span>
+          <input type="range" min={1} max={6} step={1} value={k} onChange={(e) => setK(+e.target.value)} aria-label="Bottleneck width k" style={{ accentColor: P.accent, width: 150 }} />
+          <span style={val}>k = {k}</span>
+          <span style={{ ...SK, fontSize: "0.66rem", color: P.sub }}>
+            {k === 1 ? "too narrow — two factors will not fit through one unit" : k === 2 ? "the elbow: 97.1% of the variance, 2 of 6 dimensions" : `${k} units — past the elbow, buying noise`}
+          </span>
+        </div>
+      )}
+
+      {sk === "rotation" && (
+        <div style={sliderRow}>
+          <span style={lbl}>rotate the basis θ:</span>
+          <input type="range" min={0} max={90} step={1} value={theta} onChange={(e) => setTheta(+e.target.value)} aria-label="Basis rotation angle theta" style={{ accentColor: P.accent, width: 170 }} />
+          <span style={val}>θ = {theta}°</span>
+          <span style={{ ...SK, fontSize: "0.66rem", color: P.sub }}>the loss never moves — watch the loadings, not the error</span>
+        </div>
+      )}
+
+      {sk === "sparse" && (
+        <div style={sliderRow}>
+          <span style={lbl}>units allowed to fire:</span>
+          <input type="range" min={1} max={5} step={1} value={budget} onChange={(e) => setBudget(+e.target.value)} aria-label="Sparsity budget" style={{ accentColor: P.accent, width: 150 }} />
+          <span style={val}>‖a‖₀ ≤ {budget}</span>
+          <span style={{ ...SK, fontSize: "0.66rem", color: P.sub }}>
+            {budget < 2 ? "under-budget — the signal has two components" : budget === 2 ? "exact recovery, and both units are nameable" : "the surplus units stay at zero"}
+          </span>
+        </div>
+      )}
+
+      {sk === "denoise" && (
+        <div style={sliderRow}>
+          <span style={lbl}>corruption σ:</span>
+          <input type="range" min={0} max={SIGMAS.length - 1} step={1} value={sigI} onChange={(e) => setSigI(+e.target.value)} aria-label="Corruption sigma" style={{ accentColor: P.accent, width: 150 }} />
+          <span style={val}>σ = {sigma.toFixed(2)}</span>
+          <span style={{ ...SK, fontSize: "0.66rem", color: P.sub }}>
+            {sigma === 0 ? "no corruption — the identity function wins, and nothing is learned" : "noise fills all six dims; the manifold occupies two"}
+          </span>
+        </div>
+      )}
+
+      {sk === "mae" && (
+        <div style={sliderRow}>
+          <span style={lbl}>masking ratio:</span>
+          <input type="range" min={0} max={MASKS.length - 1} step={1} value={maskI} onChange={(e) => setMaskI(+e.target.value)} aria-label="Masking ratio" style={{ accentColor: P.accent, width: 150 }} />
+          <span style={val}>{fx(100 * maskR, 0)}% masked</span>
+          <span style={{ ...SK, fontSize: "0.66rem", color: P.sub }}>
+            {maskR < 0.3 ? "solvable by interpolation" : maskR === 0.75 ? "the MAE operating point" : maskR > 0.85 ? "past useful" : "getting harder"}
+          </span>
+        </div>
+      )}
+
+      {sk === "superposition" && (
+        <div style={sliderRow}>
+          <span style={lbl}>read the activation along:</span>
+          {[["neuron", "the neuron basis"], ["dict", "the sparse dictionary"]].map(([kk, label]) => (
+            <button key={kk} onClick={() => setReadBasis(kk)} aria-pressed={readBasis === kk}
+              style={{ ...SK, fontSize: "0.68rem", padding: "3px 11px", cursor: "pointer", border: `1px solid ${readBasis === kk ? P.accent : P.line}`, background: readBasis === kk ? P.accentSoft : P.paper2, color: readBasis === kk ? P.accent : P.sub }}>
+              {label}
+            </button>
+          ))}
+        </div>
+      )}
+
+      <div style={{ border: `1px solid ${P.line}`, borderTop: `2px solid ${P.ink}`, background: P.paper2 }}>
+        <div style={{ background: "#fff" }}>
+          <div style={{ aspectRatio: "600 / 300" }}>
+            <svg viewBox="0 0 600 300" width="100%" height="100%" role="img" aria-label={`Autoencoder walkthrough step ${step + 1}: ${sc.label}`} style={{ display: "block" }} strokeLinecap="round" strokeLinejoin="round">
+              {body}
+            </svg>
+          </div>
+        </div>
+        <div style={{ padding: "0.9rem 1.1rem 1rem" }}>
+          <div style={{ ...DISP, fontWeight: 600, fontSize: "1rem", color: P.ink, marginBottom: 4 }}>{sc.title}</div>
+          <p style={{ ...BODY, fontSize: "0.88rem", color: P.sub, lineHeight: 1.65, textWrap: "pretty", margin: 0 }}>
+            <span style={{ ...SK, fontSize: "0.6rem", color: P.accent, textTransform: "uppercase", letterSpacing: "0.08em", marginRight: 6 }}>step {step + 1}</span>
+            {sc.body}
+          </p>
+          <div style={{ ...SK, fontSize: "0.66rem", color: P.ink, marginTop: 9, background: P.faint, padding: "6px 9px", display: "inline-block" }}>{sc.math}</div>
+        </div>
+      </div>
+
+      <div style={{ display: "flex", gap: 6, marginTop: 10, flexWrap: "wrap" }}>
+        {AE_STEPS.map((s, j) => (
+          <button key={s.key} onClick={() => setStep(j)} style={{ ...SK, fontSize: "0.62rem", padding: "4px 9px", cursor: "pointer", border: `1px solid ${j === step ? P.accent : P.line}`, background: j === step ? P.accentSoft : "#fff", color: j === step ? P.accent : P.sub }}>{j + 1}. {s.label}</button>
+        ))}
+      </div>
+    </div>
+  );
+}

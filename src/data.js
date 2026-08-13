@@ -1094,6 +1094,13 @@ export const ARCHITECTURES = [
     intro: "Instead of *training* a detector, borrow a backbone that already learned what images look like — with **no labels at all** — then let a small ML head do the deciding. Student–teacher self-supervision, with XGBoost (or a tiny MLP) on top of the frozen embedding.",
   },
   {
+    key: "autoencoder", name: "Autoencoders — the bottleneck and what escapes it", short: "Autoencoders", family: "Self-supervised",
+    status: "live", component: "AutoencoderWalkthrough", year: 1989,
+    note: "narrow → PCA · the rotation that costs nothing · sparse · denoising · masked",
+    steps: "bottleneck → the rotation that costs nothing → sparse · overcomplete → denoising → masked → superposition",
+    intro: "A linear autoencoder trained on squared error lands on the same subspace as the top-k principal components — and then stops being interpretable, for a reason worth clicking through. Apply any invertible map to the code and undo it in the decoder and the reconstruction is *identical*, so the loss has no preference between them: what training pins down is a **subspace**, never a basis. Step 2 is that fact as a slider — sweep θ and the error is frozen at 0.041428 to six decimals while unit 1 travels from a clean d₃/d₄ detector to a clean d₁/d₂ one. Everything after is a different way of widening the layer back out: the **sparse** autoencoder goes *overcomplete* and constrains what may fire, which is exactly what breaks that rotation symmetry; the **denoising** one corrupts its input so copying stops being an answer; the **masked** one deletes 75% of the input patches and gets a sixteenth of the attention cost for it. The last step is why the sparse one came back for language models — superposition, and the fact that no neuron is a feature.",
+  },
+  {
     key: "jepa", name: "JEPA — predicting in latent space", short: "JEPA", family: "Self-supervised",
     status: "live", component: "JepaWalkthrough", year: 2023,
     note: "predict in latent space, not pixels · and don't collapse",
