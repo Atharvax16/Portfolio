@@ -5682,3 +5682,568 @@ export function AutoencoderWalkthrough() {
     </div>
   );
 }
+
+/* ════════════════════════════════════════
+   ORTHODIFFUSION WALKTHROUGH — a denoiser used as a feature extractor,
+   and the MAE comparison the paper asserts without ever running.
+
+   The spine is the noise schedule itself. Every signal/noise number on
+   screen is computed from the standard DDPM linear β schedule at render
+   time — the paper fixes T = 1000 but never states its β, so the schedule
+   is labelled as an assumption wherever it is drawn, and the numbers that
+   come from the paper (macro-AUROC, the Extended Data peaks, the fusion
+   ranking) are kept visually separate from the ones that come from it.
+
+   The load-bearing observation is step 3. The default tap sits at t = 30,
+   where the schedule has removed almost nothing: 98.8% of the variance is
+   still the scan. The "denoising" backbone is being queried in a regime
+   where there is essentially nothing to denoise, which is exactly why the
+   features stay anchored to the image rather than to the prior.
+   ════════════════════════════════════════ */
+
+/* Linear β schedule, DDPM defaults: β from 1e-4 to 0.02 over T = 1000.
+   ᾱ_t = Π(1 − β_i), computed once at module load. */
+const OD_T = 1000;
+const OD_ABAR = (() => {
+  const out = new Float64Array(OD_T + 1);
+  out[0] = 1;
+  let a = 1;
+  for (let i = 1; i <= OD_T; i++) {
+    const b = 1e-4 + ((0.02 - 1e-4) * (i - 1)) / (OD_T - 1);
+    a *= 1 - b;
+    out[i] = a;
+  }
+  return out;
+})();
+
+/* The timesteps worth stopping on. 500 is the right ceiling: it is where the
+   paper's own sweep ends, and by then the scan is 8% of the variance. */
+const OD_TS = [0, 10, 30, 50, 100, 150, 200, 300, 500];
+
+/* Fixed speckle, so dragging the slider scales one noise field rather than
+   redrawing a fresh one every render. */
+const OD_DOTS = (() => {
+  let s = 20260215;
+  const r = () => { s = (s * 1103515245 + 12345) & 0x7fffffff; return s / 0x7fffffff; };
+  return Array.from({ length: 240 }, () => ({ x: r(), y: r(), v: r() }));
+})();
+
+/* Which of the 64 patches survive MAE's 75% mask — one fixed draw, so the
+   picture is stable while the ratio slider moves. */
+const OD_MASK_ORDER = (() => {
+  let s = 776;
+  const r = () => { s = (s * 1103515245 + 12345) & 0x7fffffff; return s / 0x7fffffff; };
+  return Array.from({ length: 64 }, (_, i) => i).sort(() => r() - 0.5);
+})();
+
+/* A sagittal knee, abstracted to the four things the paper's labels care
+   about: the femoral condyle, the tibial plateau, two meniscal wedges and
+   the cruciate cord running between them. `abar` fades the anatomy out and
+   the speckle in, together, exactly as the forward process does. */
+function odKnee(ox, oy, w, h, abar, id, showGrid) {
+  const sig = Math.sqrt(Math.max(0, abar));
+  const nz = Math.sqrt(Math.max(0, 1 - abar));
+  const X = (u) => ox + u * w;
+  const Y = (v) => oy + v * h;
+  const cid = `odc-${id}`;
+  return (
+    <g>
+      <defs><clipPath id={cid}><rect x={ox} y={oy} width={w} height={h} /></clipPath></defs>
+      <rect x={ox} y={oy} width={w} height={h} fill="#fff" stroke={P.line} strokeWidth="1" />
+      <g clipPath={`url(#${cid})`}>
+        <g stroke={P.ink} fill="none" strokeWidth="1.15" opacity={0.12 + 0.88 * sig}>
+          <path d={`M${X(0.22)} ${Y(-0.02)} L${X(0.22)} ${Y(0.3)} C${X(0.22)} ${Y(0.5)} ${X(0.78)} ${Y(0.5)} ${X(0.78)} ${Y(0.3)} L${X(0.78)} ${Y(-0.02)}`} />
+          <path d={`M${X(0.19)} ${Y(0.57)} L${X(0.81)} ${Y(0.57)} L${X(0.77)} ${Y(1.02)} L${X(0.25)} ${Y(1.02)}`} />
+          <path d={`M${X(0.21)} ${Y(0.56)} L${X(0.38)} ${Y(0.56)} L${X(0.31)} ${Y(0.5)} Z`} fill={P.faint} />
+          <path d={`M${X(0.62)} ${Y(0.56)} L${X(0.79)} ${Y(0.56)} L${X(0.7)} ${Y(0.5)} Z`} fill={P.faint} />
+          <path d={`M${X(0.41)} ${Y(0.55)} L${X(0.59)} ${Y(0.27)}`} strokeWidth="1.6" />
+        </g>
+        <g fill={P.sub}>
+          {OD_DOTS.map((d, i) => (
+            <circle key={i} cx={X(d.x)} cy={Y(d.y)} r={0.8 + 1.1 * d.v} opacity={nz * (0.1 + 0.55 * d.v)} />
+          ))}
+        </g>
+        {showGrid && (
+          <g stroke={P.line} strokeWidth="0.5" opacity="0.9">
+            {Array.from({ length: 7 }, (_, i) => <line key={`v${i}`} x1={X((i + 1) / 8)} y1={oy} x2={X((i + 1) / 8)} y2={oy + h} />)}
+            {Array.from({ length: 7 }, (_, i) => <line key={`h${i}`} x1={ox} y1={Y((i + 1) / 8)} x2={ox + w} y2={Y((i + 1) / 8)} />)}
+          </g>
+        )}
+      </g>
+    </g>
+  );
+}
+
+const OD_STEPS = [
+  {
+    key: "pretext",
+    label: "the pretext task",
+    title: "The label is the noise you added yourself",
+    body: "Fifteen thousand knee MRIs with nothing written about them, and a training signal has to come from somewhere. Diffusion's answer is to manufacture one: take a scan, draw a Gaussian ε, mix the two in a known ratio, and ask the network to name the ε you drew. The target is free — you generated it — so the whole loop runs on unlabelled data, and this is the sense in which the model is trained without annotation. It is not trained without training. Drag t and watch what the objective is actually asking for at each end. Down at t = 30, where this paper does its work, 98.8% of the variance is still the scan and the noise is a thin haze you can see straight through; the honest way to name ε there is to subtract what you can see. Push t past 300 and the scan is gone, so the only way to guess ε is to guess what the knee underneath must have been — which means knowing that cartilage is a smooth band, that the cruciate runs as a diagonal cord, that the meniscus is a wedge. Nobody put that anatomy in the weights. Across sixteen thousand scans it is simply the cheapest way to reduce the loss.",
+    math: "x_t = √ᾱ_t · x₀ + √(1−ᾱ_t) · ε ,  ε ∼ N(0, I)   ·   L = ‖ε − ε_θ(x_t, t)‖²   ·   T = 1000",
+  },
+  {
+    key: "tap",
+    label: "the tap",
+    title: "You never generate an image — you read the network mid-pass",
+    body: "This is the step that dissolves the confusion, and the confusion is worth naming first: if the model's job is to turn noise into pictures, how do you get a *feature* out of it, and where is the architectural trick that produces one? There is no trick. Generation and feature extraction are two different taps on the same trained weights. Generation runs the reverse chain end to end, a thousand passes, each one nudging a volume toward something that looks like a knee. Extraction runs the U-Net exactly once, at one chosen timestep, and reads the activation tensor sitting in the bottleneck — a quantity the forward pass computes whether or not anyone looks at it — then throws the decoder's output away unread. No image is ever synthesised for a diagnosis, which matters more than it sounds: a system that read pathology off a reconstruction would inherit every hallucination the reconstruction makes. Toggle the two paths. Same weights, same forward pass, different thing taken from it.",
+    math: "extract: h = mid₂( ε_θ , x_t , t )  → SAP pool → linear head   ·   generate: x_{t−1} ← x_t, ×1000",
+  },
+  {
+    key: "dial",
+    label: "t is an abstraction dial",
+    title: "The timestep chooses how much of the answer comes from the prior",
+    body: "Because the corruption is a continuum rather than a switch, t becomes a knob on the representation itself. Low t leaves the fine texture intact, so the network is attending to edges and boundaries — what a segmentation head wants. Raise t and the detail is destroyed before the network ever sees it, so whatever survives in the bottleneck has to be global structure. The paper exploits this by tuning a per-task *timestep–block* pair on validation rather than fixing one layer, and the honest reading of its own sweep is that the knob is real but gentle: across t = 0 to 500 and three candidate blocks, the macro-AUROC moves about three points, peaking at 85.59 (coronal), 85.04 (sagittal) and 84.71 (axial) under linear probing. What the curve on the left adds is *why* the selected values are all small. At the default t = 30 the schedule has taken almost nothing away. The model is not reconstructing a knee from static; it is refining an image that is essentially all still there — which is the whole reason the features stay trustworthy. Turn the dial far enough right and the prior starts answering instead of the scan, and the reported AUROC does fall away. That trade is the same one my dissertation measured from the other side: push restoration hard enough and the image looks cleaner while the diagnostic content gets quietly repainted.",
+    math: "inferred ∝ prior(anatomy) × likelihood(what survives in x_t)   ·   selected: mid₂, t = 30 — never above 200",
+  },
+  {
+    key: "mae",
+    label: "the MAE comparison",
+    title: "Same forcing function, different corruption — and the comparison never gets run",
+    body: "The reason this paper reads as familiar is that its mechanism is the masked autoencoder's, with one operator swapped. MAE deletes three quarters of the patches outright and asks for the missing pixels back; diffusion attenuates every voxel by √ᾱ and asks for the noise back. Both close the copying shortcut, both make the task solvable only by knowing what belongs where, and He's *Deconstructing Denoising Diffusion Models* is the paper that makes the equivalence explicit. The differences that matter are structural rather than philosophical. Masking is all-or-nothing per patch, so the encoder sees a quarter of the tokens and gets a sixteenth of the attention bill — MAE is drastically cheaper to pretrain. Noising is uniform and graded, so the difficulty is a continuous parameter you can tune per task, which is precisely what step 3 spends. Toggle the operator and read the two targets side by side. Then read the strip along the bottom, because it is the paper's real gap: the discussion argues diffusion beats masked autoencoding as a medical representation learner, and *no MAE baseline was ever run.* Every comparison here is against a supervised model trained from scratch — 3D-UNet, UNETR, 3D-ResNet-18. The claim is asserted, not measured.",
+    math: "MAE: mask 75% of patches, predict pixels · cost ∝ v²   ·   diffusion: attenuate all, predict ε · difficulty = t",
+  },
+  {
+    key: "planes",
+    label: "three planes, two fusions",
+    title: "The fusion that scores highest is the one that cannot tell you why",
+    body: "A radiologist reads a knee across sagittal, coronal and axial, so the paper pretrains three separate 3D diffusion backbones, one per orientation, and fuses their embeddings downstream. The result of the fusion ablation is the interesting part, and to its credit the paper reports it plainly: plain channel-wise concatenation — no parameters, no learning, no story — produces the best macro-AUROC of everything they tried, ahead of linear projection, cross-attention, and their own Multi-plane Adaptive Expert module. MPAE comes second. What MPAE buys instead is attribution: a small gating network weighs the three per-plane classifiers per label and per patient, and those weights land where a clinician would put them — sagittal carrying the cruciate ligaments, coronal carrying the collaterals. Toggle the two and the trade is the whole point. Concatenation wins the number and cannot answer 'which plane earned this'; MPAE gives up a little accuracy to answer it. That is the same question MRNet answered one rung down with a three-weight logistic regression (§7) — except here the weights are per label and per patient rather than fitted once, because a fixed three-way vote has no way to say that *this* knee's evidence was axial.",
+    math: "concat: [f_sag ‖ f_cor ‖ f_ax] → linear head   ·   MPAE: w = softmax(gate(z_sag, z_cor, z_ax)), per label, per patient",
+  },
+  {
+    key: "gap",
+    label: "what it never measures",
+    title: "Every number here is a ranking. None of them is a trust.",
+    body: "AUROC and Dice, across every table. Both are ranking metrics: they tell you the model orders positives above negatives, and they are silent on whether the probability it prints means anything, on whether it knows when a scan is unlike anything it trained on, and on what it does at the moment it is wrong. There is no calibration curve, no OOD detection, no uncertainty of any kind — so 'when does this silently fail' is not a question the paper's evaluation can be asked. The transfer story has the same shape: knee → ankle transfers better than knee → shoulder, which the paper reads as anatomical similarity and which is equally a statement that nothing on board would have flagged the shoulder as further away. The panel on the right is the experiment those two gaps argue for, and it is deliberately small enough to actually run: one convolutional encoder, three self-supervised objectives hung off it — diffusion, MAE, and JEPA — read at the *same* bottleneck under the *same* frozen probe, so the comparison the paper asserted becomes one you can measure without the ViT-versus-UNet confound that wrecks the casual version. The headline ablation is the timestep sweep, reproducing the rise-and-fall of step 3 on a dataset that fits on a laptop. Status is written and not yet run, which is why there are no numbers in that panel and will not be until there are.",
+    math: "held fixed: encoder · tap site · compute · probe   ·   varied: the objective, and t   ·   status: written, not run",
+  },
+];
+
+export function OrthoDiffusionWalkthrough() {
+  const [step, setStep] = useState(0);
+  const [ti, setTi] = useState(2);           /* OD_TS[2] = 30, the paper's default */
+  const [mode, setMode] = useState("extract");
+  const [op, setOp] = useState("noise");
+  const [fusion, setFusion] = useState("concat");
+
+  const sc = OD_STEPS[step];
+  const sk = sc.key;
+  const t = OD_TS[ti];
+  const abar = OD_ABAR[t];
+  const sig = Math.sqrt(abar);
+
+  const arrow = (x1, y1, x2, y2, col, dash, wdt) => {
+    const a = Math.atan2(y2 - y1, x2 - x1);
+    const w = 4.2, len = 7.5;
+    return (
+      <g stroke={col || P.accent} strokeWidth={wdt || 1.3} fill="none">
+        <path d={`M${x1} ${y1} L${x2} ${y2}`} strokeDasharray={dash ? "4 3" : "none"} />
+        <path d={`M${x2 - len * Math.cos(a) - w * Math.sin(a)} ${y2 - len * Math.sin(a) + w * Math.cos(a)} L${x2} ${y2} L${x2 - len * Math.cos(a) + w * Math.sin(a)} ${y2 - len * Math.sin(a) - w * Math.cos(a)}`} />
+      </g>
+    );
+  };
+  const box = (x, y, w, h, label, sub, col, faded) => (
+    <g opacity={faded ? 0.2 : 1}>
+      <rect x={x} y={y} width={w} height={h} fill={P.paper2} stroke={col || P.ink} strokeWidth="1.2" />
+      <text x={x + w / 2} y={y + (sub ? h / 2 - 1 : h / 2 + 4)} textAnchor="middle" style={SK} fontSize="10" fill={col || P.ink}>{label}</text>
+      {sub && <text x={x + w / 2} y={y + h / 2 + 11} textAnchor="middle" style={SK} fontSize="7.6" fill={P.sub}>{sub}</text>}
+    </g>
+  );
+
+  const body = (() => {
+    switch (sk) {
+      /* ── 1. the pretext task ──────────────────────────────────────── */
+      case "pretext": {
+        const pct = (100 * abar).toFixed(1);
+        const verdict =
+          t === 0 ? "nothing added — there is no noise to name, and nothing is learned"
+            : abar > 0.95 ? "the scan is almost untouched: subtract what you can see"
+              : abar > 0.55 ? "detail is going; the guess starts leaning on what a knee looks like"
+                : "the scan is gone — only a prior can answer, and a prior can only fabricate";
+        const sw = 452 * abar;
+        return (
+          <g>
+            {odKnee(38, 42, 104, 104, 1, "clean")}
+            <text x={90} y={36} textAnchor="middle" style={SK} fontSize="9" fill={P.ink}>x₀ — one unlabelled scan</text>
+            {arrow(150, 94, 194, 94)}
+            <text x={172} y={86} textAnchor="middle" style={SK} fontSize="8" fill={P.accent}>+ ε</text>
+
+            {odKnee(202, 42, 104, 104, abar, "noised")}
+            <text x={254} y={36} textAnchor="middle" style={SK} fontSize="9" fill={P.ink}>x_t at t = {t}</text>
+
+            {arrow(314, 94, 358, 94)}
+            {box(366, 68, 152, 52, "ε_θ ( x_t , t )", "3D U-Net denoiser", P.ink)}
+            {arrow(442, 124, 442, 148)}
+            <text x={442} y={162} textAnchor="middle" style={SK} fontSize="9.5" fill={P.accent}>ε̂ — its guess at the noise</text>
+            <text x={442} y={176} textAnchor="middle" style={SK} fontSize="8.5" fill={P.sub}>loss = ‖ε − ε̂‖², and ε was free</text>
+
+            <text x={38} y={200} style={SK} fontSize="8.5" fill={P.sub}>what is left of the scan, by the schedule</text>
+            <rect x={38} y={208} width={452} height={17} fill={P.faint} stroke={P.line} />
+            <rect x={38} y={208} width={sw} height={17} fill={P.accentSoft} />
+            <rect x={38} y={208} width={sw} height={17} fill="none" stroke={P.accent} strokeWidth="1.1" />
+            <text x={44} y={220} style={SK} fontSize="9" fill={P.accent}>signal ᾱ = {pct}%</text>
+            {abar < 0.86 && <text x={486} y={220} textAnchor="end" style={SK} fontSize="9" fill={P.sub}>noise {(100 - +pct).toFixed(1)}%</text>}
+            <text x={38} y={243} style={SK} fontSize="9" fill={t === 0 || abar < 0.55 ? P.red : P.ink}>{verdict}</text>
+
+            <text x={38} y={266} style={SK} fontSize="8.5" fill={P.sub}>15,948 unlabelled knee MRIs · 16 central slices at 256×256 · not one annotation anywhere in this loop</text>
+            <text x={38} y={282} style={SK} fontSize="8" fill={P.sub}>ᾱ_t computed from the standard linear β schedule (1e-4 → 0.02, T = 1000) — the paper fixes T but does not state β.</text>
+          </g>
+        );
+      }
+
+      /* ── 2. the tap ───────────────────────────────────────────────── */
+      case "tap": {
+        const gen = mode === "generate";
+        const enc = [[62, 58], [104, 96], [146, 134]];
+        const dec = [[392, 134], [434, 96], [476, 58]];
+        return (
+          <g>
+            <text x={30} y={30} style={SK} fontSize="9" fill={P.sub}>one 3D U-Net, trained once. two different things to take from it.</text>
+
+            {enc.map(([x, y], i) => (
+              <g key={`e${i}`}>{box(x, y, 46, 26, ["enc₁", "enc₂", "enc₃"][i], null, P.ink)}</g>
+            ))}
+            {box(196, 172, 44, 26, "mid₀", null, P.sub)}
+            {box(244, 172, 44, 26, "mid₁", null, P.sub)}
+            {box(292, 172, 44, 26, "mid₂", null, gen ? P.ink : P.accent)}
+            {dec.map(([x, y], i) => (
+              <g key={`d${i}`}>{box(x, y, 46, 26, ["dec₃", "dec₂", "dec₁"][i], null, P.ink, !gen)}</g>
+            ))}
+
+            {arrow(108, 84, 104, 92, P.ink)}
+            {arrow(150, 122, 146, 130, P.ink)}
+            {arrow(192, 160, 196, 168, P.ink)}
+            <path d="M336 185 L392 185 L392 160" stroke={gen ? P.ink : P.line} strokeWidth="1.2" fill="none" opacity={gen ? 1 : 0.35} />
+            {gen && arrow(438, 122, 434, 114, P.ink)}
+            {gen && arrow(480, 84, 476, 76, P.ink)}
+
+            <g stroke={P.line} strokeWidth="0.9" strokeDasharray="3 3" opacity={gen ? 0.9 : 0.3}>
+              <line x1={108} y1={58} x2={476} y2={58} />
+              <line x1={150} y1={96} x2={434} y2={96} />
+              <line x1={192} y1={134} x2={392} y2={134} />
+            </g>
+            <text x={292} y={52} textAnchor="middle" style={SK} fontSize="7.5" fill={P.sub} opacity={gen ? 1 : 0.4}>skip connections</text>
+
+            {gen ? (
+              <g>
+                {arrow(522, 58, 548, 58, P.ink)}
+                <text x={562} y={62} textAnchor="middle" style={SK} fontSize="10" fill={P.ink}>x̂</text>
+                <path d="M562 72 L562 228 L96 228" stroke={P.ink} strokeWidth="1" fill="none" strokeDasharray="4 3" />
+                {arrow(110, 228, 88, 228, P.ink, false, 1)}
+                {arrow(85, 224, 85, 80, P.ink, true, 1)}
+                <text x={330} y={222} textAnchor="middle" style={SK} fontSize="8.5" fill={P.ink}>one pass&apos;s output is the next pass&apos;s input — × 1000</text>
+                <text x={30} y={256} style={SK} fontSize="9.5" fill={P.ink}>generate — run the reverse chain end to end. every block matters, and an image comes out.</text>
+                <text x={30} y={272} style={SK} fontSize="9" fill={P.sub}>this path is never used for a diagnosis. nothing in the clinical pipeline reads a pixel the model painted.</text>
+              </g>
+            ) : (
+              <g>
+                {arrow(314, 202, 314, 226, P.accent, false, 1.9)}
+                {box(258, 230, 112, 26, "SAP pooling", null, P.accent)}
+                {arrow(370, 243, 402, 243, P.accent)}
+                <rect x={408} y={236} width={96} height={14} fill={P.accentSoft} stroke={P.accent} strokeWidth="1" />
+                <text x={456} y={266} textAnchor="middle" style={SK} fontSize="8.5" fill={P.sub}>one embedding</text>
+                {arrow(510, 243, 538, 243, P.accent)}
+                <text x={556} y={246} textAnchor="middle" style={SK} fontSize="9" fill={P.accent}>head</text>
+                <text x={30} y={274} style={SK} fontSize="9.5" fill={P.accent}>extract — one forward pass, read mid₂, discard the decoder unread.</text>
+                <text x={30} y={289} style={SK} fontSize="9" fill={P.sub}>the activation exists whether or not anyone looks at it. that is the whole method.</text>
+              </g>
+            )}
+            <text x={570} y={30} textAnchor="end" style={SK} fontSize="8" fill={P.sub}>attention at 16×16 · default tap: mid₂ at t = 30</text>
+          </g>
+        );
+      }
+
+      /* ── 3. the abstraction dial ──────────────────────────────────── */
+      case "dial": {
+        const x0 = 62, x1 = 344, y0 = 232, y1 = 62;
+        const px = (tt) => x0 + (tt / 500) * (x1 - x0);
+        const py = (s) => y0 - s * (y0 - y1);
+        const path = Array.from({ length: 101 }, (_, i) => {
+          const tt = i * 5;
+          return `${i ? "L" : "M"}${px(tt).toFixed(1)} ${py(Math.sqrt(OD_ABAR[tt])).toFixed(1)}`;
+        }).join(" ");
+        const cx = px(Math.min(t, 500)), cy = py(sig);
+        return (
+          <g>
+            <text x={30} y={30} style={SK} fontSize="9" fill={P.ink}>how much of the scan survives to the tap — computed from the schedule</text>
+
+            <rect x={x0} y={y1} width={px(200) - x0} height={y0 - y1} fill={P.accentSoft} />
+            <text x={px(100)} y={y1 - 6} textAnchor="middle" style={SK} fontSize="8" fill={P.accent}>every selected timestep lives in here</text>
+
+            <line x1={x0} y1={y0} x2={x1} y2={y0} stroke={P.ink} strokeWidth="1.1" />
+            <line x1={x0} y1={y0} x2={x0} y2={y1} stroke={P.ink} strokeWidth="1.1" />
+            {[0, 100, 200, 300, 400, 500].map((tt) => (
+              <g key={tt}>
+                <line x1={px(tt)} y1={y0} x2={px(tt)} y2={y0 + 4} stroke={P.ink} strokeWidth="0.9" />
+                <text x={px(tt)} y={y0 + 15} textAnchor="middle" style={SK} fontSize="7.5" fill={P.sub}>{tt}</text>
+              </g>
+            ))}
+            <text x={(x0 + x1) / 2} y={y0 + 30} textAnchor="middle" style={SK} fontSize="8.5" fill={P.sub}>diffusion timestep t</text>
+            <text x={x0 - 6} y={y1 + 4} textAnchor="end" style={SK} fontSize="7.5" fill={P.sub}>1.0</text>
+            <text x={x0 - 6} y={y0} textAnchor="end" style={SK} fontSize="7.5" fill={P.sub}>0</text>
+            <text x={x0 - 40} y={(y0 + y1) / 2} textAnchor="middle" style={SK} fontSize="8" fill={P.sub} transform={`rotate(-90 ${x0 - 40} ${(y0 + y1) / 2})`}>√ᾱ_t — signal kept</text>
+
+            <path d={path} stroke={P.ink} strokeWidth="1.6" fill="none" />
+            <line x1={cx} y1={y0} x2={cx} y2={cy} stroke={P.accent} strokeWidth="1" strokeDasharray="3 3" />
+            <circle cx={cx} cy={cy} r="4" fill={P.accent} />
+            <text x={76} y={186} style={SK} fontSize="10" fill={P.accent}>t = {t} → √ᾱ = {sig.toFixed(3)}</text>
+            <text x={76} y={200} style={SK} fontSize="8.4" fill={P.sub}>{(100 * abar).toFixed(1)}% of the variance is still the scan</text>
+
+            <line x1={382} y1={54} x2={382} y2={264} stroke={P.line} strokeWidth="1" />
+            <text x={398} y={68} style={SK} fontSize="8.5" fill={P.ink}>what the sweep is worth — reported</text>
+            <text x={398} y={82} style={SK} fontSize="7.5" fill={P.sub}>macro-AUROC %, linear probe, Centers A+B+C</text>
+            {[["coronal", 85.59], ["sagittal", 85.04], ["axial", 84.71]].map(([n, v], i) => (
+              <g key={n}>
+                <text x={398} y={107 + i * 22} style={SK} fontSize="9" fill={P.sub}>{n}</text>
+                <rect x={452} y={98 + i * 22} width={(v - 84) * 45} height={11} fill={P.accentSoft} stroke={P.accent} strokeWidth="0.9" />
+                <text x={572} y={107 + i * 22} textAnchor="end" style={SK} fontSize="9" fill={P.ink}>{v.toFixed(2)}</text>
+              </g>
+            ))}
+            <text x={452} y={177} style={SK} fontSize="7.5" fill={P.sub}>bars measured from 84.0</text>
+            <text x={398} y={196} style={SK} fontSize="8.5" fill={P.ink}>peaks over t ∈ [0, 500] × three blocks.</text>
+            <text x={398} y={210} style={SK} fontSize="8.5" fill={P.ink}>the whole sweep moves it about 3 points —</text>
+            <text x={398} y={224} style={SK} fontSize="8.5" fill={P.ink}>a real dial, and a gentle one.</text>
+            <text x={398} y={246} style={SK} fontSize="8" fill={P.red}>the tap is at t = 30. there is almost nothing</text>
+            <text x={398} y={258} style={SK} fontSize="8" fill={P.red}>there to denoise — which is why it is safe.</text>
+          </g>
+        );
+      }
+
+      /* ── 4. MAE vs diffusion ──────────────────────────────────────── */
+      case "mae": {
+        const masking = op === "mask";
+        const keep = 16;
+        const hidden = new Set(OD_MASK_ORDER.slice(keep));
+        return (
+          <g>
+            <text x={30} y={28} style={SK} fontSize="9" fill={P.ink}>one image, two corruption operators, the same forcing function</text>
+
+            {odKnee(38, 44, 152, 152, masking ? 1 : abar, "op", true)}
+            {masking && (
+              <g>
+                {Array.from({ length: 64 }, (_, i) => {
+                  if (!hidden.has(i)) return null;
+                  const c = i % 8, r = Math.floor(i / 8);
+                  return <rect key={i} x={38 + c * 19} y={44 + r * 19} width={19} height={19} fill="#fff" stroke={P.line} strokeWidth="0.6" />;
+                })}
+              </g>
+            )}
+            <text x={114} y={212} textAnchor="middle" style={SK} fontSize="8.5" fill={P.ink}>
+              {masking ? "75% of the patches deleted outright" : `every voxel scaled by √ᾱ = ${sig.toFixed(3)}`}
+            </text>
+            <text x={114} y={226} textAnchor="middle" style={SK} fontSize="8.5" fill={P.sub}>
+              {masking ? "the surviving quarter is pixel-exact" : "nothing is deleted; everything is dimmed"}
+            </text>
+
+            <line x1={212} y1={44} x2={212} y2={232} stroke={P.line} strokeWidth="1" />
+
+            <text x={232} y={58} style={SK} fontSize="9.5" fill={P.accent}>{masking ? "masked autoencoder" : "denoising diffusion"}</text>
+            {[
+              masking
+                ? ["encoder sees", "the visible 25% of tokens — mask tokens never enter it"]
+                : ["encoder sees", "every voxel, attenuated — nothing is withheld"],
+              masking
+                ? ["target", "the raw pixels under the holes"]
+                : ["target", "ε itself — equivalently ∇ₓ log p(x), the score"],
+              masking
+                ? ["difficulty", "one number, fixed at 75% — chosen so interpolation cannot solve it"]
+                : ["difficulty", "continuous in t — the knob step 3 spends"],
+              masking
+                ? ["cost", "attention ∝ v² ⇒ a sixteenth of the full-image bill"]
+                : ["cost", "full-resolution passes, three backbones, one per plane"],
+            ].map(([k, v], i) => (
+              <g key={k}>
+                <text x={232} y={84 + i * 34} style={SK} fontSize="8" fill={P.sub}>{k}</text>
+                <text x={232} y={97 + i * 34} style={SK} fontSize="8.8" fill={P.ink}>{v}</text>
+              </g>
+            ))}
+
+            <rect x={30} y={246} width={540} height={40} fill={P.faint} stroke={P.red} strokeWidth="1" />
+            <text x={42} y={262} style={SK} fontSize="8.8" fill={P.red}>the gap: the discussion argues diffusion beats masked autoencoding as a medical representation learner — and no MAE</text>
+            <text x={42} y={276} style={SK} fontSize="8.8" fill={P.red}>baseline was ever run. every comparison is against a supervised model from scratch: 3D-UNet, UNETR, 3D-ResNet-18.</text>
+          </g>
+        );
+      }
+
+      /* ── 5. three planes, two fusions ─────────────────────────────── */
+      case "planes": {
+        const concat = fusion === "concat";
+        const planes = [["sagittal", 56], ["coronal", 122], ["axial", 188]];
+        return (
+          <g>
+            {planes.map(([n, y]) => (
+              <g key={n}>
+                {box(30, y, 74, 34, n, "3D diffusion", P.ink)}
+                {arrow(108, y + 17, 138, y + 17, P.sub)}
+                <rect x={142} y={y + 10} width={62} height={14} fill={P.accentSoft} stroke={P.accent} strokeWidth="0.9" />
+              </g>
+            ))}
+            <text x={173} y={44} textAnchor="middle" style={SK} fontSize="8" fill={P.sub}>per-plane embedding</text>
+
+            {concat ? (
+              <g>
+                {arrow(210, 73, 262, 118, P.accent)}
+                {arrow(210, 139, 262, 139, P.accent)}
+                {arrow(210, 205, 262, 160, P.accent)}
+                <rect x={268} y={126} width={186} height={16} fill={P.accentSoft} stroke={P.accent} strokeWidth="1.1" />
+                <line x1={330} y1={126} x2={330} y2={142} stroke={P.accent} strokeWidth="0.9" />
+                <line x1={392} y1={126} x2={392} y2={142} stroke={P.accent} strokeWidth="0.9" />
+                <text x={361} y={120} textAnchor="middle" style={SK} fontSize="8.5" fill={P.accent}>channel-wise concatenation — no parameters</text>
+                {arrow(458, 134, 490, 134, P.accent)}
+                {box(496, 120, 74, 28, "linear head", null, P.ink)}
+                <text x={268} y={176} style={SK} fontSize="9.5" fill={P.ink}>the highest macro-AUROC in the whole fusion ablation.</text>
+                <text x={268} y={192} style={SK} fontSize="9" fill={P.red}>and it cannot say which plane earned the call.</text>
+              </g>
+            ) : (
+              <g>
+                {planes.map(([n, y]) => (
+                  <g key={`c${n}`}>
+                    {arrow(210, y + 17, 246, y + 17, P.sub)}
+                    {box(250, y + 3, 56, 28, "clf", null, P.sub)}
+                  </g>
+                ))}
+                <text x={278} y={44} textAnchor="middle" style={SK} fontSize="8" fill={P.sub}>per-plane logits</text>
+                {box(324, 118, 62, 34, "gate", "per label", P.accent)}
+                {planes.map(([n, y]) => <g key={`g${n}`}>{arrow(310, y + 17, 322, 132, P.sub, true)}</g>)}
+                <path d="M390 128 C424 128 424 96 452 96" stroke={P.accent} strokeWidth="4" fill="none" opacity="0.5" />
+                <path d="M390 140 C424 140 424 172 452 172" stroke={P.accent} strokeWidth="4" fill="none" opacity="0.5" />
+                <text x={458} y={92} style={SK} fontSize="9" fill={P.ink}>cruciate (ACL, PCL)</text>
+                <text x={458} y={104} style={SK} fontSize="8" fill={P.accent}>weight leans sagittal</text>
+                <text x={458} y={176} style={SK} fontSize="9" fill={P.ink}>collateral (MCL, LCL)</text>
+                <text x={458} y={188} style={SK} fontSize="8" fill={P.accent}>weight leans coronal</text>
+                <text x={30} y={244} style={SK} fontSize="9.5" fill={P.ink}>second-best accuracy, and it tells you where the evidence came from — matching how the scan is read.</text>
+                <text x={30} y={259} style={SK} fontSize="8.5" fill={P.sub}>directions as reported from the fusion-weight Sankey diagrams; the weights themselves are per patient, so no fixed number is drawn here.</text>
+              </g>
+            )}
+
+            <line x1={30} y1={268} x2={570} y2={268} stroke={P.line} strokeWidth="1" />
+            <text x={30} y={284} style={SK} fontSize="8.5" fill={P.sub}>8 knee labels, Centers A–G, MRI-only —</text>
+            <text x={214} y={284} style={SK} fontSize="8.5" fill={P.ink}>ours fine-tuned <tspan fill={P.accent}>90.79</tspan> · linear probe <tspan fill={P.accent}>87.61</tspan> · 3D-ResNet-18 83.15 · 3D-UNet 82.63</text>
+          </g>
+        );
+      }
+
+      /* ── 6. what it never measures ────────────────────────────────── */
+      case "gap": {
+        return (
+          <g>
+            <text x={30} y={30} style={SK} fontSize="9.5" fill={P.ink}>what the evaluation can answer</text>
+            {["AUROC — does it rank positives above negatives", "AP · Dice — the same question, dense", "robustness across 1.5T / 3T and nine centres", "label efficiency down to 10% of the labels"].map((s, i) => (
+              <text key={i} x={30} y={52 + i * 17} style={SK} fontSize="8.6" fill={P.sub}>· {s}</text>
+            ))}
+            <text x={30} y={140} style={SK} fontSize="9.5" fill={P.red}>what it is silent on</text>
+            {["calibration — is the printed probability a probability", "OOD — would it know an unfamiliar scan when it saw one", "uncertainty — anything at all to hedge with", "so: when does it fail quietly, and could you tell"].map((s, i) => (
+              <text key={i} x={30} y={162 + i * 17} style={SK} fontSize="8.6" fill={P.red}>· {s}</text>
+            ))}
+            <text x={30} y={252} style={SK} fontSize="8.3" fill={P.sub}>knee → ankle transfers better than knee → shoulder. read one way that is</text>
+            <text x={30} y={264} style={SK} fontSize="8.3" fill={P.sub}>anatomy; read another, nothing on board would have flagged the distance.</text>
+
+            <line x1={308} y1={20} x2={308} y2={286} stroke={P.line} strokeWidth="1" />
+
+            <text x={326} y={30} style={SK} fontSize="9.5" fill={P.accent}>the experiment that argues for itself</text>
+            {box(326, 44, 88, 26, "diffusion", null, P.ink)}
+            {box(326, 78, 88, 26, "MAE", null, P.ink)}
+            {box(326, 112, 88, 26, "JEPA", null, P.sub)}
+            {[57, 91, 125].map((y, i) => <g key={i}>{arrow(418, y, 448, 104, P.sub, i === 2)}</g>)}
+            {box(452, 90, 112, 28, "one encoder", "same bottleneck tap", P.accent)}
+            {arrow(508, 122, 508, 146, P.accent)}
+            {box(452, 150, 112, 26, "frozen probe", null, P.accent)}
+            <text x={326} y={162} style={SK} fontSize="8" fill={P.sub}>JEPA optional —</text>
+            <text x={326} y={173} style={SK} fontSize="8" fill={P.sub}>the first two are the claim</text>
+
+            <text x={326} y={200} style={SK} fontSize="8.6" fill={P.ink}>held fixed: backbone · tap site · compute · protocol</text>
+            <text x={326} y={214} style={SK} fontSize="8.6" fill={P.ink}>varied: the objective — and, for diffusion, t</text>
+            <text x={326} y={228} style={SK} fontSize="8.6" fill={P.ink}>headline ablation: the timestep sweep of step 3</text>
+            <rect x={326} y={240} width={244} height={30} fill={P.faint} stroke={P.line} />
+            <text x={336} y={254} style={SK} fontSize="8.5" fill={P.red}>written, not run — no numbers in this panel, and</text>
+            <text x={336} y={265} style={SK} fontSize="8.5" fill={P.red}>none until the runs exist.</text>
+          </g>
+        );
+      }
+      default: return null;
+    }
+  })();
+
+  const navBtn = { ...SK, fontSize: "0.8rem", padding: "2px 10px", border: `1px solid ${P.line}`, background: P.paper2, color: P.ink, cursor: "pointer" };
+  const Nst = OD_STEPS.length;
+  const sliderRow = { display: "flex", gap: 10, marginBottom: 10, flexWrap: "wrap", alignItems: "center" };
+  const lbl = { ...SK, fontSize: "0.62rem", color: P.sub };
+  const val = { ...SK, fontSize: "0.66rem", color: P.ink, minWidth: 66 };
+  const toggle = (on) => ({ ...SK, fontSize: "0.68rem", padding: "3px 11px", cursor: "pointer", border: `1px solid ${on ? P.accent : P.line}`, background: on ? P.accentSoft : P.paper2, color: on ? P.accent : P.sub });
+
+  return (
+    <div>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 10, marginBottom: 10 }}>
+        <span style={{ ...SK, fontSize: "0.6rem", color: P.sub, textTransform: "uppercase", letterSpacing: "0.08em" }}>Lan, Xu, Yuan et al. 2026 · arXiv:2602.20752 · a denoiser read as a backbone</span>
+        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+          <span style={{ ...SK, fontSize: "0.62rem", color: P.sub, textTransform: "uppercase", letterSpacing: "0.06em" }}>step {step + 1} / {Nst}</span>
+          <button onClick={() => setStep((step + Nst - 1) % Nst)} aria-label="Previous step" style={navBtn}>←</button>
+          <button onClick={() => setStep((step + 1) % Nst)} aria-label="Next step" style={navBtn}>→</button>
+        </div>
+      </div>
+
+      {(sk === "pretext" || sk === "dial" || (sk === "mae" && op === "noise")) && (
+        <div style={sliderRow}>
+          <span style={lbl}>diffusion timestep t:</span>
+          <input type="range" min={0} max={OD_TS.length - 1} step={1} value={ti} onChange={(e) => setTi(+e.target.value)} aria-label="Diffusion timestep" style={{ accentColor: P.accent, width: 170 }} />
+          <span style={val}>t = {t}</span>
+          <span style={{ ...SK, fontSize: "0.66rem", color: P.sub }}>
+            {t === 0 ? "no corruption — nothing to predict" : t === 30 ? "the paper's default tap" : t <= 200 ? "inside the operating window" : "past anything they selected"}
+          </span>
+        </div>
+      )}
+
+      {sk === "tap" && (
+        <div style={sliderRow}>
+          <span style={lbl}>take from the same weights:</span>
+          {[["extract", "extract a feature"], ["generate", "generate an image"]].map(([k, label]) => (
+            <button key={k} onClick={() => setMode(k)} aria-pressed={mode === k} style={toggle(mode === k)}>{label}</button>
+          ))}
+        </div>
+      )}
+
+      {sk === "mae" && (
+        <div style={sliderRow}>
+          <span style={lbl}>corruption operator:</span>
+          {[["mask", "delete 75% of patches"], ["noise", "attenuate everything by √ᾱ"]].map(([k, label]) => (
+            <button key={k} onClick={() => setOp(k)} aria-pressed={op === k} style={toggle(op === k)}>{label}</button>
+          ))}
+        </div>
+      )}
+
+      {sk === "planes" && (
+        <div style={sliderRow}>
+          <span style={lbl}>fuse the three planes by:</span>
+          {[["concat", "simple concatenation"], ["mpae", "MPAE gating"]].map(([k, label]) => (
+            <button key={k} onClick={() => setFusion(k)} aria-pressed={fusion === k} style={toggle(fusion === k)}>{label}</button>
+          ))}
+          <span style={{ ...SK, fontSize: "0.66rem", color: P.sub }}>{fusion === "concat" ? "best number, no attribution" : "second-best number, and it explains itself"}</span>
+        </div>
+      )}
+
+      <div style={{ border: `1px solid ${P.line}`, borderTop: `2px solid ${P.ink}`, background: P.paper2 }}>
+        <div style={{ background: "#fff" }}>
+          <div style={{ aspectRatio: "600 / 300" }}>
+            <svg viewBox="0 0 600 300" width="100%" height="100%" role="img" aria-label={`OrthoDiffusion walkthrough step ${step + 1}: ${sc.label}`} style={{ display: "block" }} strokeLinecap="round" strokeLinejoin="round">
+              {body}
+            </svg>
+          </div>
+        </div>
+        <div style={{ padding: "0.9rem 1.1rem 1rem" }}>
+          <div style={{ ...DISP, fontWeight: 600, fontSize: "1rem", color: P.ink, marginBottom: 4 }}>{sc.title}</div>
+          <p style={{ ...BODY, fontSize: "0.88rem", color: P.sub, lineHeight: 1.65, textWrap: "pretty", margin: 0 }}>
+            <span style={{ ...SK, fontSize: "0.6rem", color: P.accent, textTransform: "uppercase", letterSpacing: "0.08em", marginRight: 6 }}>step {step + 1}</span>
+            {sc.body}
+          </p>
+          <div style={{ ...SK, fontSize: "0.66rem", color: P.ink, marginTop: 9, background: P.faint, padding: "6px 9px", display: "inline-block" }}>{sc.math}</div>
+        </div>
+      </div>
+
+      <div style={{ display: "flex", gap: 6, marginTop: 10, flexWrap: "wrap" }}>
+        {OD_STEPS.map((s, j) => (
+          <button key={s.key} onClick={() => setStep(j)} style={{ ...SK, fontSize: "0.62rem", padding: "4px 9px", cursor: "pointer", border: `1px solid ${j === step ? P.accent : P.line}`, background: j === step ? P.accentSoft : "#fff", color: j === step ? P.accent : P.sub }}>{j + 1}. {s.label}</button>
+        ))}
+      </div>
+    </div>
+  );
+}

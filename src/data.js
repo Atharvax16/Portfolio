@@ -216,6 +216,8 @@ export const TRACKS = [
     { name: "Rule-based labeler + NegEx negation scoping", detail: "Regex per finding across nine languages, scored against ground truth — macro-F1 0.418, macro-AUC 0.605", state: "run" },
     { name: "Sharded DICOM → memmap converter", detail: "IPP-projected slice ordering, MONOCHROME1 inversion, per-volume percentile normalisation, flat blob + parquet offset index", state: "in progress" },
     { name: "MRNet — study notes + Lab sketch", detail: "The slice → series → study ladder pulled apart, and the assumption hiding inside max-pooling — rebuilt as an interactive sketch (§7)", state: "written" },
+    { name: "OrthoDiffusion — study notes + Lab sketch", detail: "Denoising as the pretext task, the bottleneck tap, and the MAE comparison the paper asserts without running — rebuilt as an interactive sketch (§7)", state: "written" },
+    { name: "SSL objectives on medical images — controlled comparison", detail: "One encoder, one tap site, diffusion vs MAE vs JEPA under a frozen probe, with the diffusion timestep sweep as the headline ablation", state: "written" },
     { name: "LLM batch extraction over 4,349 reports", detail: "Structured-output batch pass, validated against the regex floor before the full run is paid for", state: "queued" },
   ],
   tags: ["weak supervision", "multimodal", "medical imaging", "label scarcity", "multilingual NLP"],
@@ -382,6 +384,16 @@ export const READING_LOG = [
     link: "https://arxiv.org/abs/2604.02327",
     hasNotebook: false,
     reproduced: "Rebuilt the mechanism at small scale (RefCOCOg, 4.5k images, 3k steps): steering emerges — IoU 0.129 → 0.294 — but the wrong-prompt check doesn't collapse, so at this scale it's reading the image, not the text. Walk the mechanism in §7, Architectures.",
+  },
+  {
+    paper: "OrthoDiffusion: A Generalizable Multi-Task Diffusion Foundation Model for Musculoskeletal MRI Interpretation",
+    authors: "Lan, Xu, Yuan et al.",
+    year: "2026",
+    area: "Medical imaging",
+    takeaway: "Read for the mechanism, and it turned out to be the masked autoencoder's argument with one operator swapped. Three orientation-specific 3D diffusion models are pretrained by self-supervised denoising on 15,948 unlabelled knee MRIs, on the premise that to name the noise you added you have to learn the anatomy underneath it — MAE deletes 75% of the patches to force the same thing, diffusion attenuates everything by a continuous amount instead. Two corrections I had to make to my own reading. There is no architectural trick that produces a feature: a diagnosis is one forward pass read at the bottleneck, decoder output discarded unread, so nothing the model could hallucinate ever reaches the clinical path — generation and extraction are two taps on the same weights. And “no annotations” never meant “no training”; it meant the target was free. What I did not expect is where the tap sits. The default is block mid₂ at t = 30, and on the standard schedule that leaves 98.8% of the variance still being the scan — the denoiser is queried where there is almost nothing to denoise, which is exactly why the prior sharpens a present signal instead of fabricating an absent one. Push t up and the reported AUROC falls away, which is the same trade my dissertation measured from the other side. Two honest gaps: simple concatenation beats their own fancier fusion on accuracy and cannot say which plane earned the call, and the central claim that diffusion beats masked autoencoding is asserted with no MAE baseline anywhere in the paper — every comparison is against a supervised model trained from scratch.",
+    link: "https://arxiv.org/abs/2602.20752",
+    hasNotebook: false,
+    reproduced: "Rebuilt as an interactive sketch in §7 — the noise schedule on screen is computed, not quoted. The comparison the paper skipped is designed and written as a controlled notebook (one encoder, one tap site, diffusion vs MAE vs JEPA, with the timestep sweep as the headline ablation) and has not been run, so there are no numbers to report yet.",
   },
 ];
 
@@ -1106,6 +1118,13 @@ export const ARCHITECTURES = [
     note: "predict in latent space, not pixels · and don't collapse",
     steps: "mask → predict the embedding → the degenerate solution → EMA · negatives · VICReg",
     intro: "Reconstructing pixels spends capacity on detail nobody wants — the grain of the carpet, the noise in the sky. JEPA moves the prediction *into embedding space*: mask a few blocks of an image and ask a predictor to guess the **representation** of what was hidden, never the pixels themselves. Which immediately opens a trapdoor. The target is a representation the network also produces, so the network gets a vote on how hard its own exam is — and the cheapest way to be perfectly predictable is to **stop representing anything at all**. This sketch draws the architecture first, then spends the rest of its steps on that failure and the three genuinely different ways the field fights it: JEPA's own EMA-and-stop-gradient asymmetry, the contrastive answer, and the one that regularises the *statistics* instead.",
+  },
+  {
+    key: "orthodiffusion", name: "OrthoDiffusion — a denoiser read as a backbone", short: "OrthoDiffusion", family: "Self-supervised",
+    status: "live", component: "OrthoDiffusionWalkthrough", year: 2026,
+    note: "denoise to learn anatomy · tap the bottleneck · t as an abstraction dial",
+    steps: "the pretext task → the tap → t as an abstraction dial → the MAE comparison → three planes, two fusions → what it never measures",
+    intro: "Fifteen thousand knee MRIs with nothing written about them. The trick is to manufacture a label — add a known Gaussian, ask the network to name it — and the claim is that **to denoise well you have to learn anatomy**, because past a certain noise level the only way to guess the static is to guess the knee underneath it. That is the masked autoencoder's argument with one operator swapped: MAE deletes 75% of the patches, diffusion attenuates *everything* by a continuous amount. Two things in this sketch are worth the clicks. The first is that nothing is ever generated — a diagnosis comes from **one forward pass, read at the bottleneck**, with the decoder's output discarded unread, which is what keeps a hallucinated reconstruction out of the clinical path. The second is measured on the left of step 3: the paper's default tap sits at t = 30, where the schedule has removed almost nothing — *98.8% of the variance is still the scan*. The backbone is being queried where there is barely anything to denoise, and that is precisely why the features stay anchored to the image rather than to the prior. The last two steps are the honest ones: the fusion that scores highest is the one that cannot tell you which plane earned the call, and the MAE-versus-diffusion claim the whole paper leans on is **asserted, never run**.",
   },
   {
     key: "steervit", name: "SteerViT", short: "SteerViT", family: "Multimodal",
