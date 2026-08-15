@@ -5814,8 +5814,8 @@ const OD_STEPS = [
     key: "gap",
     label: "what it never measures",
     title: "Every number here is a ranking. None of them is a trust.",
-    body: "AUROC and Dice, across every table. Both are ranking metrics: they tell you the model orders positives above negatives, and they are silent on whether the probability it prints means anything, on whether it knows when a scan is unlike anything it trained on, and on what it does at the moment it is wrong. There is no calibration curve, no OOD detection, no uncertainty of any kind — so 'when does this silently fail' is not a question the paper's evaluation can be asked. The transfer story has the same shape: knee → ankle transfers better than knee → shoulder, which the paper reads as anatomical similarity and which is equally a statement that nothing on board would have flagged the shoulder as further away. The panel on the right is the experiment those two gaps argue for, and it is deliberately small enough to actually run: one convolutional encoder, three self-supervised objectives hung off it — diffusion, MAE, and JEPA — read at the *same* bottleneck under the *same* frozen probe, so the comparison the paper asserted becomes one you can measure without the ViT-versus-UNet confound that wrecks the casual version. The headline ablation is the timestep sweep, reproducing the rise-and-fall of step 3 on a dataset that fits on a laptop. Status is written and not yet run, which is why there are no numbers in that panel and will not be until there are.",
-    math: "held fixed: encoder · tap site · compute · probe   ·   varied: the objective, and t   ·   status: written, not run",
+    body: "AUROC and Dice, across every table. Both are ranking metrics: they tell you the model orders positives above negatives, and they are silent on whether the probability it prints means anything, on whether it knows when a scan is unlike anything it trained on, and on what it does at the moment it is wrong. There is no calibration curve, no OOD detection, no uncertainty of any kind — so 'when does this silently fail' is not a question the paper's evaluation can be asked. The transfer story has the same shape: knee → ankle transfers better than knee → shoulder, which the paper reads as anatomical similarity and which is equally a statement that nothing on board would have flagged the shoulder as further away. The panel on the right is the experiment the missing MAE baseline argues for, and it has now been run: one convolutional encoder — same class, same config, parameter counts asserted identical — with diffusion, MAE and JEPA hung off it, the same budget each, read at the *same* bottleneck under the *same* frozen probe, so the comparison the paper asserted gets measured without the ViT-versus-UNet confound that wrecks the casual version. On PneumoniaMNIST over three seeds the paper's direction holds under the probe, 0.971 against 0.960 — but an *untrained* encoder scores 0.937, so the whole benefit of pretraining is three points, and fine-tuning every arm collapses that eleven-thousandth gap to two. The reproduced rise-and-fall timestep curve, and the rest of it, is the next bench along.",
+    math: "held fixed: encoder · tap site · compute · probe   ·   varied: the objective, and t   ·   run: probe 0.971 / 0.960 / 0.937",
   },
 ];
 
@@ -6153,10 +6153,11 @@ export function OrthoDiffusionWalkthrough() {
 
             <text x={326} y={200} style={SK} fontSize="8.6" fill={P.ink}>held fixed: backbone · tap site · compute · protocol</text>
             <text x={326} y={214} style={SK} fontSize="8.6" fill={P.ink}>varied: the objective — and, for diffusion, t</text>
-            <text x={326} y={228} style={SK} fontSize="8.6" fill={P.ink}>headline ablation: the timestep sweep of step 3</text>
-            <rect x={326} y={240} width={244} height={30} fill={P.faint} stroke={P.line} />
-            <text x={336} y={254} style={SK} fontSize="8.5" fill={P.red}>written, not run — no numbers in this panel, and</text>
-            <text x={336} y={265} style={SK} fontSize="8.5" fill={P.red}>none until the runs exist.</text>
+            <rect x={326} y={224} width={244} height={62} fill={P.faint} stroke={P.accent} />
+            <text x={336} y={239} style={SK} fontSize="8.5" fill={P.accent}>run. frozen probe, test AUROC, 3 seeds:</text>
+            <text x={336} y={253} style={SK} fontSize="9" fill={P.ink}>diffusion <tspan fill={P.accent}>0.971</tspan> · MAE <tspan fill={P.accent}>0.960</tspan> · JEPA 0.928</text>
+            <text x={336} y={266} style={SK} fontSize="8.5" fill={P.ink}>untrained encoder: <tspan fill={P.red}>0.937</tspan> — and fine-tuning</text>
+            <text x={336} y={278} style={SK} fontSize="8.5" fill={P.ink}>closes the gap to 0.002. → the SSL comparison bench</text>
           </g>
         );
       }
@@ -6241,6 +6242,459 @@ export function OrthoDiffusionWalkthrough() {
 
       <div style={{ display: "flex", gap: 6, marginTop: 10, flexWrap: "wrap" }}>
         {OD_STEPS.map((s, j) => (
+          <button key={s.key} onClick={() => setStep(j)} style={{ ...SK, fontSize: "0.62rem", padding: "4px 9px", cursor: "pointer", border: `1px solid ${j === step ? P.accent : P.line}`, background: j === step ? P.accentSoft : "#fff", color: j === step ? P.accent : P.sub }}>{j + 1}. {s.label}</button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/* ════════════════════════════════════════
+   SSL COMPARISON WALKTHROUGH — the baseline OrthoDiffusion never ran.
+
+   One encoder, three self-supervised objectives, one extraction site, one
+   probe recipe. Every number drawn here comes from results/results.csv of
+   the notebook run (PneumoniaMNIST 64px, official splits, seeds [0,1,2],
+   4000 pretraining steps at batch 128 for every arm) — nothing is quoted
+   from a paper and nothing is illustrative.
+
+   The three findings the sketch is built around:
+     · under a frozen probe diffusion beats MAE, 0.971 vs 0.960 test AUROC;
+     · JEPA at 0.928 lands *below* an untrained encoder at 0.937;
+     · fine-tuning collapses the spread to about a point, which is why the
+       probe ranking is not the ranking.
+   ════════════════════════════════════════ */
+
+/* Test AUROC, mean ± std over seeds [0, 1, 2]. `site` is the val-selected
+   extraction point; probe = frozen encoder, ft = fine-tuned. */
+const SSL_ARMS = [
+  { arm: "diffusion", site: "t = 100 · mid2", probe: 0.971, ps: 0.002, ft: 0.977, fs: 0.004, col: "accent" },
+  { arm: "MAE", site: "t = 0", probe: 0.960, ps: 0.002, ft: 0.975, fs: 0.002, col: "ink" },
+  { arm: "JEPA", site: "t = 0", probe: 0.928, ps: 0.003, ft: 0.966, fs: 0.007, col: "red" },
+  { arm: "random-init", site: "t = 0", probe: 0.937, ps: 0.011, ft: null, fs: null, col: "sub" },
+  { arm: "supervised-100%", site: "—", probe: null, ps: null, ft: 0.969, fs: 0.004, col: "sub" },
+  { arm: "supervised-10%", site: "—", probe: null, ps: null, ft: 0.952, fs: 0.003, col: "sub" },
+];
+
+/* The M5 sweep: diffusion linear probe at each extraction timestep, for both
+   mid blocks. val is saturated; test is where the curve actually lives. */
+const SSL_SWEEP = [
+  { t: 10, v2: 0.993, e1: 0.970, e2: 0.968, s2: 0.002 },
+  { t: 30, v2: 0.994, e1: 0.971, e2: 0.972, s2: 0.002 },
+  { t: 50, v2: 0.994, e1: 0.971, e2: 0.972, s2: 0.001 },
+  { t: 100, v2: 0.994, e1: 0.968, e2: 0.971, s2: 0.002 },
+  { t: 150, v2: 0.994, e1: 0.965, e2: 0.968, s2: 0.004 },
+  { t: 200, v2: 0.994, e1: 0.960, e2: 0.965, s2: 0.006 },
+  { t: 300, v2: 0.993, e1: 0.952, e2: 0.957, s2: 0.007 },
+  { t: 500, v2: 0.987, e1: 0.929, e2: 0.931, s2: 0.007 },
+];
+
+const SSL_STEPS = [
+  {
+    key: "trunk",
+    label: "one trunk",
+    title: "The comparison is only worth running if the backbone is byte-identical",
+    body: "Almost every casual MAE-versus-diffusion claim is confounded, because the two objectives arrive attached to different backbones — a ViT for one, a U-Net for the other — and what gets measured is the architecture. So the first thing this build fixes is the trunk: a small convolutional U-Net encoder, 1→32 channels at 64², three downsamples to 256 channels at 8², two mid blocks, and every arm calls the same constructor with the same config. A milestone cell asserts it, and not just the parameter count — the full (name, shape) signature has to match, so a future edit that quietly gives one arm a wider stage fails loudly instead of producing a confounded table. One detail earns its keep. The sinusoidal timestep embedding, FiLM-injected into every residual block, is present in *all* arms, not only the diffusion one; MAE and JEPA simply pass t = 0. Carrying that dead weight is what keeps the counts identical at 4,058,656 — the alternative would have handed diffusion an extra 130k parameters and made the headline difference unreadable. Toggle the arm and watch what changes: not the trunk, only what is bolted onto it.",
+    math: "build_encoder(CFG) — one class, one config, one (name, shape) signature   ·   4,058,656 params in every arm",
+  },
+  {
+    key: "protocol",
+    label: "one tap, one probe",
+    title: "Everything downstream is shared too, including the noise",
+    body: "The second confound to kill is the evaluation. Every arm's feature comes out of a single function: one forward pass, read the named block, global-average-pool — the same extraction site OrthoDiffusion uses, and the only thing that differs between arms is the timestep handed to the trunk. Diffusion gets a genuinely noised input at its selected t; everyone else gets the clean image at t = 0. Three guards make the result mean something. Pretraining runs inside a label-blind context where touching a labelled dataset *raises*, so 'self-supervised' is enforced in code rather than by good intentions. The noise used at feature-extraction time comes from a fixed generator, so the same image is corrupted identically in every arm, every seed and every sweep point — the curve in step 4 measures the representation, not which draw of noise got lucky. And the probe and fine-tune recipes are read from config with no per-arm branch, so there is nowhere to hand-tune one objective's hyperparameters. Best epoch is chosen on validation; the test split is touched once, at the end.",
+    math: "extract(x, t, block, GAP) → standardise → linear head, 60 epochs   ·   select on val · test read once",
+  },
+  {
+    key: "probe",
+    label: "the probe result",
+    title: "Diffusion wins the frozen probe — and JEPA lands under an untrained encoder",
+    body: "This is the number OrthoDiffusion asserted and never measured, now measured: with the backbone and budget held fixed, the denoising objective produces a more linearly separable representation than masked reconstruction, 0.971 against 0.960 test AUROC, a gap of about eleven thousandths that sits well clear of the seed spread of ±0.002. So the paper's claim survives its first controlled test — at this scale, on this dataset, under this protocol. The bar that matters more is the grey one. An *untrained* encoder, identical in every respect except that it never saw a gradient, probes at 0.937. That is the control almost nobody runs, and it reframes both winners: diffusion's entire advantage over random initialisation is 0.034 AUROC, and MAE's is 0.023. A convolutional prior on 64×64 chest films is doing a great deal of the work before any objective is chosen. And then JEPA, at 0.928 ± 0.003, is *below* the random control — reproducibly, across three seeds. That is not a bug I can wave away, and the honest reading is the one from the literature: latent-prediction methods are not trained to make features linearly separable, and at 4000 steps with an EMA target the collapse pressure has had every opportunity and the anti-collapse machinery has barely started working.",
+    math: "test AUROC, frozen encoder, mean ± std over seeds [0, 1, 2]   ·   random-init control = 0.937 ± 0.011",
+  },
+  {
+    key: "sweep",
+    label: "the timestep curve",
+    title: "The rise-then-fall reproduces — and the fall is the half that is unambiguous",
+    body: "Sweeping the extraction timestep with everything else nailed down gives the curve OrthoDiffusion reports and never explains, on a different dataset and a hundredth of the compute. Read it honestly in two halves. The rise is marginal: 0.970 at t = 10, peaking at 0.972 around t = 30–50, which is a couple of thousandths against a seed spread of one or two — real in that both blocks show it, too small to lean on. The fall is not marginal at all. Past t ≈ 100 the curve drops monotonically to 0.931 at t = 500, and the two reference lines say what that costs: diffusion's advantage over MAE survives only while t stays under roughly 200, and by t = 500 the features are no better than the untrained encoder's. Extracting at high noise does not buy abstraction, it buys erasure — which is the prior-versus-likelihood trade with a number on it, and the reason every timestep the paper selected is small. There is also a methodological gotcha worth keeping. Validation AUROC is saturated — 0.993 to 0.994 across the whole low-t range — so val cannot distinguish t = 30 from t = 100, and selection duly picked t = 100 while test peaked at t = 50. The selection rule is honest; the validation set is just too easy to exercise it.",
+    math: "diffusion probe, block mid2, t swept over {10 … 500}   ·   val flat at 0.994 → selection is nearly arbitrary below t = 200",
+  },
+  {
+    key: "finetune",
+    label: "fine-tuning closes it",
+    title: "The probe ranking is not the ranking",
+    body: "Unfreeze the encoder, give every arm the identical fine-tune recipe on clean inputs, and the picture the probe painted mostly dissolves. Diffusion goes 0.971 → 0.977, MAE goes 0.960 → 0.975, and the eleven-thousandth gap becomes two — inside the seed noise. JEPA gains the most of anyone, 0.928 → 0.966, which is the clearest evidence that its problem was linear separability rather than a failure to learn anything: as an *initialisation* it was fine all along. This is exactly the split the literature describes — linear probing flatters objectives whose loss shapes a separable space, full fine-tuning does not — and it is why a paper that reports only one of the two protocols can support almost any conclusion it likes. The supervised bars are the last honest note. Trained from scratch on all the labels, the same encoder reaches 0.969, so every self-supervised arm's fine-tuned advantage over plain supervision is at most eight thousandths. Where pretraining does earn its keep is scarcity: supervised on 10% of the labels drops to 0.952, and all three pretrained arms beat that comfortably. That is the label-efficiency claim, and it is the one part of the story this run supports cleanly.",
+    math: "same recipe, 15 epochs, only the initialisation differs   ·   supervised-100% = 0.969 · supervised-10% = 0.952",
+  },
+  {
+    key: "limits",
+    label: "what it settles",
+    title: "It closes one gap and is honest about how small it is",
+    body: "What this run does settle: the comparison OrthoDiffusion asserted is runnable, and run cleanly it comes out the way the paper claimed under a frozen probe — with the caveat that the paper's own protocol is fine-tuning, where the gap all but vanishes. The timestep curve is real and reproduces on completely different anatomy, which is decent evidence that it is a property of the objective rather than of knees. And the random-init control, which neither the paper nor most of the literature bothers to report, turns out to be the most informative bar on the chart. What it does not settle is most of everything else. One dataset, binary, and easy enough that every arm sits above 0.92 with the ceiling at 0.98 — differences at that altitude are fragile. Three seeds, 4000 steps, a 4M-parameter encoder, and a laptop: this is two to three orders of magnitude below the regime where scaling arguments about MAE start to apply. JEPA is under-trained rather than fairly represented at this budget. And the whole thing is a single 2D slice of a question the paper asks in 3D. It is a floor, not a benchmark — the same status the regex labeler holds in §2, and stated the same way.",
+    math: "PneumoniaMNIST 64px · 3 seeds · 4000 steps @ batch 128 · 4.06M params · one binary task near ceiling",
+  },
+];
+
+export function SslCompareWalkthrough() {
+  const [step, setStep] = useState(0);
+  const [arm, setArm] = useState("diffusion");
+  const [swi, setSwi] = useState(2);
+  const [proto, setProto] = useState("probe");
+
+  const sc = SSL_STEPS[step];
+  const sk = sc.key;
+  const sw = SSL_SWEEP[swi];
+  const COL = { accent: P.accent, ink: P.ink, red: P.red, sub: P.sub };
+
+  const arrow = (x1, y1, x2, y2, col, dash, wdt) => {
+    const a = Math.atan2(y2 - y1, x2 - x1);
+    const w = 4.2, len = 7.5;
+    return (
+      <g stroke={col || P.accent} strokeWidth={wdt || 1.3} fill="none">
+        <path d={`M${x1} ${y1} L${x2} ${y2}`} strokeDasharray={dash ? "4 3" : "none"} />
+        <path d={`M${x2 - len * Math.cos(a) - w * Math.sin(a)} ${y2 - len * Math.sin(a) + w * Math.cos(a)} L${x2} ${y2} L${x2 - len * Math.cos(a) + w * Math.sin(a)} ${y2 - len * Math.sin(a) - w * Math.cos(a)}`} />
+      </g>
+    );
+  };
+  const box = (x, y, w, h, label, sub, col, faded) => (
+    <g opacity={faded ? 0.25 : 1}>
+      <rect x={x} y={y} width={w} height={h} fill={P.paper2} stroke={col || P.ink} strokeWidth="1.2" />
+      <text x={x + w / 2} y={y + (sub ? h / 2 - 1 : h / 2 + 4)} textAnchor="middle" style={SK} fontSize="9.5" fill={col || P.ink}>{label}</text>
+      {sub && <text x={x + w / 2} y={y + h / 2 + 11} textAnchor="middle" style={SK} fontSize="7.4" fill={P.sub}>{sub}</text>}
+    </g>
+  );
+
+  const body = (() => {
+    switch (sk) {
+      /* ── 1. the shared trunk ──────────────────────────────────────── */
+      case "trunk": {
+        const stages = [
+          ["stem", "1→32 @64²", 56],
+          ["stage 0", "32 @64²", 56],
+          ["stage 1", "64 @32²", 46],
+          ["stage 2", "128 @16²", 36],
+          ["stage 3", "256 @8²", 28],
+        ];
+        const heads = {
+          diffusion: { bolt: "conv decoder + skips", loss: "L = ‖ε − ε_θ(x_t, t)‖²", note: "cosine schedule, T = 1000, ε-prediction — the trunk's t-embedding is finally used for real" },
+          mae: { bolt: "light decoder, no skips", loss: "L = ‖x − x̂‖² on masked patches", note: "SimMIM-style: 8×8 patches, 60% masked, rebuilt from the bottleneck with no skip shortcut" },
+          jepa: { bolt: "EMA target copy + predictor", loss: "L = ‖pred(z_ctx) − sg z_tgt‖²", note: "target encoder is an EMA copy at 0.996 — same class, same config, no gradient" },
+        };
+        const h = heads[arm];
+        let x = 34;
+        return (
+          <g>
+            <text x={30} y={28} style={SK} fontSize="9" fill={P.sub}>the trunk — identical in all three arms, asserted by (name, shape) signature</text>
+            {stages.map(([n, c, hh], i) => {
+              const bx = x; x += 62;
+              return (
+                <g key={n}>
+                  <rect x={bx} y={92 - hh / 2} width={50} height={hh} fill={P.paper2} stroke={P.ink} strokeWidth="1.1" />
+                  <text x={bx + 25} y={95} textAnchor="middle" style={SK} fontSize="8" fill={P.ink}>{n}</text>
+                  <text x={bx + 25} y={92 + hh / 2 + 12} textAnchor="middle" style={SK} fontSize="7.4" fill={P.sub}>{c}</text>
+                  {i < stages.length - 1 && arrow(bx + 52, 92, bx + 60, 92, P.sub, false, 1)}
+                </g>
+              );
+            })}
+            {box(344, 78, 44, 28, "mid1", null, P.sub)}
+            {box(394, 78, 52, 28, "mid2", null, P.accent)}
+            {arrow(336, 92, 342, 92, P.sub, false, 1)}
+            {arrow(390, 92, 392, 92, P.sub, false, 1)}
+            <text x={420} y={122} textAnchor="middle" style={SK} fontSize="7.6" fill={P.accent}>bottleneck — the tap</text>
+
+            <rect x={34} y={158} width={112} height={26} fill={P.faint} stroke={P.line} strokeWidth="1" />
+            <text x={90} y={175} textAnchor="middle" style={SK} fontSize="8.4" fill={P.ink}>t → sinusoidal → MLP</text>
+            <g stroke={P.line} strokeWidth="0.9" strokeDasharray="3 3">
+              {[59, 121, 183, 245, 307, 366, 420].map((cx2, i) => <line key={i} x1={90} y1={158} x2={cx2} y2={124} />)}
+            </g>
+            <text x={156} y={175} style={SK} fontSize="8" fill={P.sub}>FiLM into every block — carried by <tspan fill={P.ink}>all</tspan> arms (t = 0 when unused), which is what keeps the counts identical</text>
+
+            {arrow(446, 92, 478, 92, COL[arm === "diffusion" ? "accent" : arm === "mae" ? "ink" : "red"])}
+            <rect x={482} y={70} width={92} height={44} fill={P.paper2} stroke={COL[arm === "diffusion" ? "accent" : arm === "mae" ? "ink" : "red"]} strokeWidth="1.2" />
+            <text x={528} y={88} textAnchor="middle" style={SK} fontSize="8.4" fill={P.ink}>{h.bolt.split(" ")[0]}</text>
+            <text x={528} y={101} textAnchor="middle" style={SK} fontSize="7.4" fill={P.sub}>{h.bolt.split(" ").slice(1).join(" ")}</text>
+
+            <text x={30} y={212} style={SK} fontSize="9.5" fill={P.accent}>{h.loss}</text>
+            <text x={30} y={228} style={SK} fontSize="8.4" fill={P.sub}>{h.note}</text>
+
+            <line x1={30} y1={246} x2={570} y2={246} stroke={P.line} strokeWidth="1" />
+            <text x={30} y={262} style={SK} fontSize="8.4" fill={P.ink}>4,058,656 parameters in every arm · AdamW 2e-4 · 200 warmup then cosine · grad clip 1.0</text>
+            <text x={30} y={276} style={SK} fontSize="8.4" fill={P.ink}>4000 steps at batch 128 — the same budget for each, with no per-arm branch anywhere in the driver</text>
+          </g>
+        );
+      }
+
+      /* ── 2. the shared protocol ───────────────────────────────────── */
+      case "protocol": {
+        const ft = proto === "finetune";
+        return (
+          <g>
+            <text x={30} y={28} style={SK} fontSize="9" fill={P.sub}>one extraction site, one recipe — the only per-arm quantity is t</text>
+
+            {box(30, 62, 78, 34, "image", "64² , [−1,1]", P.ink)}
+            {arrow(112, 79, 140, 79, P.sub)}
+            {box(144, 62, 92, 34, arm === "diffusion" ? "q_sample(x, t)" : "clean, t = 0", arm === "diffusion" ? "fixed noise seed" : "no corruption", P.sub)}
+            {arrow(240, 79, 268, 79, P.sub)}
+            {box(272, 56, 104, 46, "shared trunk", ft ? "unfrozen · lr 1e-4" : "frozen ❄", ft ? P.red : P.accent)}
+            {arrow(380, 79, 408, 79, P.sub)}
+            {box(412, 62, 74, 34, "read mid2", "GAP", P.ink)}
+            {arrow(490, 79, 516, 79, P.sub)}
+            {box(520, 62, 56, 34, "head", ft ? "lr 1e-3" : "linear", ft ? P.red : P.accent)}
+
+            <text x={272} y={124} style={SK} fontSize="8.6" fill={ft ? P.red : P.accent}>
+              {ft ? "fine-tune: 15 epochs, every arm on clean inputs — only the initialisation differs" : "probe: 60 epochs, features standardised, encoder never updated"}
+            </text>
+
+            <line x1={30} y1={146} x2={570} y2={146} stroke={P.line} strokeWidth="1" />
+            <text x={30} y={166} style={SK} fontSize="9.2" fill={P.ink}>the three guards that make the comparison mean something</text>
+            {[
+              ["label_blind()", "pretraining runs inside a context where touching a labelled dataset raises — 'self-supervised' enforced in code, not by convention"],
+              ["fixed noise generator", "the same image gets the same corruption in every arm, every seed, every sweep point — the curve measures features, not noise luck"],
+              ["no per-arm branch", "probe and fine-tune recipes come from config; there is nowhere to hand-tune one objective. best epoch on val, test read once"],
+            ].map(([k, v], i) => (
+              <g key={k}>
+                <text x={30} y={190 + i * 32} style={SK} fontSize="8.6" fill={P.accent}>{k}</text>
+                <text x={30} y={203 + i * 32} style={SK} fontSize="8.2" fill={P.sub}>{v}</text>
+              </g>
+            ))}
+          </g>
+        );
+      }
+
+      /* ── 3. the probe result ──────────────────────────────────────── */
+      case "probe": {
+        const lo = 0.90, hi = 0.985;
+        const bx = 150, bw = 380;
+        const px = (v) => bx + ((v - lo) / (hi - lo)) * bw;
+        const rows = SSL_ARMS.filter((a) => a.probe != null);
+        return (
+          <g>
+            <text x={30} y={26} style={SK} fontSize="9" fill={P.sub}>linear probe on the frozen encoder — test AUROC, mean ± std over 3 seeds</text>
+            <line x1={px(0.937)} y1={44} x2={px(0.937)} y2={226} stroke={P.sub} strokeWidth="1" strokeDasharray="4 3" />
+            <text x={px(0.937)} y={40} textAnchor="middle" style={SK} fontSize="7.8" fill={P.sub}>random-init control</text>
+
+            {rows.map((a, i) => {
+              const y = 58 + i * 42;
+              const c = COL[a.col];
+              return (
+                <g key={a.arm}>
+                  <text x={140} y={y + 13} textAnchor="end" style={SK} fontSize="9.4" fill={c}>{a.arm}</text>
+                  <text x={140} y={y + 25} textAnchor="end" style={SK} fontSize="7.4" fill={P.sub}>{a.site}</text>
+                  <rect x={bx} y={y} width={px(a.probe) - bx} height={18} fill={a.col === "sub" ? P.faint : P.accentSoft} stroke={c} strokeWidth="1.1" />
+                  <line x1={px(a.probe - a.ps)} y1={y + 9} x2={px(a.probe + a.ps)} y2={y + 9} stroke={c} strokeWidth="1" />
+                  <text x={px(a.probe) + 8} y={y + 13} style={SK} fontSize="9.4" fill={P.ink}>{a.probe.toFixed(3)}</text>
+                  <text x={px(a.probe) + 46} y={y + 13} style={SK} fontSize="7.6" fill={P.sub}>± {a.ps.toFixed(3)}</text>
+                </g>
+              );
+            })}
+
+            {[0.90, 0.92, 0.94, 0.96, 0.98].map((v) => (
+              <g key={v}>
+                <line x1={px(v)} y1={226} x2={px(v)} y2={230} stroke={P.ink} strokeWidth="0.9" />
+                <text x={px(v)} y={240} textAnchor="middle" style={SK} fontSize="7.4" fill={P.sub}>{v.toFixed(2)}</text>
+              </g>
+            ))}
+            <line x1={bx} y1={226} x2={px(hi)} y2={226} stroke={P.ink} strokeWidth="1" />
+
+            <text x={30} y={266} style={SK} fontSize="8.6" fill={P.ink}>diffusion − MAE = <tspan fill={P.accent}>+0.011</tspan>, the claim the paper never tested · diffusion − random = only <tspan fill={P.accent}>+0.034</tspan></text>
+            <text x={30} y={282} style={SK} fontSize="8.6" fill={P.red}>JEPA sits below the untrained encoder — reproducibly, across all three seeds.</text>
+          </g>
+        );
+      }
+
+      /* ── 4. the timestep sweep ────────────────────────────────────── */
+      case "sweep": {
+        const x0 = 66, x1 = 470, y0 = 224, y1 = 54;
+        const lo = 0.925, hi = 0.976;
+        const px = (t) => x0 + (t / 500) * (x1 - x0);
+        const py = (v) => y0 - ((v - lo) / (hi - lo)) * (y0 - y1);
+        const line = (key) => SSL_SWEEP.map((d, i) => `${i ? "L" : "M"}${px(d.t).toFixed(1)} ${py(d[key]).toFixed(1)}`).join(" ");
+        return (
+          <g>
+            <text x={30} y={26} style={SK} fontSize="9" fill={P.sub}>diffusion linear probe, test AUROC vs the timestep the feature is read at</text>
+
+            <line x1={x0} y1={py(0.960)} x2={x1} y2={py(0.960)} stroke={P.ink} strokeWidth="1" strokeDasharray="5 3" />
+            <text x={x0 + 6} y={py(0.960) - 5} style={SK} fontSize="7.8" fill={P.ink}>MAE 0.960</text>
+            <line x1={x0} y1={py(0.937)} x2={x1} y2={py(0.937)} stroke={P.sub} strokeWidth="1" strokeDasharray="2 3" />
+            <text x={x0 + 6} y={py(0.937) - 5} style={SK} fontSize="7.8" fill={P.sub}>random-init 0.937</text>
+
+            <line x1={x0} y1={y0} x2={x1} y2={y0} stroke={P.ink} strokeWidth="1.1" />
+            <line x1={x0} y1={y0} x2={x0} y2={y1} stroke={P.ink} strokeWidth="1.1" />
+            {[0, 100, 200, 300, 400, 500].map((t) => (
+              <g key={t}>
+                <line x1={px(t)} y1={y0} x2={px(t)} y2={y0 + 4} stroke={P.ink} strokeWidth="0.9" />
+                <text x={px(t)} y={y0 + 15} textAnchor="middle" style={SK} fontSize="7.4" fill={P.sub}>{t}</text>
+              </g>
+            ))}
+            {[0.93, 0.95, 0.97].map((v) => (
+              <g key={v}>
+                <line x1={x0 - 4} y1={py(v)} x2={x0} y2={py(v)} stroke={P.ink} strokeWidth="0.9" />
+                <text x={x0 - 7} y={py(v) + 3} textAnchor="end" style={SK} fontSize="7.4" fill={P.sub}>{v.toFixed(2)}</text>
+              </g>
+            ))}
+            <text x={x1} y={y0 + 28} textAnchor="end" style={SK} fontSize="8" fill={P.sub}>extraction timestep t</text>
+
+            <path d={line("e1")} stroke={P.sub} strokeWidth="1.2" fill="none" strokeDasharray="3 2" />
+            <path d={line("e2")} stroke={P.accent} strokeWidth="1.8" fill="none" />
+            {SSL_SWEEP.map((d) => <circle key={d.t} cx={px(d.t)} cy={py(d.e2)} r="2.6" fill={P.accent} />)}
+            <text x={px(210)} y={py(0.958) + 13} style={SK} fontSize="7.6" fill={P.sub}>mid1</text>
+            <text x={px(210)} y={py(0.966) - 7} style={SK} fontSize="7.6" fill={P.accent}>mid2</text>
+
+            <line x1={px(sw.t)} y1={y0} x2={px(sw.t)} y2={py(sw.e2)} stroke={P.accent} strokeWidth="1" strokeDasharray="3 3" />
+            <circle cx={px(sw.t)} cy={py(sw.e2)} r="4.5" fill="none" stroke={P.accent} strokeWidth="1.6" />
+
+            <rect x={492} y={54} width={92} height={92} fill={P.faint} stroke={P.line} />
+            <text x={500} y={70} style={SK} fontSize="8" fill={P.sub}>at t = {sw.t}</text>
+            <text x={500} y={88} style={SK} fontSize="12" fill={P.ink}>{sw.e2.toFixed(3)}</text>
+            <text x={500} y={101} style={SK} fontSize="7.4" fill={P.sub}>± {sw.s2.toFixed(3)} test</text>
+            <text x={500} y={120} style={SK} fontSize="8" fill={P.sub}>val {sw.v2.toFixed(3)}</text>
+            <text x={500} y={136} style={SK} fontSize="7.6" fill={sw.e2 >= 0.960 ? P.accent : P.red}>{sw.e2 >= 0.960 ? "still beats MAE" : sw.e2 > 0.937 ? "below MAE" : "no better than random"}</text>
+
+            <text x={30} y={266} style={SK} fontSize="8.5" fill={P.ink}>the rise is marginal — 0.970 at t = 10, 0.972 at t = 30–50, against a seed spread of 0.001–0.002. the fall is not:</text>
+            <text x={30} y={279} style={SK} fontSize="8.5" fill={P.ink}>the advantage over MAE is gone by t ≈ 200, and by t = 500 the features match an encoder that never trained.</text>
+            <text x={30} y={293} style={SK} fontSize="8" fill={P.red}>the gotcha: val is saturated at 0.994 across the low-t range, so selection picked t = 100 while test peaked at t = 50.</text>
+          </g>
+        );
+      }
+
+      /* ── 5. fine-tuning ───────────────────────────────────────────── */
+      case "finetune": {
+        const lo = 0.92, hi = 0.985;
+        const x0 = 150, x1 = 520;
+        const px = (v) => x0 + ((v - lo) / (hi - lo)) * (x1 - x0);
+        const rows = SSL_ARMS.filter((a) => a.probe != null && a.ft != null);
+        return (
+          <g>
+            <text x={30} y={26} style={SK} fontSize="9" fill={P.sub}>frozen probe → fine-tuned, same recipe for every arm. test AUROC.</text>
+            {rows.map((a, i) => {
+              const y = 60 + i * 46;
+              const c = COL[a.col];
+              return (
+                <g key={a.arm}>
+                  <text x={140} y={y + 4} textAnchor="end" style={SK} fontSize="9.6" fill={c}>{a.arm}</text>
+                  <circle cx={px(a.probe)} cy={y} r="4" fill={P.paper2} stroke={c} strokeWidth="1.4" />
+                  <text x={px(a.probe)} y={y - 10} textAnchor="middle" style={SK} fontSize="8" fill={P.sub}>{a.probe.toFixed(3)}</text>
+                  {arrow(px(a.probe) + 6, y, px(a.ft) - 2, y, c, false, 1.4)}
+                  <circle cx={px(a.ft)} cy={y} r="4.5" fill={c} />
+                  <text x={px(a.ft) + 10} y={y + 4} style={SK} fontSize="9.4" fill={P.ink}>{a.ft.toFixed(3)}</text>
+                  <text x={px(a.ft) + 48} y={y + 4} style={SK} fontSize="7.6" fill={P.sub}>± {a.fs.toFixed(3)}</text>
+                </g>
+              );
+            })}
+
+            <line x1={px(0.969)} y1={44} x2={px(0.969)} y2={216} stroke={P.ink} strokeWidth="1" strokeDasharray="5 3" />
+            <text x={px(0.969) + 6} y={40} style={SK} fontSize="7.8" fill={P.ink}>supervised-100% 0.969</text>
+            <line x1={px(0.952)} y1={44} x2={px(0.952)} y2={216} stroke={P.sub} strokeWidth="1" strokeDasharray="2 3" />
+            <text x={px(0.952)} y={230} textAnchor="middle" style={SK} fontSize="7.8" fill={P.sub}>supervised-10% 0.952</text>
+
+            <text x={30} y={256} style={SK} fontSize="8.6" fill={P.ink}>the probe gap of <tspan fill={P.accent}>0.011</tspan> becomes <tspan fill={P.accent}>0.002</tspan> — inside the seed noise. JEPA gains the most (+0.038): its problem</text>
+            <text x={30} y={270} style={SK} fontSize="8.6" fill={P.ink}>was linear separability, not learning. as an initialisation it was fine all along.</text>
+            <text x={30} y={288} style={SK} fontSize="8.2" fill={P.sub}>against plain supervision the fine-tuned gain is at most 0.008. against supervision at 10% labels, every arm wins clearly — that is where pretraining pays.</text>
+          </g>
+        );
+      }
+
+      /* ── 6. limits ────────────────────────────────────────────────── */
+      case "limits": {
+        return (
+          <g>
+            <text x={30} y={28} style={SK} fontSize="9.5" fill={P.accent}>what it settles</text>
+            {[
+              "the comparison OrthoDiffusion asserted is runnable, and runs its way — under a frozen probe",
+              "the rise-then-fall timestep curve reproduces on entirely different anatomy",
+              "a random-init encoder probes at 0.937 — the control that resizes every other bar",
+              "label efficiency is the real win: all three arms clear supervised-10% comfortably",
+            ].map((s, i) => (
+              <text key={i} x={30} y={52 + i * 19} style={SK} fontSize="8.6" fill={P.ink}>· {s}</text>
+            ))}
+
+            <text x={30} y={152} style={SK} fontSize="9.5" fill={P.red}>what it does not</text>
+            {[
+              "one binary dataset, everything above 0.92 with a ceiling near 0.98 — fragile altitude",
+              "3 seeds · 4000 steps · 4.06M params — orders of magnitude below where scaling claims live",
+              "JEPA is under-trained at this budget, not fairly represented",
+              "2D slices of a question the paper asks in 3D, on knees rather than chests",
+            ].map((s, i) => (
+              <text key={i} x={30} y={176 + i * 19} style={SK} fontSize="8.6" fill={P.red}>· {s}</text>
+            ))}
+
+            <rect x={30} y={256} width={540} height={30} fill={P.faint} stroke={P.line} />
+            <text x={42} y={270} style={SK} fontSize="8.6" fill={P.ink}>a floor, not a benchmark — the same status the regex labeler holds in §2, and stated the same way. every number</text>
+            <text x={42} y={282} style={SK} fontSize="8.6" fill={P.ink}>on this bench comes from results/results.csv; nothing here is quoted, and nothing is illustrative.</text>
+          </g>
+        );
+      }
+      default: return null;
+    }
+  })();
+
+  const navBtn = { ...SK, fontSize: "0.8rem", padding: "2px 10px", border: `1px solid ${P.line}`, background: P.paper2, color: P.ink, cursor: "pointer" };
+  const Nst = SSL_STEPS.length;
+  const sliderRow = { display: "flex", gap: 10, marginBottom: 10, flexWrap: "wrap", alignItems: "center" };
+  const lbl = { ...SK, fontSize: "0.62rem", color: P.sub };
+  const val = { ...SK, fontSize: "0.66rem", color: P.ink, minWidth: 66 };
+  const toggle = (on) => ({ ...SK, fontSize: "0.68rem", padding: "3px 11px", cursor: "pointer", border: `1px solid ${on ? P.accent : P.line}`, background: on ? P.accentSoft : P.paper2, color: on ? P.accent : P.sub });
+
+  return (
+    <div>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 10, marginBottom: 10 }}>
+        <span style={{ ...SK, fontSize: "0.6rem", color: P.sub, textTransform: "uppercase", letterSpacing: "0.08em" }}>my own run · PneumoniaMNIST · 3 seeds · every number measured</span>
+        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+          <span style={{ ...SK, fontSize: "0.62rem", color: P.sub, textTransform: "uppercase", letterSpacing: "0.06em" }}>step {step + 1} / {Nst}</span>
+          <button onClick={() => setStep((step + Nst - 1) % Nst)} aria-label="Previous step" style={navBtn}>←</button>
+          <button onClick={() => setStep((step + 1) % Nst)} aria-label="Next step" style={navBtn}>→</button>
+        </div>
+      </div>
+
+      {(sk === "trunk" || sk === "protocol") && (
+        <div style={sliderRow}>
+          <span style={lbl}>arm:</span>
+          {[["diffusion", "diffusion"], ["mae", "MAE"], ["jepa", "JEPA"]].map(([k, label]) => (
+            <button key={k} onClick={() => setArm(k)} aria-pressed={arm === k} style={toggle(arm === k)}>{label}</button>
+          ))}
+          <span style={{ ...SK, fontSize: "0.66rem", color: P.sub }}>the trunk never changes — only what is bolted onto it</span>
+        </div>
+      )}
+
+      {sk === "protocol" && (
+        <div style={sliderRow}>
+          <span style={lbl}>protocol:</span>
+          {[["probe", "frozen probe"], ["finetune", "fine-tune"]].map(([k, label]) => (
+            <button key={k} onClick={() => setProto(k)} aria-pressed={proto === k} style={toggle(proto === k)}>{label}</button>
+          ))}
+        </div>
+      )}
+
+      {sk === "sweep" && (
+        <div style={sliderRow}>
+          <span style={lbl}>extraction timestep:</span>
+          <input type="range" min={0} max={SSL_SWEEP.length - 1} step={1} value={swi} onChange={(e) => setSwi(+e.target.value)} aria-label="Extraction timestep" style={{ accentColor: P.accent, width: 170 }} />
+          <span style={val}>t = {sw.t}</span>
+          <span style={{ ...SK, fontSize: "0.66rem", color: P.sub }}>
+            {sw.t <= 50 ? "the measured peak" : sw.t === 100 ? "what val selection chose" : sw.t <= 200 ? "still ahead of MAE" : "past the point where noise costs more than abstraction buys"}
+          </span>
+        </div>
+      )}
+
+      <div style={{ border: `1px solid ${P.line}`, borderTop: `2px solid ${P.ink}`, background: P.paper2 }}>
+        <div style={{ background: "#fff" }}>
+          <div style={{ aspectRatio: "600 / 300" }}>
+            <svg viewBox="0 0 600 300" width="100%" height="100%" role="img" aria-label={`SSL comparison walkthrough step ${step + 1}: ${sc.label}`} style={{ display: "block" }} strokeLinecap="round" strokeLinejoin="round">
+              {body}
+            </svg>
+          </div>
+        </div>
+        <div style={{ padding: "0.9rem 1.1rem 1rem" }}>
+          <div style={{ ...DISP, fontWeight: 600, fontSize: "1rem", color: P.ink, marginBottom: 4 }}>{sc.title}</div>
+          <p style={{ ...BODY, fontSize: "0.88rem", color: P.sub, lineHeight: 1.65, textWrap: "pretty", margin: 0 }}>
+            <span style={{ ...SK, fontSize: "0.6rem", color: P.accent, textTransform: "uppercase", letterSpacing: "0.08em", marginRight: 6 }}>step {step + 1}</span>
+            {sc.body}
+          </p>
+          <div style={{ ...SK, fontSize: "0.66rem", color: P.ink, marginTop: 9, background: P.faint, padding: "6px 9px", display: "inline-block" }}>{sc.math}</div>
+        </div>
+      </div>
+
+      <div style={{ display: "flex", gap: 6, marginTop: 10, flexWrap: "wrap" }}>
+        {SSL_STEPS.map((s, j) => (
           <button key={s.key} onClick={() => setStep(j)} style={{ ...SK, fontSize: "0.62rem", padding: "4px 9px", cursor: "pointer", border: `1px solid ${j === step ? P.accent : P.line}`, background: j === step ? P.accentSoft : "#fff", color: j === step ? P.accent : P.sub }}>{j + 1}. {s.label}</button>
         ))}
       </div>

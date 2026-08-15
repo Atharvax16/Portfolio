@@ -3,7 +3,7 @@ import { P, PAPER, ARCHITECTURES, ARCH_FAMILIES, LIVE_ARCHITECTURES } from "./da
 import {
   VitWalkthrough, CnnWalkthrough, DetectionParadigms, Dinov2Walkthrough, JepaWalkthrough,
   SteerVitWalkthrough, RagWalkthrough, MemoryBankWalkthrough, MovieChatWalkthrough,
-  MRNetWalkthrough, AutoencoderWalkthrough, OrthoDiffusionWalkthrough,
+  MRNetWalkthrough, AutoencoderWalkthrough, OrthoDiffusionWalkthrough, SslCompareWalkthrough,
 } from "./ui.jsx";
 
 /* Type tokens — same as the paper, so the Lab reads as the same hand. */
@@ -15,7 +15,7 @@ const MONO = { fontFamily: "'IBM Plex Mono',monospace" };
 const SKETCHES = {
   VitWalkthrough, CnnWalkthrough, DetectionParadigms, Dinov2Walkthrough, JepaWalkthrough,
   SteerVitWalkthrough, RagWalkthrough, MemoryBankWalkthrough, MovieChatWalkthrough,
-  MRNetWalkthrough, AutoencoderWalkthrough, OrthoDiffusionWalkthrough,
+  MRNetWalkthrough, AutoencoderWalkthrough, OrthoDiffusionWalkthrough, SslCompareWalkthrough,
 };
 
 /* Intro copy in data.js is written with *italic* and **bold** markers so the
