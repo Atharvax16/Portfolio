@@ -5790,6 +5790,13 @@ const OD_STEPS = [
     math: "extract: h = mid₂( ε_θ , x_t , t )  → SAP pool → linear head   ·   generate: x_{t−1} ← x_t, ×1000",
   },
   {
+    key: "skips",
+    label: "the skips",
+    title: "Downsampling destroys where. The skip is how the decoder gets it back.",
+    body: "Worth stopping on, because it is the part of the U-Net that is easy to draw and easy to under-read. This paper's backbone takes a 16 × 256 × 256 volume down through four stride-2 stages to a bottleneck of 256 × 1 × 16 × 16 — the number they publish, and it is worth unpacking. As *elements* that is only a 16× squeeze, because the channel width climbs as the resolution falls. As *positions* it is brutal: a million voxels become 256 cells, so a single bottleneck cell is the only thing left speaking for a 16 × 16 × 16 block — **4,096 voxels each**. That vector knows a cruciate is present, and roughly where; it cannot know which voxel the edge of it was on, because that distinction was averaged away four stages ago. Now ask the decoder to climb back. Upsampling can invent a plausible continuation of what it is handed, but nothing in an 8× coarser summary tells it where a boundary actually sat — so a bottleneck-only decoder returns the right anatomy with the edges smoothed off. The skip connection is the fix and it is almost embarrassingly direct: at every rung, hand the decoder the encoder's own feature map at the *matching* resolution and concatenate. Deep-and-coarse supplies *what*; shallow-and-fine supplies *exactly where*; the decoder fuses them instead of guessing. For this architecture the skips are not a refinement, they are load-bearing — the output being asked for is ε, a per-voxel noise field that is pure high frequency, and reconstructing a million-voxel one from 256 spatial cells is not a hard problem but an impossible one. Segmentation says the same thing in a different accent: Dice is decided at boundaries. There is a sting in the tail, though, and it is the reason this step belongs next to the tap. A skip is also a path *around* the bottleneck. If your goal is a representation rather than a reconstruction, that path is a leak — detail can flow to the output without ever being encoded — which is exactly why the SimMIM arm in the next bench is built with skips deliberately off while the diffusion arm keeps them on. And note what it means for the feature: the tap at mid₂ is upstream of every skip, so the representation this whole paper rests on is the coarse one by construction. The fine detail lives only in the decoder path, and the decoder path is the part thrown away unread.",
+    math: "skip: dec_ℓ ← [ up(dec_{ℓ+1})  ‖  enc_ℓ ]   ·   16×256×256 → 256×1×16×16 : 16× fewer elements, 4,096× coarser in space",
+  },
+  {
     key: "dial",
     label: "t is an abstraction dial",
     title: "The timestep chooses how much of the answer comes from the prior",
@@ -5800,7 +5807,7 @@ const OD_STEPS = [
     key: "mae",
     label: "the MAE comparison",
     title: "Same forcing function, different corruption — and the comparison never gets run",
-    body: "The reason this paper reads as familiar is that its mechanism is the masked autoencoder's, with one operator swapped. MAE deletes three quarters of the patches outright and asks for the missing pixels back; diffusion attenuates every voxel by √ᾱ and asks for the noise back. Both close the copying shortcut, both make the task solvable only by knowing what belongs where, and He's *Deconstructing Denoising Diffusion Models* is the paper that makes the equivalence explicit. The differences that matter are structural rather than philosophical. Masking is all-or-nothing per patch, so the encoder sees a quarter of the tokens and gets a sixteenth of the attention bill — MAE is drastically cheaper to pretrain. Noising is uniform and graded, so the difficulty is a continuous parameter you can tune per task, which is precisely what step 3 spends. Toggle the operator and read the two targets side by side. Then read the strip along the bottom, because it is the paper's real gap: the discussion argues diffusion beats masked autoencoding as a medical representation learner, and *no MAE baseline was ever run.* Every comparison here is against a supervised model trained from scratch — 3D-UNet, UNETR, 3D-ResNet-18. The claim is asserted, not measured.",
+    body: "The reason this paper reads as familiar is that its mechanism is the masked autoencoder's, with one operator swapped. MAE deletes three quarters of the patches outright and asks for the missing pixels back; diffusion attenuates every voxel by √ᾱ and asks for the noise back. Both close the copying shortcut, both make the task solvable only by knowing what belongs where, and He's *Deconstructing Denoising Diffusion Models* is the paper that makes the equivalence explicit. The differences that matter are structural rather than philosophical. Masking is all-or-nothing per patch, so the encoder sees a quarter of the tokens and gets a sixteenth of the attention bill — MAE is drastically cheaper to pretrain. Noising is uniform and graded, so the difficulty is a continuous parameter you can tune per task, which is precisely what step 4 spends. Toggle the operator and read the two targets side by side. Then read the strip along the bottom, because it is the paper's real gap: the discussion argues diffusion beats masked autoencoding as a medical representation learner, and *no MAE baseline was ever run.* Every comparison here is against a supervised model trained from scratch — 3D-UNet, UNETR, 3D-ResNet-18. The claim is asserted, not measured.",
     math: "MAE: mask 75% of patches, predict pixels · cost ∝ v²   ·   diffusion: attenuate all, predict ε · difficulty = t",
   },
   {
@@ -5825,6 +5832,7 @@ export function OrthoDiffusionWalkthrough() {
   const [mode, setMode] = useState("extract");
   const [op, setOp] = useState("noise");
   const [fusion, setFusion] = useState("concat");
+  const [skips, setSkips] = useState(true);
 
   const sc = OD_STEPS[step];
   const sk = sc.key;
@@ -5953,7 +5961,73 @@ export function OrthoDiffusionWalkthrough() {
         );
       }
 
-      /* ── 3. the abstraction dial ──────────────────────────────────── */
+      /* ── 3. the skips ─────────────────────────────────────────────── */
+      case "skips": {
+        const on = skips;
+        /* The paper's own ladder: base width 64, mults (1,1,2,2,4) over five
+           resolution levels, so 256² halves four times to the published
+           256 × 1 × 16 × 16 bottleneck. */
+        const lv = [
+          { r: "256²·16", c: 64, ex: 34, dx: 300 },
+          { r: "128²·8", c: 64, ex: 60, dx: 274 },
+          { r: "64²·4", c: 128, ex: 86, dx: 248 },
+          { r: "32²·2", c: 128, ex: 112, dx: 222 },
+        ];
+        const ly = [52, 84, 116, 148];
+        return (
+          <g>
+            <defs>
+              <filter id="odblur" x="-25%" y="-25%" width="150%" height="150%">
+                <feGaussianBlur stdDeviation="3.1" />
+              </filter>
+            </defs>
+            <text x={30} y={28} style={SK} fontSize="9" fill={P.sub}>the published ladder — 16×256×256 down to a 256×1×16×16 bottleneck</text>
+
+            {lv.map((l, i) => (
+              <g key={l.r}>
+                <rect x={l.ex} y={ly[i]} width={56} height={20} fill={P.paper2} stroke={P.ink} strokeWidth="1.1" />
+                <text x={l.ex + 28} y={ly[i] + 14} textAnchor="middle" style={SK} fontSize="8" fill={P.ink}>{l.r}</text>
+                <text x={l.ex - 4} y={ly[i] + 14} textAnchor="end" style={SK} fontSize="7" fill={P.sub}>{l.c}c</text>
+                <rect x={l.dx} y={ly[i]} width={56} height={20} fill={P.paper2} stroke={on ? P.ink : P.line} strokeWidth="1.1" />
+                <text x={l.dx + 28} y={ly[i] + 14} textAnchor="middle" style={SK} fontSize="8" fill={on ? P.ink : P.sub}>{l.r}</text>
+                {i < 3 && arrow(l.ex + 28, ly[i] + 22, l.ex + 54, ly[i + 1] - 2, P.sub, false, 1)}
+                {i < 3 && arrow(l.dx + 28, ly[i + 1] - 2, l.dx + 2, ly[i] + 22, P.sub, false, 1)}
+                {on ? (
+                  <g>
+                    <path d={`M${l.ex + 58} ${ly[i] + 10} L${l.dx - 2} ${ly[i] + 10}`} stroke={P.accent} strokeWidth="1.3" fill="none" strokeDasharray="5 3" />
+                    {arrow(l.dx - 14, ly[i] + 10, l.dx - 2, ly[i] + 10, P.accent, false, 1.3)}
+                  </g>
+                ) : (
+                  <g opacity="0.5">
+                    <path d={`M${l.ex + 58} ${ly[i] + 10} L${l.dx - 2} ${ly[i] + 10}`} stroke={P.line} strokeWidth="1" fill="none" strokeDasharray="2 4" />
+                    <path d={`M${(l.ex + 56 + l.dx) / 2 - 4} ${ly[i] + 6} L${(l.ex + 56 + l.dx) / 2 + 4} ${ly[i] + 14} M${(l.ex + 56 + l.dx) / 2 + 4} ${ly[i] + 6} L${(l.ex + 56 + l.dx) / 2 - 4} ${ly[i] + 14}`} stroke={P.red} strokeWidth="1.3" />
+                  </g>
+                )}
+              </g>
+            ))}
+            {on && <text x={196} y={48} textAnchor="middle" style={SK} fontSize="7.6" fill={P.accent}>concat at matching resolution</text>}
+
+            <rect x={138} y={180} width={80} height={22} fill={P.accentSoft} stroke={P.accent} strokeWidth="1.2" />
+            <text x={178} y={195} textAnchor="middle" style={SK} fontSize="8.4" fill={P.accent}>256 × 1 × 16²</text>
+            {arrow(138, 170, 152, 178, P.sub, false, 1)}
+            {arrow(220, 186, 238, 171, P.sub, false, 1)}
+            <text x={178} y={214} textAnchor="middle" style={SK} fontSize="7.6" fill={P.accent}>the tap — upstream of every skip</text>
+
+            <rect x={392} y={44} width={116} height={116} fill="none" stroke={P.line} />
+            <g filter={on ? undefined : "url(#odblur)"}>{odKnee(394, 46, 112, 112, 1, "skipout")}</g>
+            <text x={450} y={176} textAnchor="middle" style={SK} fontSize="8.4" fill={on ? P.accent : P.red}>{on ? "boundaries land where they were" : "structure right, boundaries gone"}</text>
+            <text x={450} y={190} textAnchor="middle" style={SK} fontSize="7.4" fill={P.sub}>schematic — what the decoder can return</text>
+
+            <line x1={30} y1={228} x2={570} y2={228} stroke={P.line} strokeWidth="1" />
+            <text x={30} y={244} style={SK} fontSize="8.5" fill={P.ink}>one bottleneck cell is all that is left speaking for a 16×16×16 block — <tspan fill={P.accent}>4,096 voxels each</tspan>. the target is ε, one number per voxel.</text>
+            <text x={30} y={258} style={SK} fontSize="8.5" fill={P.ink}>a million-voxel noise field cannot come back out of 256 spatial cells. the skips are load-bearing, not a refinement.</text>
+            <text x={30} y={276} style={SK} fontSize="8.2" fill={P.sub}>measured, next bench: the SimMIM arm is built with <tspan fill={P.ink}>decoder_skips: false</tspan> — and its reconstructions come back with the right lungs and mediastinum</text>
+            <text x={30} y={288} style={SK} fontSize="8.2" fill={P.sub}>and the rib edges smoothed away. not a controlled skip ablation — the objectives differ too — but exactly the failure this predicts.</text>
+          </g>
+        );
+      }
+
+      /* ── 4. the abstraction dial ──────────────────────────────────── */
       case "dial": {
         const x0 = 62, x1 = 344, y0 = 232, y1 = 62;
         const px = (tt) => x0 + (tt / 500) * (x1 - x0);
@@ -6047,7 +6121,7 @@ export function OrthoDiffusionWalkthrough() {
                 : ["target", "ε itself — equivalently ∇ₓ log p(x), the score"],
               masking
                 ? ["difficulty", "one number, fixed at 75% — chosen so interpolation cannot solve it"]
-                : ["difficulty", "continuous in t — the knob step 3 spends"],
+                : ["difficulty", "continuous in t — the knob step 4 spends"],
               masking
                 ? ["cost", "attention ∝ v² ⇒ a sixteenth of the full-image bill"]
                 : ["cost", "full-resolution passes, three backbones, one per plane"],
@@ -6191,6 +6265,16 @@ export function OrthoDiffusionWalkthrough() {
           <span style={{ ...SK, fontSize: "0.66rem", color: P.sub }}>
             {t === 0 ? "no corruption — nothing to predict" : t === 30 ? "the paper's default tap" : t <= 200 ? "inside the operating window" : "past anything they selected"}
           </span>
+        </div>
+      )}
+
+      {sk === "skips" && (
+        <div style={sliderRow}>
+          <span style={lbl}>the decoder gets:</span>
+          {[[true, "the skips"], [false, "the bottleneck alone"]].map(([k, label]) => (
+            <button key={String(k)} onClick={() => setSkips(k)} aria-pressed={skips === k} style={toggle(skips === k)}>{label}</button>
+          ))}
+          <span style={{ ...SK, fontSize: "0.66rem", color: P.sub }}>{skips ? "what and exactly-where, fused at every rung" : "what, and a guess at where"}</span>
         </div>
       )}
 
@@ -6376,7 +6460,7 @@ export function SslCompareWalkthrough() {
         ];
         const heads = {
           diffusion: { bolt: "conv decoder + skips", loss: "L = ‖ε − ε_θ(x_t, t)‖²", note: "cosine schedule, T = 1000, ε-prediction — the trunk's t-embedding is finally used for real" },
-          mae: { bolt: "light decoder, no skips", loss: "L = ‖x − x̂‖² on masked patches", note: "SimMIM-style: 8×8 patches, 60% masked, rebuilt from the bottleneck with no skip shortcut" },
+          mae: { bolt: "light decoder, no skips", loss: "L = ‖x − x̂‖² on masked patches", note: "SimMIM-style: 8×8 patches, 60% masked — skips off on purpose, since a skip is a path around the bottleneck the representation is meant to hold" },
           jepa: { bolt: "EMA target copy + predictor", loss: "L = ‖pred(z_ctx) − sg z_tgt‖²", note: "target encoder is an EMA copy at 0.996 — same class, same config, no gradient" },
         };
         const h = heads[arm];
