@@ -532,6 +532,50 @@ export const PROJECTS = [
     ],
     links: {},
   },
+  /* ── peatpulse ────────────────────────────────────────────────────────────
+     TechIreland National AI Challenge 2026. Status discipline: every number
+     below was MEASURED against live Sentinel-2 / NPWS / EPA data on
+     20 Aug 2026 and is reproducible from the scripts. The feasibility study
+     is done; the product is NOT built — build window 28 Aug – 14 Sep 2026.
+     Nothing here may drift into sounding shipped. The escalation agent and
+     the case-file generator are DESIGNED, not running.
+     ──────────────────────────────────────────────────────────────────────── */
+  {
+    id: "peatpulse",
+    title: "peatpulse — Is Peatland Restoration Actually Working?",
+    badge: "TechIreland National AI Challenge 2026 · feasibility verified",
+    year: "2026",
+    role: "Team of 3 · MSc Computing (AI) · remote sensing + agent design",
+    color: "#4ADE80",
+    short: "Ireland is spending public money restoring drained peatland and cannot currently say which sites are recovering. Ten years of free Sentinel-2 imagery can — but the obvious way to read it gives you confidently wrong answers three separate ways.",
+    tech: ["Sentinel-2 L2A (COG/STAC)", "rasterio + pystac-client", "shapely", "NumPy", "NPWS / EPA WFS"],
+    keywords: ["remote sensing", "change detection", "environmental monitoring", "agentic allocation"],
+    abstract: "Ireland is legally obliged under the EU Nature Restoration Regulation to report whether its peatland restoration works, and right now nobody can say which sites are recovering without walking them. This is the feasibility study: ten years of Sentinel-2 imagery over Bord na Móna's industrial bogs, measured against a control ring of ordinary land drawn around each site — same image, same day, same sky — so weather, drought and atmospheric variation cancel mathematically rather than being modelled away. Four bogs tracked in detail show a real drought-corrected recovery signal, and a difference between them that no annual report contains: Drumman has recovered less than half as much as Ballydermot over the same decade, under the same programme and the same weather. The harder result is the negative one. The naive approach — compare greenness between two dates, flag the drops — produced three separate confident wrong answers: resampling before indexing manufactured 12.8 ha of stripped peat at Clara Bog that was really 0.1; a June-vs-May comparison read normal phenology as 105.6 ha of new bare peat at Moneybeg SAC that was really 0.0; and the 2018 drought made all fifteen industrial bogs look like they were improving, because drought suppresses farmland more than it does wet bog. Each of those would have gone straight onto a slide. The three traps, and a pipeline that survives all of them, are the actual asset.",
+    architecture: "NPWS + EPA polygons → control-ring builder (donut buffer, 200 m gap / 1.2 km outer) → native-10 m NDVI + SCL masking → {annual summer composite → rehabilitation trend · per-acquisition series → step detection} → escalation agent (Planet quota allocation) → case-file generator",
+    method: [
+      { p: "Invert the search", i: "🧭", d: "Rather than hunt a pain point and hope data exists, started from what Irish open data is unexploited and found the pain sitting on it. A prior BioMedCLIP radiology direction was scored honestly and dropped." },
+      { p: "Test before committing", i: "🛰️", d: "Ran the pipeline against live data before choosing the project. Infrastructure passed: NPWS boundaries (33 bog SACs + 40 NHAs), 162 Bord na Móna polygons, Sentinel-2 COGs with no account or API key, and ≥1 near-clear scene every year 2018→2026." },
+      { p: "Break it on purpose", i: "🚨", d: "Enforcement detection FAILED, three ways — resampling before indexing, season mismatch, and drought bias. Two scripts intentionally keep their bugs as documented counter-examples." },
+      { p: "Control-ring normalisation", i: "⭕", d: "Measure each bog against a ring of ordinary land in the same image on the same day. No weather station, no soil-moisture model, no tuned threshold — it recovered the 2018 drought from imagery alone (control NDVI 0.714 vs 0.814 the year after)." },
+      { p: "Two streams, not one", i: "🔀", d: "An annual summer median composite carries the multi-year rehabilitation trend; a per-acquisition series carries persistent step changes. One representation cannot serve both — the composite averages away exactly what a step lives in." },
+      { p: "One honest agent", i: "🤖", d: "Designed, not yet built: most of the pipeline is deterministic code and is labelled as such. The genuinely agentic component is quota allocation — Planet gives 3,000 km²/month, so something must decide which candidates justify scarce confirmation budget under confidence, protection status and staleness." },
+    ],
+    metrics: null,
+    findings: [
+      { label: "Best recovery", value: "+0.209", note: "Ballydermot, NDVI gap 2017/18 → 2026 (r = 0.72)" },
+      { label: "Worst recovery", value: "+0.095", note: "Drumman — under half of Ballydermot, same decade, same programme" },
+      { label: "False positive", value: "0.0 ha", note: "Moneybeg SAC — a 105.6 ha alarm, once the comparison is season-matched" },
+      { label: "Bogs mapped", value: "162", note: "EPA Bord na Móna polygons; 4 measured in detail, 18 in outline" },
+      { label: "Cloud", value: "18 dates", note: "Clara Bog 2025 with ≥80% of the site clear — annual comparison viable, weekly is not" },
+      { label: "Cost", value: "€0", note: "Sentinel-2 L2A, NPWS and EPA — no account, no API key" },
+    ],
+    plots: [
+      { src: "images/plots/peatpulse/rehab_trend.png", caption: "Ten years of summer median NDVI for four industrial bogs against their own control rings (left), and the drought-corrected bog − control gap with fitted trend (right). The 2018 drought and the 2021 end of Bord na Móna harvesting are marked." },
+      { src: "images/plots/peatpulse/moneybeg.png", caption: "The false positive, corrected. Screening flagged 105.6 ha of new bare peat at Moneybeg and Clareisland Bogs SAC — 29% of a protected site. Season-matched (June 2018 vs July 2026) the answer is 0.0 ha; median greenness had in fact risen, 0.681 → 0.779." },
+      { src: "images/plots/peatpulse/change_overview.png", caption: "Bare-peat change screen over the Offaly bog belt, July 2018 → July 2026. 220 ha flagged across the tile, most of it outside the mapped bog polygons — why a detection is worthless until it is joined to designation status and permitted use." },
+    ],
+    links: {},
+  },
   {
     id: "voxsight",
     title: "VoxSight — Real-Time Accessibility Co-Pilot",
@@ -773,7 +817,7 @@ export const PROJECTS = [
 ];
 
 /* Research-forward display order. */
-export const PROJECT_ORDER = ["dr-xai-thesis", "gen-image-detection", "voxsight", "retinopathy-fl", "catas", "research-companion", "venueflow", "cyberattack", "cc-fraud", "gait-parkinsons"];
+export const PROJECT_ORDER = ["dr-xai-thesis", "gen-image-detection", "peatpulse", "voxsight", "retinopathy-fl", "catas", "research-companion", "venueflow", "cyberattack", "cc-fraud", "gait-parkinsons"];
 export const ORDERED_PROJECTS = PROJECT_ORDER.map((id) => PROJECTS.find((p) => p.id === id)).filter(Boolean);
 
 /* ════════════════════════════════════════
