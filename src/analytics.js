@@ -23,11 +23,23 @@ const isLocal = () =>
 
 export const analyticsOn = () => Boolean(GC_CODE) && !isLocal();
 
-/* The hash router serves four rooms from one document, so the script is
-   loaded with no_onload and each route change is counted by hand — otherwise
-   only the first room a visitor lands in would ever register. */
-const pagePath = () =>
-  window.location.pathname + window.location.search + window.location.hash;
+/* The four rooms the hash router serves from the one document. Sub-routes
+   (#/lab/<arch>, #/metrics/<key>) are folded into their room: the public
+   counter endpoint has no wildcard, so a path can only be read back if it
+   was recorded exactly — and four clean rows beat twenty near-duplicates in
+   the dashboard anyway. */
+export const ROOMS = [
+  { key: "paper", label: "paper", hash: "" },
+  { key: "lab", label: "lab", hash: "#/lab" },
+  { key: "metrics", label: "metrics", hash: "#/metrics" },
+  { key: "resume", label: "cv", hash: "#/resume" },
+];
+
+const roomFor = hash => ROOMS.find(r => r.hash && hash.startsWith(r.hash)) || ROOMS[0];
+
+/* The script is loaded with no_onload and each route change counted by hand
+   — otherwise only the room a visitor first landed in would ever register. */
+const pagePath = () => window.location.pathname + roomFor(window.location.hash).hash;
 
 let script = null;
 function loadScript() {
@@ -55,19 +67,51 @@ export function countPageview() {
     .catch(() => {});
 }
 
-/* Site-wide visitor total for the footer line. "TOTAL" is GoatCounter's
-   special path for the whole site (case-sensitive, no leading slash), and
-   the count comes back already formatted, e.g. {"count":"1,284"}. The
-   response also carries count_unique, but it is a duplicate of count kept
-   for backwards compatibility — there is only one number to show.
+/* ── Reading the numbers back ──────────────────────────────────────────
+   Everything below reads GoatCounter's public counter endpoint, which needs
+   no API token. It reports VISITORS, not raw pageviews: the response also
+   carries count_unique, but that is a duplicate of count kept for backwards
+   compatibility. True hit counts live behind /api/v0/stats, which 401s
+   without a token — and a static site has nowhere to keep one.
 
-   A genuine zero comes back as the string "0", which is truthy — so it is
-   turned into null here rather than left to render a footer that brags
-   about having had no visitors. */
-export async function fetchVisitorCount() {
-  if (!GC_HOST) return null;
-  const r = await fetch(`${GC_HOST}/counter/TOTAL.json`);
+   The numbers refresh hourly (GoatCounter rebuilds the public view on the
+   hour) and the endpoint sets a 4-hour cache, so treat them as a lagging
+   total, not a live ticker. */
+
+const toNum = v => Number(String(v).replace(/[^0-9]/g, "")) || 0;
+
+/* One counter read. A path with nothing recorded yet answers 404 rather than
+   zero, which is a normal state here — a room simply nobody has opened. */
+async function counter(path, query = "") {
+  const r = await fetch(`${GC_HOST}/counter/${encodeURIComponent(path)}.json${query}`);
+  if (r.status === 404) return { n: 0, text: "0" };
   if (!r.ok) throw new Error(`GoatCounter counter: HTTP ${r.status}`);
   const d = await r.json();
-  return Number(String(d.count).replace(/[^0-9]/g, "")) > 0 ? d.count : null;
+  return { n: toNum(d.count), text: d.count };
+}
+
+const isoDay = d => d.toISOString().slice(0, 10);
+
+/* Site total, the trailing 30 days, and a per-room breakdown, fetched
+   together. "TOTAL" is GoatCounter's special all-site path (case-sensitive,
+   no leading slash); the rooms are read at the same paths countPageview
+   writes, so the two always agree. */
+export async function fetchStats() {
+  if (!GC_HOST) return null;
+  const base = window.location.pathname;
+  const now = new Date();
+  const from = new Date(now.getTime() - 29 * 864e5);
+  const window30 = `?start=${isoDay(from)}&end=${isoDay(now)}`;
+
+  const [total, month, ...rooms] = await Promise.all([
+    counter("TOTAL"),
+    counter("TOTAL", window30),
+    ...ROOMS.map(r => counter(base + r.hash)),
+  ]);
+
+  return {
+    total,
+    month,
+    rooms: ROOMS.map((r, i) => ({ ...r, ...rooms[i] })),
+  };
 }

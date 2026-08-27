@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { P, GALLERY_PHOTOS, ARCHITECTURES, LIVE_ARCHITECTURES, METRICS, METRIC_FAMILIES } from "./data.js";
-import { GC_HOST, fetchVisitorCount } from "./analytics.js";
+import { GC_HOST, fetchStats } from "./analytics.js";
 
 /* Type tokens */
 const DISP = { fontFamily: "'Spectral',Georgia,serif" };
@@ -6789,27 +6789,707 @@ export function SslCompareWalkthrough() {
 
 
 /* ════════════════════════════════════════
-   VISITOR COUNT (footer line)
+   VISITOR STATS (footer strip)
    ════════════════════════════════════════
-   Totals pulled from GoatCounter. Renders nothing at all until they arrive —
-   a blocked request, a cold setup, or an offline reader should leave the
-   footer looking finished rather than showing a broken or zeroed stat. */
-export function VisitorCount({ style }) {
-  const [count, setCount] = useState(null);
+   Site total, the trailing 30 days, and a per-room split — all from
+   GoatCounter's public counter, so these are visitors rather than raw
+   pageviews, and they lag by up to an hour.
+
+   Nothing renders until a real number arrives: a blocked request, a cold
+   setup, or a site with no visitors yet should leave the footer looking
+   finished rather than showing a broken or zeroed stat. Rooms nobody has
+   opened are dropped from the line for the same reason. */
+export function VisitorStats({ style }) {
+  const [stats, setStats] = useState(null);
 
   useEffect(() => {
     if (!GC_HOST) return;
     let live = true;
-    fetchVisitorCount()
-      .then(c => { if (live && c) setCount(c); })
+    fetchStats()
+      .then(s => { if (live && s && s.total.n > 0) setStats(s); })
       .catch(() => {});
     return () => { live = false; };
   }, []);
 
-  if (!count) return null;
+  if (!stats) return null;
+  const rooms = stats.rooms.filter(r => r.n > 0);
+
   return (
-    <p style={{ ...MONO, fontSize: "0.62rem", color: P.sub, marginTop: 4, ...style }}>
-      {count} visitors
-    </p>
+    <div style={{ marginTop: 6, ...style }}>
+      <p style={{ ...MONO, fontSize: "0.62rem", color: P.sub, margin: 0 }}>
+        <span style={{ color: P.accent }}>{stats.total.text}</span> visitors
+        {stats.month.n > 0 && <> · {stats.month.text} in the last 30 days</>}
+      </p>
+      {rooms.length > 1 && (
+        <p style={{ ...MONO, fontSize: "0.58rem", color: P.sub, opacity: 0.7, margin: "3px 0 0", display: "flex", gap: "0.9rem", flexWrap: "wrap" }}>
+          {rooms.map(r => (
+            <span key={r.key}>{r.label} <span style={{ color: P.ink }}>{r.text}</span></span>
+          ))}
+        </p>
+      )}
+    </div>
+  );
+}
+
+const MIL_STEPS = [
+  {
+    key: "bag", label: "the bag",
+    title: "It is only MIL when the label sits above the thing you feed in",
+    body: "The trigger is worth stating precisely, because almost everything else follows from it: your label is attached to a group, you feed the model the individual members, and nobody told you which member earned the label. One label per whole image is not MIL — that is ordinary supervised classification, and the toggle shows how unremarkable it looks. It becomes MIL the moment the label goes coarser than the input: this patient has a tear somewhere, and the thing you actually hand the network is thirty separate slices. The vocabulary is a bag of instances, and the rule attached to it is deliberately lopsided — a bag is positive if at least one instance is positive, negative only if every instance is negative. Read that carefully and the difficulty appears: a positive bag is mostly negative instances, with the evidence buried somewhere inside and no pointer to it. The classic case is computational pathology, where the slide is the bag, the patches are instances, the record says the patient has cancer, and nobody ever marked which patches contain the tumour. One misconception to kill on the way past: you cannot sort the instances into a positive pile and a negative pile and train on that. There are no instance labels to sort by. That is the entire premise.",
+    math: "one bag X of K instances, one label Y ∈ {0,1}   ·   Y = 1 ⇔ ∃k: yₖ = 1   ·   the yₖ are never observed",
+  },
+  {
+    key: "late", label: "decide late",
+    title: "Pool the rich vectors, not the decisions they would have made",
+    body: "There are two places to put the decision, and the paper is firm about which one is right. Way A classifies each instance first and then combines the verdicts — every slice shouts sick or fine, and you count the votes. Way B keeps each instance as its full embedding, blends the embeddings into one bag vector, and makes a single decision at the end. Toggle between them on the same four slices and watch what Way A destroys. Three of those slices are sitting at roughly 0.4 — faint, unconfident, a shadow in the corner — and the moment each is forced to commit to a single yes or no, all three round to nothing and the vote comes back negative. Way B never asks them to commit. Three vectors carrying a soft suggestion each are blended, the suggestions accumulate, and the one decision that gets made sees the accumulated picture. It is the difference between four doctors shouting a bare verdict across a room and four doctors writing full notes for a senior colleague to read together. The formal name for this is embedding-level versus instance-level MIL, and the reason to care is that information thrown away early cannot be recovered late.",
+    math: "instance-level:  Y = σ( Σₖ θ(hₖ) )    ·    embedding-level:  Y = g( pool over every hₖ )",
+  },
+  {
+    key: "pool", label: "the operator",
+    title: "Whatever does the pooling has to be blind to order",
+    body: "A bag of knee slices is a pile. Reordering how you stacked them cannot change whether the knee has a tear, so the aggregation step is required to be permutation-invariant — press shuffle and watch all three pooled numbers refuse to move. That constraint is less limiting than it sounds: the Deep Sets result says any permutation-invariant function can be written as transform each instance, sum, then process the total, which is exactly the transform → pool → classify recipe. Nothing is being given up architecturally. What matters is which order-blind operator you pick, and the two obvious ones are both fixed rules with a blind spot. Max is rigid: switch to the diffuse profile and it reports the brightest slice while ignoring that all sixteen lit up. Mean is worse in the opposite direction: on the focal profile it buries a 0.73 finding under fourteen quiet slices, which is the exact failure that matters when one small tumour patch sits in a sea of healthy tissue. Neither has a parameter. Neither can be told it was wrong.",
+    math: "permutation invariance: reordering the bag leaves the pooled vector unchanged, for every π   ·   Deep Sets: any such f = g( Σₖ φ(xₖ) )",
+  },
+  {
+    key: "net", label: "the attention net",
+    title: "Replace the fixed rule with a weighted average whose weights are learned",
+    body: "This is the paper's contribution, and it is smaller than its consequences. Keep the weighted-sum shape, but compute the weights with a tiny network on each embedding: push hₖ through V, squash it with tanh, project it onto w to get a single number eₖ, then softmax those numbers across the bag. The softmax does two jobs at once — it keeps the weights positive and summing to one, so the result is a genuine weighted average, and because it is a sum over instances the whole thing stays permutation-invariant and therefore remains a legal MIL operator. What changed is that max and mean were opinions baked in by whoever wrote the layer, and this is an opinion learned from data. The gated variant is worth the toggle. Plain tanh is close to linear near zero, which limits how much the attention branch can express about interactions between instances; adding a sigmoid branch and multiplying the two gives the score a multiplicative gate and buys the nonlinearity back. It is a small architectural nicety on top of a genuinely load-bearing idea.",
+    math: "z = Σₖ aₖ hₖ,   aₖ = exp{ wᵀ tanh(V hₖᵀ) } ⁄ Σⱼ exp{ wᵀ tanh(V hⱼᵀ) }   ·   gated: tanh(V hₖᵀ) ⊙ sigm(U hₖᵀ)",
+  },
+  {
+    key: "dilute", label: "the rare positive",
+    title: "Mean pooling divides the evidence by the size of the haystack",
+    body: "Here is the failure with a number on it. Put one genuinely positive instance in a bag of K and ask how much of the pooled vector that instance gets to write. Under mean pooling the answer is fixed by arithmetic and not by anything the model learned: exactly 1/K. Drag the slider. At K = 8 the tear slice owns an eighth of the answer, which is survivable. At K = 256 it owns four thousandths, and whatever it had to say has been averaged into silence by 255 slices of unremarkable anatomy. Attention has no such constraint — the weights are learned, so a single instance is free to take most of the mass if that is what minimising the loss requires, and the green line simply does not bend. This is the concrete reason the technique took hold in computational pathology rather than staying a curiosity: a whole-slide image is thousands of patches and a tumour might occupy a handful of them, so the K axis in this plot keeps going well past its right edge. It is also the reason to be careful reading MIL results across datasets with very different bag sizes.",
+    math: "mean:  weight on the positive instance = 1/K, independent of content   ·   attention:  aₖ free, learned, Σ aₖ = 1",
+  },
+  {
+    key: "map", label: "the free map",
+    title: "The pooling weights are a localisation map nobody paid to annotate",
+    body: "The part that gets the paper cited outside its own subfield. Because aₖ says how much instance k contributed, reading the weights back after a positive prediction tells you which instances drove it — and for a stack of knee slices that is a statement about where. The model was trained on nothing but exam-level labels, was never shown a single annotated slice, and still comes out able to say the tear is around slices 18 to 21. That is weakly supervised localisation obtained as a by-product of doing the classification properly, and it is why the same mechanism that fixed the pooling also happens to be the interpretability story. The caveat matters as much as the result and should be quoted alongside it: an attention map shows what the model relied on, which usually overlaps the real pathology but is not guaranteed to. It is a hint worth showing a radiologist, not a verified segmentation, and treating one as the other is how a plausible-looking heatmap ends up laundering a wrong prediction.",
+    math: "argmax aₖ → the instances that carried the call   ·   no instance labels were used to obtain it",
+  },
+  {
+    key: "throws", label: "what it throws away",
+    title: "Order-blindness is the constraint that makes it legal, and the one that loses the anatomy",
+    body: "Attention-MIL made attention the default pooling operator, and the honest place to leave it is with what the framing costs. Treating a bag as an unordered set discards two things a knee actually has. Slice 19 sits between 18 and 20, and a tear with 3D extent spans them — that adjacency is well supported empirically, which is why 3D CNNs and even 2.5D channel-stacking beat unordered treatments when the finding has shape. And the sagittal, coronal and axial stacks are three views of one physical joint, which is why radiologists read all three. The interesting gap is the second one. Multi-plane models do exist, but most fuse late and loosely — a network per plane, then average — and almost none use the fact that DICOM already records the exact correspondence between them. Registered coordinates would let a patch in one plane attend to the same physical point in another, and that is largely unexplored rather than disproven. The ladder is how you would find out, one rung at a time on the same data, with the gain reported stratified by difficulty rather than as a single aggregate — the cross-plane benefit should concentrate on exactly the ambiguous cases where one view is not enough. And the reality check comes before the model: measure how well the planes actually register on real scans, because motion between acquisitions is where geometry-aware ideas usually die.",
+    math: "(a) unordered → (b) + adjacency → (c) + late fusion → (d) + coordinate-registered cross-plane   ·   report gain stratified by difficulty",
+  },
+];
+
+
+/* ════════════════════════════════════════
+   ATTENTION-BASED MIL — Ilse, Tomczak & Welling (ICML 2018)
+   ════════════════════════════════════════
+   The sequel to the MRNet bench: that one ends by calling attention pooling
+   "the modern repair", and this is the paper that built it. */
+
+/* Sixteen slices, two kinds of finding. The focal profile is a tear — two
+   or three slices carry everything. The diffuse one is an effusion, which
+   never spikes anywhere and is the case max-pooling cannot see. */
+const MIL_PROFILES = {
+  focal: { label: "a tear — focal", note: "two slices carry the whole finding", x: [0.05, 0.04, 0.07, 0.05, 0.06, 0.04, 0.05, 0.08, 0.64, 0.73, 0.55, 0.09, 0.05, 0.06, 0.04, 0.05] },
+  diffuse: { label: "an effusion — diffuse", note: "everything is lit, nothing is bright", x: [0.26, 0.29, 0.33, 0.28, 0.34, 0.30, 0.36, 0.31, 0.33, 0.29, 0.35, 0.32, 0.28, 0.31, 0.27, 0.30] },
+};
+
+/* The attention weights the paper learns come from a small network on the
+   embedding, not from the score — but for a drawing, a sharp softmax of the
+   score is the honest shape of the answer it converges to. */
+const milAttend = (xs, T = 0.14) => {
+  const m = Math.max(...xs);
+  const e = xs.map((v) => Math.exp((v - m) / T));
+  const s = e.reduce((a, b) => a + b, 0);
+  return e.map((v) => v / s);
+};
+
+const MIL_KS = [8, 16, 32, 64, 128, 256];
+
+/* Twenty-four slices of a knee, the tear sitting across 18–21. */
+const MIL_MAP = Array.from({ length: 24 }, (_, i) => {
+  const d = Math.abs(i - 18.5);
+  return +(0.03 + 0.92 * Math.exp(-(d * d) / 3.1)).toFixed(3);
+});
+
+const MIL_RUNGS = [
+  {
+    key: "a", label: "(a) unordered attention-MIL",
+    adds: "the baseline — order-blind by construction",
+    status: "the paper, unchanged",
+    statusCol: "sub",
+    body: "Instances are an interchangeable pile. Slice 19 has no idea it sits between 18 and 20, and the sagittal stack has no idea the coronal one is looking at the same knee. Everything below is an argument that one of those two facts is worth putting back.",
+  },
+  {
+    key: "b", label: "(b) + within-plane ordering",
+    adds: "slice adjacency inside one stack",
+    status: "well supported empirically",
+    statusCol: "green",
+    body: "3D CNNs see slice-to-slice context by construction and generally beat unordered-bag treatments when the pathology has 3D extent; 2.5D stacking of neighbouring slices as channels reliably beats single-slice. Both are indirect evidence that adjacency carries signal. The gain is task-dependent — it shrinks when the finding is obvious on one slice, and for ligament and meniscal work the 3D shape usually is diagnostic.",
+  },
+  {
+    key: "c", label: "(c) + late multi-plane fusion",
+    adds: "sagittal, coronal and axial, combined at the end",
+    status: "shown to help — but fused loosely",
+    statusCol: "yellow",
+    body: "A separate network per plane, then average or concatenate the final features. This is what most multi-view medical models actually do, and it does help: a structure ambiguous in one view is often clear in another, which is exactly why radiologists read more than one plane. What it does not use is where anything physically is.",
+  },
+  {
+    key: "d", label: "(d) + coordinate-registered cross-plane",
+    adds: "the DICOM geometry nobody threads in",
+    status: "largely unexplored, not disproven",
+    statusCol: "accent",
+    body: "ImagePositionPatient and ImageOrientationPatient give the exact correspondence — this voxel in the sagittal stack is that physical point in the coronal one. Tag each instance with its real physical position rather than its index, or bias cross-plane attention by physical distance, and attention can learn to look across planes at the same anatomy. The honest caveat is that this is where it gets hard: motion between acquisitions, different slice thicknesses, resampling artifacts. The first experiment is not the model — it is measuring how well the planes actually register.",
+  },
+];
+
+export function AttentionMilWalkthrough() {
+  const [step, setStep] = useState(0);
+  const [frame, setFrame] = useState("mil");
+  const [route, setRoute] = useState("instance");
+  const [prof, setProf] = useState("focal");
+  const [order, setOrder] = useState(null);
+  const [gated, setGated] = useState(false);
+  const [ki, setKi] = useState(2);
+  const [rung, setRung] = useState("a");
+
+  const sc = MIL_STEPS[step];
+  const sk = sc.key;
+
+  const arrow = (x1, y1, x2, y2, col, dash) => {
+    const a = Math.atan2(y2 - y1, x2 - x1);
+    const w = 4, len = 7;
+    return (
+      <g stroke={col || P.accent} strokeWidth="1.3" fill="none">
+        <path d={`M${x1} ${y1} L${x2} ${y2}`} strokeDasharray={dash ? "4 3" : "none"} />
+        <path d={`M${x2 - len * Math.cos(a) - w * Math.sin(a)} ${y2 - len * Math.sin(a) + w * Math.cos(a)} L${x2} ${y2} L${x2 - len * Math.cos(a) + w * Math.sin(a)} ${y2 - len * Math.sin(a) - w * Math.cos(a)}`} />
+      </g>
+    );
+  };
+  const box = (x, y, w, h, label, sub, col, soft) => (
+    <g>
+      <rect x={x} y={y} width={w} height={h} fill={soft ? P.accentSoft : P.paper2} stroke={col || P.ink} strokeWidth="1.2" />
+      <text x={x + w / 2} y={y + (sub ? h / 2 - 1 : h / 2 + 4)} textAnchor="middle" style={SK} fontSize="10" fill={col || P.ink}>{label}</text>
+      {sub && <text x={x + w / 2} y={y + h / 2 + 12} textAnchor="middle" style={SK} fontSize="8.2" fill={P.sub}>{sub}</text>}
+    </g>
+  );
+  /* one slice, drawn as a little cross-hatched square */
+  const slice = (x, y, w, h, col, fill) => (
+    <g>
+      <rect x={x} y={y} width={w} height={h} fill={fill || P.paper2} stroke={col || P.line} strokeWidth={col ? 1.3 : 0.8} />
+      {Array.from({ length: 3 }).map((_, i) => (
+        <line key={i} x1={x} y1={y + ((i + 1) * h) / 4} x2={x + w} y2={y + ((i + 1) * h) / 4} stroke={P.line} strokeWidth="0.4" />
+      ))}
+    </g>
+  );
+
+  const pf = MIL_PROFILES[prof];
+  const perm = order || pf.x.map((_, i) => i);
+  const shown = perm.map((i) => pf.x[i]);
+  const pMax = Math.max(...pf.x);
+  const pMean = pf.x.reduce((a, b) => a + b, 0) / pf.x.length;
+  const pAtt = milAttend(pf.x);
+  const pAttPooled = pf.x.reduce((s, v, i) => s + v * pAtt[i], 0);
+
+  const K = MIL_KS[ki];
+  const meanShare = 1 / K;
+  const attShare = 0.86;
+
+  const mapA = milAttend(MIL_MAP, 0.19);
+  const mapTop = mapA.map((v, i) => [v, i]).sort((a, b) => b[0] - a[0]).slice(0, 4).map((p) => p[1]).sort((a, b) => a - b);
+
+  const body = (() => {
+    switch (sk) {
+      /* ── 1. what makes it MIL at all ── */
+      case "bag": {
+        const mil = frame === "mil";
+        return (
+          <g>
+            <text x={300} y={17} textAnchor="middle" style={SK} fontSize="10.5" fill={P.sub}>
+              {mil ? "the label sits one level above the thing you feed in — that gap is the whole problem"
+                : "label and input at the same granularity — nothing is hidden, so nothing is weak"}
+            </text>
+
+            {mil ? (
+              <g>
+                <rect x={40} y={44} width={306} height={186} rx={6} fill="none" stroke={P.accent} strokeWidth="1.3" strokeDasharray="5 4" />
+                <text x={48} y={60} style={SK} fontSize="8.4" fill={P.accent} letterSpacing="0.08em">BAG — ONE KNEE EXAM</text>
+
+                {Array.from({ length: 8 }).map((_, i) => {
+                  const cx = 56 + (i % 4) * 72, cy = 74 + Math.floor(i / 4) * 74;
+                  const isPos = i === 5;
+                  return (
+                    <g key={i}>
+                      {slice(cx, cy, 58, 54, isPos ? P.red : null, isPos ? "rgba(155,59,59,0.10)" : null)}
+                      {isPos && <path d={`M${cx + 16} ${cy + 34} q 12 -16 26 -4`} stroke={P.red} strokeWidth="1.6" fill="none" />}
+                      <text x={cx + 29} y={cy + 68} textAnchor="middle" style={SK} fontSize="9" fill={P.sub}>?</text>
+                    </g>
+                  );
+                })}
+                <text x={193} y={244} textAnchor="middle" style={SK} fontSize="8.6" fill={P.sub}>eight instances · not one of them carries a label</text>
+
+                {arrow(350, 128, 378, 128)}
+                <rect x={384} y={108} width={120} height={40} fill="rgba(63,122,87,0.10)" stroke={P.green} strokeWidth="1.3" />
+                <text x={444} y={126} textAnchor="middle" style={SK} fontSize="10" fill={P.green}>ACL tear: yes</text>
+                <text x={444} y={139} textAnchor="middle" style={SK} fontSize="7.8" fill={P.sub}>the only label you get</text>
+
+                <text x={384} y={172} style={SK} fontSize="8.4" fill={P.ink}>the bag rule</text>
+                <text x={384} y={187} style={SK} fontSize="8" fill={P.sub}>positive ⇔ at least one</text>
+                <text x={384} y={198} style={SK} fontSize="8" fill={P.sub}>instance is positive</text>
+                <text x={384} y={213} style={SK} fontSize="8" fill={P.sub}>negative ⇔ every one is</text>
+                <text x={384} y={224} style={SK} fontSize="8" fill={P.sub}>negative</text>
+                <text x={384} y={244} style={SK} fontSize="8" fill={P.red}>so a positive bag is mostly</text>
+                <text x={384} y={255} style={SK} fontSize="8" fill={P.red}>negative instances</text>
+              </g>
+            ) : (
+              <g>
+                {slice(150, 78, 130, 130, P.ink)}
+                <text x={215} y={224} textAnchor="middle" style={SK} fontSize="8.6" fill={P.sub}>one image, fed in whole</text>
+                {arrow(292, 143, 330, 143)}
+                <rect x={336} y={123} width={116} height={40} fill="rgba(63,122,87,0.10)" stroke={P.green} strokeWidth="1.3" />
+                <text x={394} y={148} textAnchor="middle" style={SK} fontSize="10.5" fill={P.green}>cat</text>
+                <text x={300} y={268} textAnchor="middle" style={SK} fontSize="9" fill={P.ink}>the label describes exactly the thing you handed over — this is ordinary supervised learning</text>
+                <text x={300} y={283} textAnchor="middle" style={SK} fontSize="8.6" fill={P.sub}>MIL only begins when the label is coarser than the unit of input</text>
+              </g>
+            )}
+          </g>
+        );
+      }
+
+      /* ── 2. pool the embeddings, not the decisions ── */
+      case "late": {
+        const inst = route === "instance";
+        const vals = [0.42, 0.38, 0.45, 0.05];
+        return (
+          <g>
+            <text x={300} y={17} textAnchor="middle" style={SK} fontSize="10.5" fill={P.sub}>
+              {inst ? "decide per instance, then vote — every \"maybe\" is crushed before anything can add up"
+                : "blend the rich vectors first, decide once — the maybes survive long enough to matter"}
+            </text>
+
+            {vals.map((v, i) => {
+              const y = 44 + i * 58;
+              return (
+                <g key={i}>
+                  {slice(34, y, 46, 42, i === 3 ? null : P.accent)}
+                  <text x={57} y={y + 52} textAnchor="middle" style={SK} fontSize="7.4" fill={P.sub}>slice {i + 1}</text>
+                  {arrow(84, y + 21, 104, y + 21, P.line)}
+                  <rect x={106} y={y + 6} width={30} height={30} fill={P.faint} stroke={P.line} strokeWidth="1" />
+                  <text x={121} y={y + 26} textAnchor="middle" style={SK} fontSize="9.5" fill={P.ink}>f</text>
+                  {arrow(140, y + 21, 162, y + 21, P.line)}
+
+                  {inst ? (
+                    <g>
+                      <rect x={164} y={y + 4} width={96} height={34} fill={P.paper2} stroke={P.line} strokeWidth="1" />
+                      <text x={212} y={y + 25} textAnchor="middle" style={SK} fontSize="9.5" fill={P.sub}>
+                        {v.toFixed(2)} <tspan fill={P.red}>→ {v > 0.5 ? 1 : 0}</tspan>
+                      </text>
+                      <line x1={262} y1={y + 21} x2={284} y2={y + 21} stroke={P.line} strokeWidth="1" />
+                    </g>
+                  ) : (
+                    <g>
+                      {[0, 1, 2, 3].map((c) => {
+                        const a = Math.min(1, v * (c === 1 ? 1.9 : c === 2 ? 1.4 : 0.7));
+                        return <rect key={c} x={166 + c * 24} y={y + 6} width={22} height={30} fill={`rgba(43,76,140,${0.10 + a * 0.62})`} stroke={P.line} strokeWidth="0.6" />;
+                      })}
+                      <line x1={262} y1={y + 21} x2={284} y2={y + 21} stroke={P.line} strokeWidth="1" />
+                    </g>
+                  )}
+                </g>
+              );
+            })}
+
+            {inst ? (
+              <g>
+                <path d="M284 65 L284 239" stroke={P.line} strokeWidth="1" fill="none" />
+                {arrow(284, 152, 300, 152, P.red)}
+                {box(302, 124, 104, 56, "count the yeses", "0 of 4", P.red)}
+                {arrow(410, 152, 438, 152, P.red)}
+                <rect x={442} y={130} width={116} height={44} fill="rgba(155,59,59,0.10)" stroke={P.red} strokeWidth="1.4" />
+                <text x={500} y={157} textAnchor="middle" style={SK} fontSize="11" fill={P.red}>NEGATIVE</text>
+                <text x={300} y={280} textAnchor="middle" style={SK} fontSize="8.8" fill={P.sub}>three slices each said "40% suspicious" — and each was rounded to nothing before the vote was counted</text>
+              </g>
+            ) : (
+              <g>
+                <path d="M284 65 L284 239" stroke={P.line} strokeWidth="1" fill="none" />
+                {arrow(284, 152, 300, 152)}
+                {box(302, 124, 78, 56, "Σ aₖ hₖ", "one vector", P.accent, true)}
+                {arrow(384, 152, 404, 152)}
+                {[0, 1, 2, 3].map((c) => (
+                  <rect key={c} x={408 + c * 20} y={137} width={18} height={30} fill={`rgba(43,76,140,${0.30 + c * 0.16})`} stroke={P.line} strokeWidth="0.6" />
+                ))}
+                <text x={446} y={182} textAnchor="middle" style={SK} fontSize="8" fill={P.sub}>z</text>
+                {arrow(490, 152, 510, 152)}
+                <rect x={514} y={132} width={40} height={40} fill={P.faint} stroke={P.line} strokeWidth="1" />
+                <text x={534} y={157} textAnchor="middle" style={SK} fontSize="9.5" fill={P.ink}>g</text>
+                <text x={534} y={188} textAnchor="middle" style={SK} fontSize="10" fill={P.green}>POSITIVE</text>
+                <text x={300} y={280} textAnchor="middle" style={SK} fontSize="8.8" fill={P.sub}>the same three faint maybes, kept as vectors, add up and tip the one decision that gets made</text>
+              </g>
+            )}
+          </g>
+        );
+      }
+
+      /* ── 3. the operator, and the order-blindness it must keep ── */
+      case "pool": {
+        const bw = 15, stepx = 21, x0 = 52, base = 224, scale = 168;
+        const yFor = (v) => base - v * scale;
+        return (
+          <g>
+            <text x={300} y={16} textAnchor="middle" style={SK} fontSize="10.5" fill={P.sub}>{pf.label} — {pf.note}</text>
+
+            <line x1={x0 - 6} y1={base} x2={x0 + 16 * stepx} y2={base} stroke={P.ink} strokeWidth="1" />
+            {shown.map((v, i) => (
+              <rect key={i} x={x0 + i * stepx} y={yFor(v)} width={bw} height={base - yFor(v)}
+                fill={v > 0.5 ? P.accent : "rgba(43,76,140,0.26)"} stroke={P.line} strokeWidth="0.5" />
+            ))}
+            <text x={x0 + 8 * stepx} y={244} textAnchor="middle" style={SK} fontSize="8" fill={P.sub}>16 instances, in whatever order they came out of the scanner</text>
+
+            <line x1={x0 - 6} y1={yFor(pMax)} x2={396} y2={yFor(pMax)} stroke={P.accent} strokeWidth="1" strokeDasharray="4 3" />
+            <text x={400} y={yFor(pMax) + 3} style={SK} fontSize="8.4" fill={P.accent}>max</text>
+            <line x1={x0 - 6} y1={yFor(pMean)} x2={396} y2={yFor(pMean)} stroke={P.red} strokeWidth="1" strokeDasharray="4 3" />
+            <text x={400} y={yFor(pMean) + 3} style={SK} fontSize="8.4" fill={P.red}>mean</text>
+            <line x1={x0 - 6} y1={yFor(pAttPooled)} x2={396} y2={yFor(pAttPooled)} stroke={P.green} strokeWidth="1.4" />
+            <text x={400} y={yFor(pAttPooled) + 3} style={SK} fontSize="8.4" fill={P.green}>attention</text>
+
+            <rect x={436} y={44} width={156} height={196} fill={P.faint} stroke={P.line} strokeWidth="0.8" />
+            <text x={446} y={62} style={SK} fontSize="8.4" fill={P.ink} letterSpacing="0.06em">POOLED VALUE</text>
+            {[["max", pMax, P.accent, "fixed · rigid"], ["mean", pMean, P.red, "fixed · dilutes"], ["attention", pAttPooled, P.green, "learned · adapts"]].map(([n, v, c, sub2], i) => (
+              <g key={n}>
+                <text x={446} y={88 + i * 46} style={SK} fontSize="9" fill={c}>{n}</text>
+                <text x={582} y={88 + i * 46} textAnchor="end" style={SK} fontSize="11" fill={c}>{v.toFixed(3)}</text>
+                <text x={446} y={101 + i * 46} style={SK} fontSize="7.6" fill={P.sub}>{sub2}</text>
+                <line x1={446} y1={109 + i * 46} x2={582} y2={109 + i * 46} stroke={P.line} strokeWidth="0.6" />
+              </g>
+            ))}
+            <text x={446} y={224} style={SK} fontSize="7.8" fill={P.sub}>{order ? "shuffled — nothing moved" : "press shuffle ↑"}</text>
+
+            <text x={300} y={276} textAnchor="middle" style={SK} fontSize="8.8" fill={order ? P.green : P.sub}>
+              {order
+                ? "the bars are in a different order and all three numbers are identical — that is permutation invariance, and every legal MIL pooling operator has it"
+                : prof === "focal"
+                  ? "mean has buried a 0.73 finding under fourteen quiet slices; max survives it, and attention gets there by learning rather than by rule"
+                  : "nothing spikes, so max reports one slice's brightness and ignores that all sixteen lit up — the failure mode mean would have handled"}
+            </text>
+          </g>
+        );
+      }
+
+      /* ── 4. the actual mechanism ── */
+      case "net": {
+        return (
+          <g>
+            <text x={300} y={16} textAnchor="middle" style={SK} fontSize="10.5" fill={P.sub}>one scalar per instance, then a single softmax across the bag — that is what keeps it order-blind</text>
+
+            {box(28, 104, 58, 44, "hₖ", "embedding", P.ink)}
+            {arrow(90, 126, 112, 126)}
+            {box(114, 106, 46, 40, "V hₖᵀ", null, P.accent)}
+            {arrow(164, 126, 184, 126)}
+            {box(186, 106, 48, 40, "tanh", null, P.accent)}
+
+            {gated && (
+              <g>
+                {arrow(86, 138, 112, 196, P.yellow)}
+                {box(114, 178, 46, 38, "U hₖᵀ", null, P.yellow)}
+                {arrow(164, 197, 184, 197, P.yellow)}
+                {box(186, 178, 48, 38, "sigm", null, P.yellow)}
+                {arrow(236, 197, 258, 156, P.yellow)}
+                <circle cx={266} cy={126} r={11} fill={P.paper2} stroke={P.yellow} strokeWidth="1.3" />
+                <text x={266} y={130} textAnchor="middle" style={SK} fontSize="11" fill={P.yellow}>⊙</text>
+              </g>
+            )}
+            {arrow(236, 126, gated ? 254 : 288, 126)}
+            {gated && arrow(278, 126, 288, 126)}
+
+            {box(290, 106, 44, 40, "wᵀ·", null, P.accent)}
+            {arrow(336, 126, 356, 126)}
+            <text x={370} y={131} textAnchor="middle" style={SK} fontSize="12" fill={P.ink}>eₖ</text>
+            <text x={370} y={148} textAnchor="middle" style={SK} fontSize="7.4" fill={P.sub}>one number</text>
+            {arrow(384, 126, 404, 126)}
+            {box(406, 100, 84, 52, "softmax", "over all k", P.green)}
+            {arrow(492, 126, 512, 126, P.green)}
+            <text x={532} y={131} textAnchor="middle" style={SK} fontSize="12" fill={P.green}>aₖ</text>
+            <text x={532} y={148} textAnchor="middle" style={SK} fontSize="7.4" fill={P.sub}>Σ aₖ = 1</text>
+
+            <line x1={28} y1={238} x2={572} y2={238} stroke={P.line} strokeWidth="0.8" />
+            <text x={300} y={262} textAnchor="middle" style={SK} fontSize="12" fill={P.ink}>z = Σₖ aₖ · hₖ</text>
+            {(gated
+              ? ["tanh is nearly linear around zero, so plain attention struggles to model",
+                 "interactions between instances — the sigmoid branch gates the score and buys that back"]
+              : ["a trainable weighted average: still a sum over instances, so still order-blind —",
+                 "but the network now learns the weights instead of being handed max or mean"]
+            ).map((t, i) => (
+              <text key={i} x={300} y={276 + i * 13} textAnchor="middle" style={SK} fontSize="8.6" fill={gated ? P.yellow : P.sub}>{t}</text>
+            ))}
+          </g>
+        );
+      }
+
+      /* ── 5. why a rare positive needs this ── */
+      case "dilute": {
+        const x0 = 66, x1 = 424, y0 = 60, y1 = 220;
+        const px = (i) => x0 + (i * (x1 - x0)) / (MIL_KS.length - 1);
+        const py = (v) => y1 - v * 150;
+        return (
+          <g>
+            <text x={300} y={16} textAnchor="middle" style={SK} fontSize="10.5" fill={P.sub}>one tear slice in a bag of K — how much of the pooled vector does it actually get to write?</text>
+
+            <line x1={x0 - 10} y1={y1} x2={x1 + 10} y2={y1} stroke={P.ink} strokeWidth="1" />
+            <line x1={x0 - 10} y1={y0} x2={x0 - 10} y2={y1} stroke={P.ink} strokeWidth="1" />
+            {[0, 0.25, 0.5, 0.75, 1].map((v) => (
+              <g key={v}>
+                <line x1={x0 - 14} y1={py(v)} x2={x0 - 10} y2={py(v)} stroke={P.sub} strokeWidth="0.8" />
+                <text x={x0 - 18} y={py(v) + 3} textAnchor="end" style={SK} fontSize="7.4" fill={P.sub}>{v.toFixed(2)}</text>
+              </g>
+            ))}
+            {MIL_KS.map((k, i) => (
+              <text key={k} x={px(i)} y={y1 + 14} textAnchor="middle" style={SK} fontSize="7.6" fill={i === ki ? P.ink : P.sub}>{k}</text>
+            ))}
+            <text x={(x0 + x1) / 2} y={y1 + 30} textAnchor="middle" style={SK} fontSize="8" fill={P.sub}>bag size K</text>
+
+            <path d={`M${MIL_KS.map((k, i) => `${px(i)} ${py(1 / k)}`).join(" L")}`} fill="none" stroke={P.red} strokeWidth="1.6" />
+            <path d={`M${px(0)} ${py(attShare)} L${px(MIL_KS.length - 1)} ${py(attShare)}`} fill="none" stroke={P.green} strokeWidth="1.6" />
+            {MIL_KS.map((k, i) => (
+              <g key={k}>
+                <circle cx={px(i)} cy={py(1 / k)} r={i === ki ? 4 : 2.4} fill={P.red} />
+                <circle cx={px(i)} cy={py(attShare)} r={i === ki ? 4 : 2.4} fill={P.green} />
+              </g>
+            ))}
+            <text x={px(MIL_KS.length - 1) - 4} y={py(attShare) - 9} textAnchor="end" style={SK} fontSize="8.4" fill={P.green}>attention — learned, so it need not shrink</text>
+            <text x={px(2)} y={py(1 / 32) - 10} style={SK} fontSize="8.4" fill={P.red}>mean — 1/K, by construction</text>
+
+            <rect x={444} y={54} width={148} height={140} fill={P.faint} stroke={P.line} strokeWidth="0.8" />
+            <text x={454} y={72} style={SK} fontSize="8.4" fill={P.ink} letterSpacing="0.06em">AT K = {K}</text>
+            <text x={454} y={100} style={SK} fontSize="8.4" fill={P.red}>mean gives it</text>
+            <text x={582} y={100} textAnchor="end" style={SK} fontSize="12" fill={P.red}>{(meanShare * 100).toFixed(1)}%</text>
+            <text x={454} y={134} style={SK} fontSize="8.4" fill={P.green}>attention gives it</text>
+            <text x={582} y={134} textAnchor="end" style={SK} fontSize="12" fill={P.green}>{(attShare * 100).toFixed(0)}%</text>
+            <line x1={454} y1={148} x2={582} y2={148} stroke={P.line} strokeWidth="0.6" />
+            <text x={454} y={166} style={SK} fontSize="7.6" fill={P.sub}>a whole-slide image is</text>
+            <text x={454} y={177} style={SK} fontSize="7.6" fill={P.sub}>thousands of patches —</text>
+            <text x={454} y={188} style={SK} fontSize="7.6" fill={P.sub}>this axis keeps going</text>
+
+            <text x={300} y={272} textAnchor="middle" style={SK} fontSize="8.8" fill={P.sub}>this is the concrete reason mean pooling fails in pathology: the tumour patch's vote is divided by the size of the slide it was found on</text>
+          </g>
+        );
+      }
+
+      /* ── 6. the interpretability that falls out for free ── */
+      case "map": {
+        const x0 = 34, w = 19, stepx = 22.4, top = 62, barMax = 60, sliceY = 138;
+        const aMax = Math.max(...mapA);
+        return (
+          <g>
+            <text x={300} y={16} textAnchor="middle" style={SK} fontSize="10.5" fill={P.sub}>the same weights that did the pooling are a localisation map you were never given labels for</text>
+
+            {MIL_MAP.map((_, i) => {
+              const x = x0 + i * stepx;
+              const h = (mapA[i] / aMax) * barMax;
+              const hot = mapTop.includes(i);
+              return (
+                <g key={i}>
+                  <rect x={x} y={top + barMax - h} width={w} height={h} fill={hot ? P.accent : "rgba(43,76,140,0.24)"} />
+                  {slice(x, sliceY, w, 40, hot ? P.accent : null, hot ? "rgba(43,76,140,0.14)" : null)}
+                  {i % 4 === 1 && <text x={x + w / 2} y={sliceY + 52} textAnchor="middle" style={SK} fontSize="7" fill={P.sub}>{i + 1}</text>}
+                </g>
+              );
+            })}
+            <text x={x0} y={54} style={SK} fontSize="8" fill={P.sub}>aₖ</text>
+            <text x={300} y={206} textAnchor="middle" style={SK} fontSize="7.8" fill={P.sub}>slice index</text>
+
+            <rect x={34} y={218} width={250} height={44} fill="rgba(43,76,140,0.08)" stroke={P.accent} strokeWidth="1" />
+            <text x={44} y={236} style={SK} fontSize="9" fill={P.accent}>read the weights back:</text>
+            <text x={44} y={252} style={SK} fontSize="9.6" fill={P.ink}>"the tear is on slices {mapTop[0] + 1}–{mapTop[mapTop.length - 1] + 1}"</text>
+
+            <rect x={296} y={218} width={270} height={44} fill="rgba(154,123,31,0.08)" stroke={P.yellow} strokeWidth="1" />
+            <text x={306} y={234} style={SK} fontSize="8.2" fill={P.yellow}>a hint, not ground truth</text>
+            <text x={306} y={247} style={SK} fontSize="7.6" fill={P.sub}>it shows what the model leaned on, which usually overlaps</text>
+            <text x={306} y={257} style={SK} fontSize="7.6" fill={P.sub}>the real pathology and is never guaranteed to</text>
+
+            <text x={300} y={282} textAnchor="middle" style={SK} fontSize="8.6" fill={P.sub}>nobody ever labelled a slice — the location is a by-product of getting the exam-level answer right</text>
+          </g>
+        );
+      }
+
+      /* ── 7. what order-blindness costs, and the ladder out ── */
+      case "throws": {
+        const r = MIL_RUNGS.find((x) => x.key === rung) || MIL_RUNGS[0];
+        const col = { sub: P.sub, green: P.green, yellow: P.yellow, accent: P.accent }[r.statusCol];
+        return (
+          <g>
+            <text x={300} y={16} textAnchor="middle" style={SK} fontSize="10.5" fill={P.sub}>permutation invariance is the constraint that makes MIL legal — and the one that throws the geometry away</text>
+
+            {MIL_RUNGS.map((x, i) => {
+              const y = 40 + i * 34;
+              const on = x.key === rung;
+              return (
+                <g key={x.key}>
+                  <rect x={30} y={y} width={250} height={28} fill={on ? P.accentSoft : P.paper2} stroke={on ? P.accent : P.line} strokeWidth={on ? 1.4 : 0.8} />
+                  <text x={42} y={y + 18} style={SK} fontSize="8.8" fill={on ? P.accent : P.sub}>{x.label}</text>
+                  {i < MIL_RUNGS.length - 1 && <line x1={155} y1={y + 28} x2={155} y2={y + 34} stroke={P.line} strokeWidth="0.8" />}
+                </g>
+              );
+            })}
+            <text x={155} y={196} textAnchor="middle" style={SK} fontSize="7.8" fill={P.sub}>the ablation ladder — each rung adds exactly one thing</text>
+
+            {/* the little diagram for the selected rung */}
+            <g>
+              {rung === "a" && [0, 1, 2, 3, 4, 5].map((i) => (
+                <g key={i} transform={`rotate(${(i * 37) % 24 - 12} ${330 + (i % 3) * 44} ${74 + Math.floor(i / 3) * 44})`}>
+                  {slice(330 + (i % 3) * 44 - 15, 74 + Math.floor(i / 3) * 44 - 14, 30, 28, P.line)}
+                </g>
+              ))}
+              {rung === "b" && (
+                <g>
+                  {[0, 1, 2, 3, 4, 5].map((i) => (
+                    <g key={i}>
+                      {slice(316 + i * 34, 62, 28, 52, P.accent)}
+                      {i < 5 && <line x1={344 + i * 34} y1={88} x2={350 + i * 34} y2={88} stroke={P.accent} strokeWidth="1.2" />}
+                    </g>
+                  ))}
+                  <text x={402} y={130} textAnchor="middle" style={SK} fontSize="7.6" fill={P.sub}>18 knows it sits between 17 and 19</text>
+                </g>
+              )}
+              {rung === "c" && (
+                <g>
+                  {["sagittal", "coronal", "axial"].map((n, i) => (
+                    <g key={n}>
+                      {slice(320 + i * 62, 56, 44, 40, P.line)}
+                      <text x={342 + i * 62} y={108} textAnchor="middle" style={SK} fontSize="7" fill={P.sub}>{n}</text>
+                      <line x1={342 + i * 62} y1={112} x2={404} y2={132} stroke={P.line} strokeWidth="0.9" />
+                    </g>
+                  ))}
+                  {box(368, 132, 72, 26, "average", null, P.yellow)}
+                  <text x={404} y={174} textAnchor="middle" style={SK} fontSize="7.6" fill={P.sub}>fused late, and loosely</text>
+                </g>
+              )}
+              {rung === "d" && (
+                <g>
+                  {["sagittal", "coronal", "axial"].map((n, i) => (
+                    <g key={n}>
+                      {slice(320 + i * 62, 56, 44, 40, P.accent)}
+                      <text x={342 + i * 62} y={108} textAnchor="middle" style={SK} fontSize="7" fill={P.sub}>{n}</text>
+                      <circle cx={334 + i * 62} cy={74} r={3.4} fill={P.red} />
+                    </g>
+                  ))}
+                  <path d="M334 74 Q 365 34 396 74" fill="none" stroke={P.red} strokeWidth="1.2" strokeDasharray="3 2" />
+                  <path d="M396 74 Q 427 34 458 74" fill="none" stroke={P.red} strokeWidth="1.2" strokeDasharray="3 2" />
+                  <text x={404} y={132} textAnchor="middle" style={SK} fontSize="7.6" fill={P.red}>the same physical point, in three stacks</text>
+                  <text x={404} y={146} textAnchor="middle" style={SK} fontSize="7.4" fill={P.sub}>ImagePositionPatient says exactly where</text>
+                </g>
+              )}
+            </g>
+
+            <line x1={300} y1={196} x2={572} y2={196} stroke={P.line} strokeWidth="0.8" />
+            <text x={300} y={214} style={SK} fontSize="8.6" fill={P.ink}>adds — {r.adds}</text>
+            <text x={300} y={230} style={SK} fontSize="8.6" fill={col}>evidence — {r.status}</text>
+            <foreignObject x={30} y={240} width={542} height={54}>
+              <div xmlns="http://www.w3.org/1999/xhtml" style={{ ...SK, fontSize: "8.4px", lineHeight: 1.5, color: P.sub }}>{r.body}</div>
+            </foreignObject>
+          </g>
+        );
+      }
+
+      default:
+        return null;
+    }
+  })();
+
+  const sliderRow = { display: "flex", gap: 10, marginBottom: 10, flexWrap: "wrap", alignItems: "center" };
+  const lbl = { ...SK, fontSize: "0.62rem", color: P.sub };
+  const val = { ...SK, fontSize: "0.66rem", color: P.ink, minWidth: 66 };
+  const toggle = (on) => ({ ...SK, fontSize: "0.68rem", padding: "3px 11px", cursor: "pointer", border: `1px solid ${on ? P.accent : P.line}`, background: on ? P.accentSoft : P.paper2, color: on ? P.accent : P.sub });
+
+  return (
+    <div>
+      {sk === "bag" && (
+        <div style={sliderRow}>
+          <span style={lbl}>the setup:</span>
+          {[["plain", "one image, one label"], ["mil", "one exam, many slices"]].map(([k, label]) => (
+            <button key={k} onClick={() => setFrame(k)} aria-pressed={frame === k} style={toggle(frame === k)}>{label}</button>
+          ))}
+          <span style={{ ...SK, fontSize: "0.66rem", color: frame === "mil" ? P.accent : P.sub }}>
+            {frame === "mil" ? "MIL" : "not MIL"}
+          </span>
+        </div>
+      )}
+
+      {sk === "late" && (
+        <div style={sliderRow}>
+          <span style={lbl}>where the decision happens:</span>
+          {[["instance", "instance-level"], ["embedding", "embedding-level"]].map(([k, label]) => (
+            <button key={k} onClick={() => setRoute(k)} aria-pressed={route === k} style={toggle(route === k)}>{label}</button>
+          ))}
+        </div>
+      )}
+
+      {sk === "pool" && (
+        <div style={sliderRow}>
+          <span style={lbl}>finding:</span>
+          {[["focal", "tear · focal"], ["diffuse", "effusion · diffuse"]].map(([k, label]) => (
+            <button key={k} onClick={() => { setProf(k); setOrder(null); }} aria-pressed={prof === k} style={toggle(prof === k)}>{label}</button>
+          ))}
+          <button
+            onClick={() => setOrder(MIL_PROFILES[prof].x.map((_, i) => i).sort(() => Math.random() - 0.5))}
+            style={{ ...toggle(!!order), border: `1px solid ${P.green}`, color: P.green }}>
+            shuffle the bag ⇄
+          </button>
+        </div>
+      )}
+
+      {sk === "net" && (
+        <div style={sliderRow}>
+          <span style={lbl}>attention:</span>
+          {[[false, "plain"], [true, "gated"]].map(([k, label]) => (
+            <button key={label} onClick={() => setGated(k)} aria-pressed={gated === k} style={toggle(gated === k)}>{label}</button>
+          ))}
+          <span style={{ ...SK, fontSize: "0.66rem", color: P.sub }}>
+            {gated ? "aₖ ∝ exp{ wᵀ ( tanh(V hₖᵀ) ⊙ sigm(U hₖᵀ) ) }" : "aₖ ∝ exp{ wᵀ tanh(V hₖᵀ) }"}
+          </span>
+        </div>
+      )}
+
+      {sk === "dilute" && (
+        <div style={sliderRow}>
+          <span style={lbl}>bag size:</span>
+          <input type="range" min={0} max={MIL_KS.length - 1} step={1} value={ki} onChange={(e) => setKi(+e.target.value)} aria-label="Bag size K" style={{ accentColor: P.accent, width: 170 }} />
+          <span style={val}>K = {K}</span>
+          <span style={{ ...SK, fontSize: "0.66rem", color: P.sub }}>
+            {K <= 16 ? "a short slice stack" : K <= 64 ? "a full knee series" : "getting close to a slide's worth of patches"}
+          </span>
+        </div>
+      )}
+
+      {sk === "throws" && (
+        <div style={sliderRow}>
+          <span style={lbl}>rung:</span>
+          {MIL_RUNGS.map((x) => (
+            <button key={x.key} onClick={() => setRung(x.key)} aria-pressed={rung === x.key} style={toggle(rung === x.key)}>{x.key}</button>
+          ))}
+          <span style={{ ...SK, fontSize: "0.66rem", color: P.sub }}>(d) &gt; (c) &gt; (b) &gt; (a) on held-out data is what would make it publishable</span>
+        </div>
+      )}
+
+      <div style={{ border: `1px solid ${P.line}`, borderTop: `2px solid ${P.ink}`, background: P.paper2 }}>
+        <div style={{ background: "#fff" }}>
+          <div style={{ aspectRatio: "600 / 300" }}>
+            <svg viewBox="0 0 600 300" width="100%" height="100%" role="img" aria-label={`Attention-MIL walkthrough step ${step + 1}: ${sc.label}`} style={{ display: "block" }} strokeLinecap="round" strokeLinejoin="round">
+              {body}
+            </svg>
+          </div>
+        </div>
+        <div style={{ padding: "0.9rem 1.1rem 1rem" }}>
+          <div style={{ ...DISP, fontWeight: 600, fontSize: "1rem", color: P.ink, marginBottom: 4 }}>{sc.title}</div>
+          <p style={{ ...BODY, fontSize: "0.88rem", color: P.sub, lineHeight: 1.65, textWrap: "pretty", margin: 0 }}>
+            <span style={{ ...SK, fontSize: "0.6rem", color: P.accent, textTransform: "uppercase", letterSpacing: "0.08em", marginRight: 6 }}>step {step + 1}</span>
+            {sc.body}
+          </p>
+          <div style={{ ...SK, fontSize: "0.66rem", color: P.ink, marginTop: 9, background: P.faint, padding: "6px 9px", display: "inline-block" }}>{sc.math}</div>
+        </div>
+      </div>
+
+      <div style={{ display: "flex", gap: 6, marginTop: 10, flexWrap: "wrap" }}>
+        {MIL_STEPS.map((s, j) => (
+          <button key={s.key} onClick={() => setStep(j)} style={{ ...SK, fontSize: "0.62rem", padding: "4px 9px", cursor: "pointer", border: `1px solid ${j === step ? P.accent : P.line}`, background: j === step ? P.accentSoft : "#fff", color: j === step ? P.accent : P.sub }}>{j + 1}. {s.label}</button>
+        ))}
+      </div>
+    </div>
   );
 }
