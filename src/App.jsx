@@ -3,7 +3,7 @@ import {
   P, SECS, PAPER, RESEARCH_AREAS, READING_LOG, TIL_REPO, FROM_SCRATCH,
   METHODS, JOURNEY, ORDERED_PROJECTS, INSIGHTS, TRACKS, PUBLICATIONS, RESUME,
 } from "./data.js";
-import { Rv, Radar, PhotoGallery, MatrixOverlay, ResearchModal, SketchFidelityAccuracy, SketchResearcherFrontier, SketchMolecule, SketchAttention, SketchFFT, SketchSpectral, SketchDCT, InsightsViewer, MetricsGateway, LabGateway } from "./ui.jsx";
+import { Rv, Radar, PhotoGallery, MatrixOverlay, ResearchModal, SketchFidelityAccuracy, SketchResearcherFrontier, SketchMolecule, SketchAttention, SketchFFT, SketchSpectral, SketchDCT, InsightsViewer, MetricsGateway, LabGateway, VisitorCount } from "./ui.jsx";
 
 /* Type tokens */
 const DISP = { fontFamily: "'Spectral',Georgia,serif" };
@@ -691,6 +691,7 @@ export default function App() {
           <Rv delay={0.26}>
             <footer style={{ marginTop: "2.2rem", paddingTop: "1rem", borderTop: `2px solid ${P.ink}` }}>
               <p style={{ ...MONO, fontSize: "0.62rem", color: P.sub }}>{PAPER.author} · {PAPER.stamp}</p>
+              <VisitorCount />
               <p style={{ ...MONO, fontSize: "0.56rem", color: P.sub, opacity: 0.55, marginTop: 4 }}>Running head × 5 reveals the appendix.</p>
             </footer>
           </Rv>

@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { P, GALLERY_PHOTOS, ARCHITECTURES, LIVE_ARCHITECTURES, METRICS, METRIC_FAMILIES } from "./data.js";
+import { GC_HOST, fetchVisitorCount } from "./analytics.js";
 
 /* Type tokens */
 const DISP = { fontFamily: "'Spectral',Georgia,serif" };
@@ -6783,5 +6784,32 @@ export function SslCompareWalkthrough() {
         ))}
       </div>
     </div>
+  );
+}
+
+
+/* ════════════════════════════════════════
+   VISITOR COUNT (footer line)
+   ════════════════════════════════════════
+   Totals pulled from GoatCounter. Renders nothing at all until they arrive —
+   a blocked request, a cold setup, or an offline reader should leave the
+   footer looking finished rather than showing a broken or zeroed stat. */
+export function VisitorCount({ style }) {
+  const [count, setCount] = useState(null);
+
+  useEffect(() => {
+    if (!GC_HOST) return;
+    let live = true;
+    fetchVisitorCount()
+      .then(c => { if (live && c) setCount(c); })
+      .catch(() => {});
+    return () => { live = false; };
+  }, []);
+
+  if (!count) return null;
+  return (
+    <p style={{ ...MONO, fontSize: "0.62rem", color: P.sub, marginTop: 4, ...style }}>
+      {count} visitors
+    </p>
   );
 }

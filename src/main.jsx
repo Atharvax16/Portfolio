@@ -4,6 +4,7 @@ import App from './App'
 import Lab from './lab.jsx'
 import Instruments from './instruments.jsx'
 import Resume from './resume.jsx'
+import { countPageview } from './analytics.js'
 
 /* Hash routing, no dependency: "#/lab..." is the Architecture Lab,
    "#/metrics..." is the Instrument Room, "#/resume" is the CV, anything else
@@ -27,6 +28,14 @@ function Root() {
     const onHash = () => setRoom(currentRoom())
     window.addEventListener('hashchange', onHash)
     return () => window.removeEventListener('hashchange', onHash)
+  }, [])
+
+  /* One document, four rooms — count the landing view and every room change
+     after it, so the dashboard sees the lab and the CV, not just the paper. */
+  useEffect(() => {
+    countPageview()
+    window.addEventListener('hashchange', countPageview)
+    return () => window.removeEventListener('hashchange', countPageview)
   }, [])
 
   if (room === 'lab') return <Lab />
