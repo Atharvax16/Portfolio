@@ -167,7 +167,8 @@ export default function App() {
             {SECS.map((sec, i) => (
               <button key={sec} onClick={() => goTo(sec)} style={{ padding: "3px 8px", border: "none", background: "transparent", cursor: "pointer", fontSize: "0.7rem", ...MONO, color: active === i ? P.accent : P.sub, borderBottom: `1.5px solid ${active === i ? P.accent : "transparent"}`, transition: "all 0.2s" }}>{sec}</button>
             ))}
-            {/* Not a section of the paper — a door out to the CV room (#/resume). */}
+            {/* Not sections of the paper — doors out to the other rooms. */}
+            <a href="#/orthovision" style={{ ...MONO, fontSize: "0.7rem", color: P.accent, textDecoration: "none", border: `1px solid ${P.accent}`, background: P.accentSoft, padding: "3px 9px", marginLeft: 6 }}>OrthoVision ↗</a>
             <a href="#/resume" style={{ ...MONO, fontSize: "0.7rem", color: P.ink, textDecoration: "none", border: `1px solid ${P.line}`, background: P.paper2, padding: "3px 9px", marginLeft: 6 }}>Résumé ↗</a>
           </nav>
         </header>
@@ -187,6 +188,7 @@ export default function App() {
                   <p style={{ ...noteTxt, marginBottom: "0.5rem" }}>Open to ML / applied-research roles &amp; collaborations.</p>
                   <p style={{ ...noteTxt, marginBottom: "0.7rem", borderTop: `1px solid ${P.faint}`, paddingTop: "0.5rem" }}>Presenting a poster at <a href="#Publications" style={{ color: P.accent, textDecoration: "underline", textUnderlineOffset: 3, fontStyle: "normal" }}>OMIA 2026</a> (MICCAI) in Strasbourg — Sept–Oct 2026.</p>
                   <div style={{ display: "flex", flexDirection: "column", gap: 3, alignItems: "flex-end" }}>
+                    <a href="#/orthovision" style={{ ...MONO, fontSize: "0.64rem", color: P.accent }}>OrthoVision ↗</a>
                     <a href="#/resume" style={{ ...MONO, fontSize: "0.64rem", color: P.accent }}>Résumé ↗</a>
                     <a href="https://github.com/Atharvax16" target="_blank" rel="noopener noreferrer" style={{ ...MONO, fontSize: "0.64rem", color: P.accent }}>GitHub ↗</a>
                     <a href={`mailto:${PAPER.email}`} style={{ ...MONO, fontSize: "0.64rem", color: P.accent }}>Email ↗</a>
@@ -300,6 +302,36 @@ export default function App() {
             <h3 style={{ ...DISP, fontWeight: 600, fontSize: "clamp(1.3rem,3.4vw,1.6rem)", color: P.ink, lineHeight: 1.15, marginBottom: 4 }}>{track.name}</h3>
             <div style={{ ...BODY, fontSize: "1rem", fontStyle: "italic", color: P.sub, marginBottom: 10 }}>{track.title}</div>
           </Rv>
+
+          {/* The build has its own room — the track here is the dated log,
+             #/orthovision is the case study written out end to end. */}
+          {track.id === "orthovision" && (
+            <Rv delay={0.03}>
+              <a
+                href="#/orthovision"
+                style={{ display: "block", textDecoration: "none", border: `1px solid ${P.line}`, borderTop: `2px solid ${P.ink}`, background: P.paper2, padding: "0.9rem 1.05rem", margin: "0 0 1.2rem", transition: "transform 0.18s ease, box-shadow 0.18s ease" }}
+                onMouseEnter={e => { e.currentTarget.style.transform = "translateY(-2px)"; e.currentTarget.style.boxShadow = `4px 4px 0 ${P.line}`; }}
+                onMouseLeave={e => { e.currentTarget.style.transform = "none"; e.currentTarget.style.boxShadow = "none"; }}
+              >
+                <div style={{ ...MONO, fontSize: "0.55rem", textTransform: "uppercase", letterSpacing: "0.13em", color: P.sub, marginBottom: 6 }}>The build, written out</div>
+                <div style={{ ...DISP, fontWeight: 600, fontSize: "1.12rem", color: P.ink, marginBottom: 5 }}>OrthoVision — the full case study</div>
+                <p style={{ ...BODY, fontSize: "0.9rem", lineHeight: 1.65, color: P.sub, marginBottom: 10, textWrap: "pretty" }}>
+                  The pipeline end to end: 570 GB of DICOM down to 18 slots a study, the calibrated
+                  soft labels that let the model beat its own teacher, the two anatomy bugs that cost
+                  the most, and the honest scoreboard.
+                </p>
+                <div style={{ display: "flex", gap: "1.4rem", flexWrap: "wrap", alignItems: "baseline" }}>
+                  {[["4,407", "studies"], ["58", "labelled"], ["0.883", "macro AUC"], ["11", "sections"]].map(([v, l]) => (
+                    <span key={l} style={{ display: "inline-flex", alignItems: "baseline", gap: 5 }}>
+                      <span style={{ ...MONO, fontSize: "0.86rem", color: P.ink }}>{v}</span>
+                      <span style={{ ...MONO, fontSize: "0.58rem", color: P.sub }}>{l}</span>
+                    </span>
+                  ))}
+                  <span style={{ ...MONO, fontSize: "0.7rem", color: P.accent, marginLeft: "auto" }}>open the case study →</span>
+                </div>
+              </a>
+            </Rv>
+          )}
           <Rv delay={0.04}>
             <div style={{ borderLeft: `2px solid ${P.accent}`, paddingLeft: "0.85rem", margin: "0 0 1.1rem" }}>
               <div style={{ ...MONO, fontSize: "0.56rem", color: P.sub, textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 4 }}>the question</div>

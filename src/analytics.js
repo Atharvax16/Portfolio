@@ -23,7 +23,7 @@ const isLocal = () =>
 
 export const analyticsOn = () => Boolean(GC_CODE) && !isLocal();
 
-/* The four rooms the hash router serves from the one document. Sub-routes
+/* The rooms the hash router serves from the one document. Sub-routes
    (#/lab/<arch>, #/metrics/<key>) are folded into their room: the public
    counter endpoint has no wildcard, so a path can only be read back if it
    was recorded exactly — and four clean rows beat twenty near-duplicates in
@@ -33,6 +33,7 @@ export const ROOMS = [
   { key: "lab", label: "lab", hash: "#/lab" },
   { key: "metrics", label: "metrics", hash: "#/metrics" },
   { key: "resume", label: "cv", hash: "#/resume" },
+  { key: "orthovision", label: "orthovision", hash: "#/orthovision" },
 ];
 
 const roomFor = hash => ROOMS.find(r => r.hash && hash.startsWith(r.hash)) || ROOMS[0];
