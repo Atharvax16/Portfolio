@@ -34,6 +34,7 @@ export const ROOMS = [
   { key: "metrics", label: "metrics", hash: "#/metrics" },
   { key: "resume", label: "cv", hash: "#/resume" },
   { key: "orthovision", label: "orthovision", hash: "#/orthovision" },
+  { key: "dentaloct", label: "dental oct", hash: "#/dentaloct" },
 ];
 
 const roomFor = hash => ROOMS.find(r => r.hash && hash.startsWith(r.hash)) || ROOMS[0];

@@ -30,7 +30,7 @@ const SECTIONS = [
 
 /* ── shared bits ─────────────────────────────────────────────────────── */
 
-function Callout({ kind, title, children }) {
+export function Callout({ kind, title, children }) {
   const col = kind === "wrong" ? P.red : kind === "clever" ? P.green : P.accent;
   const bg = kind === "wrong" ? "rgba(155,59,59,0.06)" : kind === "clever" ? "rgba(63,122,87,0.06)" : P.accentSoft;
   return (
@@ -41,7 +41,7 @@ function Callout({ kind, title, children }) {
   );
 }
 
-function Table({ head, rows, align }) {
+export function Table({ head, rows, align }) {
   return (
     <div style={{ overflowX: "auto", margin: "1.1rem 0" }}>
       <table style={{ borderCollapse: "collapse", width: "100%", minWidth: 380 }}>
@@ -73,7 +73,7 @@ function Table({ head, rows, align }) {
   );
 }
 
-function Fig({ ratio, caption, children }) {
+export function Fig({ ratio, caption, children }) {
   return (
     <figure style={{ margin: "1.3rem 0", border: `1px solid ${P.line}`, borderTop: `2px solid ${P.ink}`, background: "#fff" }}>
       <div style={{ aspectRatio: ratio || "600 / 300" }}>{children}</div>
@@ -85,7 +85,7 @@ function Fig({ ratio, caption, children }) {
 }
 
 /* arrowhead helper shared by the diagrams */
-const arw = (x1, y1, x2, y2, col, dash) => {
+export const arw = (x1, y1, x2, y2, col, dash) => {
   const a = Math.atan2(y2 - y1, x2 - x1), w = 3.6, len = 6.5;
   return (
     <g stroke={col || P.accent} strokeWidth="1.2" fill="none">
@@ -954,7 +954,7 @@ export default function OrthoVision() {
 }
 
 /* One numbered section, with the paper's margin-anchored heading. */
-function Sec({ s, children }) {
+export function Sec({ s, children }) {
   return (
     <section id={s.id} className="ov-sec">
       <div style={{ display: "flex", alignItems: "baseline", gap: 12, borderBottom: `2px solid ${P.ink}`, paddingBottom: 7, marginBottom: "1.1rem" }}>

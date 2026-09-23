@@ -5,11 +5,13 @@ import Lab from './lab.jsx'
 import Instruments from './instruments.jsx'
 import Resume from './resume.jsx'
 import OrthoVision from './orthovision.jsx'
+import DentalOCT from './dentaloct.jsx'
 import { countPageview } from './analytics.js'
 
 /* Hash routing, no dependency: "#/lab..." is the Architecture Lab,
    "#/metrics..." is the Instrument Room, "#/resume" is the CV,
-   "#/orthovision" is the OrthoVision case study, anything else is the paper. Hash (rather than history) keeps deep links working on GitHub
+   "#/orthovision" is the OrthoVision case study, "#/dentaloct" is the
+   SketchDEJ dental-OCT proposal, anything else is the paper. Hash (rather than history) keeps deep links working on GitHub
    Pages, which has no server to rewrite them — and the leading slash is what
    keeps these apart from the paper's own "#Architectures" / "#Metrics"
    section anchors. (public/resume/index.html redirects the pretty
@@ -20,6 +22,7 @@ const currentRoom = () => {
   if (h.startsWith('#/metrics')) return 'metrics'
   if (h.startsWith('#/resume')) return 'resume'
   if (h.startsWith('#/orthovision')) return 'orthovision'
+  if (h.startsWith('#/dentaloct')) return 'dentaloct'
   return null
 }
 
@@ -44,6 +47,7 @@ function Root() {
   if (room === 'metrics') return <Instruments />
   if (room === 'resume') return <Resume />
   if (room === 'orthovision') return <OrthoVision />
+  if (room === 'dentaloct') return <DentalOCT />
   return <App />
 }
 
