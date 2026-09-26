@@ -527,6 +527,15 @@ const GLYPHS = {
       <rect x="27" y="9" width="9" height="22" fill={c} fillOpacity="0.28" />
     </g>
   ),
+  bnn: (c) => (
+    /* one input, many forward passes — the spread is the answer */
+    <g stroke={c} strokeWidth="1.3" fill="none">
+      <path d="M4 32 Q12 32 16 20 Q20 6 24 20 Q28 32 36 32" fill={c} fillOpacity="0.18" />
+      <line x1="20" y1="8" x2="20" y2="33" strokeDasharray="2 2" strokeWidth="0.9" />
+      <circle cx="13" cy="35" r="1.3" fill={c} stroke="none" /><circle cx="18" cy="35" r="1.3" fill={c} stroke="none" />
+      <circle cx="22" cy="35" r="1.3" fill={c} stroke="none" /><circle cx="27" cy="35" r="1.3" fill={c} stroke="none" />
+    </g>
+  ),
   memorybank: (c) => (
     /* the Ebbinghaus forgetting curve — retention decaying, a recall dot on it */
     <g stroke={c} strokeWidth="1.3" fill="none">
@@ -7487,6 +7496,534 @@ export function AttentionMilWalkthrough() {
 
       <div style={{ display: "flex", gap: 6, marginTop: 10, flexWrap: "wrap" }}>
         {MIL_STEPS.map((s, j) => (
+          <button key={s.key} onClick={() => setStep(j)} style={{ ...SK, fontSize: "0.62rem", padding: "4px 9px", cursor: "pointer", border: `1px solid ${j === step ? P.accent : P.line}`, background: j === step ? P.accentSoft : "#fff", color: j === step ? P.accent : P.sub }}>{j + 1}. {s.label}</button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+
+/* ════════════════════════════════════════
+   BAYESIAN DEEP LEARNING — MC dropout, after Song et al. (Biomed. Opt.
+   Express 2021, oral-cancer images), then carried over to the oral-OCT
+   measurement question in #/dentaloct.
+   ════════════════════════════════════════
+   Everything drawn here is simulated in the browser from a seeded RNG.
+   The only numbers quoted from the paper are the ones labelled as such:
+   ρ = 50 passes, 0.5 dropout, 85.6% vs 85.1%, ~90% after referring 10%,
+   and the four per-image σ values from its Fig. 3. */
+
+const bnnRng = (seed) => () => {
+  seed = (seed + 0x6d2b79f5) | 0;
+  let t = Math.imul(seed ^ (seed >>> 15), 1 | seed);
+  t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+  return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+};
+const bnnGauss = (r) => Math.sqrt(-2 * Math.log(Math.max(r(), 1e-9))) * Math.cos(2 * Math.PI * r());
+const bnnClip = (v) => Math.min(1, Math.max(0, v));
+const bnnErf = (x) => {
+  const s = Math.sign(x), a = Math.abs(x), t = 1 / (1 + 0.3275911 * a);
+  return s * (1 - ((((1.061405429 * t - 1.453152027) * t + 1.421413741) * t - 0.284496736) * t + 0.254829592) * t * Math.exp(-a * a));
+};
+
+/* one prediction per forward pass — a fixed network always lands on 0.71 */
+const bnnPass = (i, sd) => bnnClip(0.71 + sd * bnnGauss(bnnRng(1000 + i * 7919)));
+
+/* Fig. 3 cases. σ is the paper's; the 50 samples are redrawn to that spread. */
+const BNN_CASES = [
+  { key: "a", label: "confident · normal", mean: 0.03, sd: 0.0232, quoted: "σ = 0.0232 (paper)", note: "every pass agrees: not suspicious" },
+  { key: "b", label: "confident · suspicious", mean: 0.97, sd: 0.02, quoted: "σ = 0.0200 (paper)", note: "every pass agrees: suspicious" },
+  { key: "c", label: "subtle lesion", mean: 0.62, sd: 0.3766, quoted: "σ = 0.3766 (paper)", note: "right on average, smeared across the axis" },
+  { key: "d", label: "over-exposed", mean: 0.45, sd: 0.3407, quoted: "σ = 0.3407 (paper)", note: "the photo is the problem, not the tissue" },
+  { key: "e", label: "0.5, and sure of it", mean: 0.5, sd: 0.035, quoted: "σ small (paper Fig. 6a)", note: "certain that it cannot tell" },
+];
+const bnnSamples = (c) => {
+  const r = bnnRng(c.key.charCodeAt(0) * 131);
+  return Array.from({ length: 50 }, () => bnnClip(c.mean + c.sd * bnnGauss(r)));
+};
+
+/* A 371-image test set sorted by uncertainty, most uncertain first. 53 errors,
+   placed so the curve passes through the paper's two quoted points. */
+const BNN_WRONG = (() => {
+  const out = [];
+  [[37, 20], [37, 11], [74, 12], [223, 10]].forEach(([n, e]) => {
+    for (let i = 0; i < n; i++) out.push(Math.floor(((i + 1) * e) / n) > Math.floor((i * e) / n));
+  });
+  return out;
+})();
+const bnnAccAfter = (frac) => {
+  const kept = BNN_WRONG.slice(Math.round(frac * BNN_WRONG.length));
+  return kept.length ? 1 - kept.filter(Boolean).length / kept.length : 1;
+};
+
+/* Forty A-scans across one oral B-scan. Thickness in true µm; optical depth
+   is n = 1.38 times that. Columns 8–12 are an unusual rete-ridge shape the
+   model has seen little of (epistemic); 24–30 sit under a shadow where the
+   ESB is not in the signal at all (aleatoric). */
+const BNN_N_OCT = 1.38;
+const BNN_COLS = Array.from({ length: 40 }, (_, c) => {
+  const ridge = Math.exp(-((c - 10) ** 2) / 4);
+  const shadow = c >= 24 && c <= 30;
+  return {
+    t: 270 + 45 * Math.sin(c / 6.5) + 110 * ridge,
+    sa: shadow ? 72 : 11 + 3 * Math.sin(c),
+    se0: 14 + 48 * ridge,
+    shadow,
+  };
+});
+const BNN_TAU_A = 40, BNN_TAU_E = 30;
+const bnnState = (col, nPat) => {
+  const se = col.se0 * Math.sqrt(10 / nPat);
+  if (col.sa > BNN_TAU_A) return { s: "cannot", se };
+  if (se > BNN_TAU_E) return { s: "uncertain", se };
+  return { s: "measured", se };
+};
+
+const BNN_STEPS = [
+  {
+    key: "dist", label: "weights → distributions",
+    title: "A Bayesian network keeps a distribution over its weights, not one best guess",
+    body: "An ordinary network is trained to one set of weights ω, so the same input always gives the same answer: press the button as often as you like and the left panel lands on 0.71 every time. That single number hides how much the training data actually pinned the answer down. A Bayesian network keeps a posterior p(ω | data) over its weights, and its prediction is the average over every network that posterior allows. Each forward pass draws a different plausible network, so the answers scatter. How wide they scatter is the model telling you how well its data constrained this input. Exact posteriors over millions of weights are intractable, which is why Bayesian networks stayed a curiosity for decades.",
+    math: "p(y | x*, X, Y) = ∫ p(y | x*, ω) · p(ω | X, Y) dω     — the paper's Eq. 2",
+  },
+  {
+    key: "mc", label: "dropout, left on",
+    title: "Monte Carlo dropout: switch dropout on at test time and sample",
+    body: "Gal & Ghahramani's shortcut, and the one Song et al. use: a network trained with dropout is already an approximate Bayesian model. Leave dropout switched on at inference, run the same image through ρ times, and every pass knocks out a different random set of units. Each pass is a sample from an approximate posterior, at no extra training cost. The paper puts two dropout layers at 0.5 on VGG19's fully connected head and takes ρ = 50 passes. The mean of the passes is the prediction, and their spread is the uncertainty. Drag the dropout rate and notice the spread depends on it. That's a hyperparameter, not a law of nature, and it matters again in step 7.",
+    math: "p̂ = (1/ρ) Σ p(y | x*, ω⁽ᵗ⁾)   ·   v = (1/ρ) Σ (p(y | x*, ω⁽ᵗ⁾) − p̂)²   — Eqs. 3–4, ρ = 50",
+  },
+  {
+    key: "spread", label: "the spread is the answer",
+    title: "Two images can share a prediction and differ completely in how sure it is",
+    body: "These are the cases from the paper's Fig. 3 and 6, with its measured σ. The samples are redrawn here to that spread. Confident cases pile every pass at one end. The subtle lesion is classified correctly on average, but its passes cover the whole axis. The over-exposed photo is uncertain for a different reason: the image carries too little information. The last case is the one the paper flags as a trap: every pass lands near 0.5, so σ is small. The model is certain that it can't separate the classes. Variance alone would wave that through, which is why the paper also refers cases with mean between 0.4 and 0.6.",
+    math: "refer if σ > 0.3   or   0.4 ≤ p̂ ≤ 0.6     — the paper's combined referral rule",
+  },
+  {
+    key: "refer", label: "refer the unsure",
+    title: "Hand the most uncertain cases to a human, and accuracy on the rest climbs",
+    body: "This is the paper's practical payoff. On 371 held-out images the Bayesian model scores 85.6% against 85.1% for the same network without MC sampling, so it isn't more accurate outright. The value is in ranking cases by σ and referring the top of the list: refer 10% and accuracy on the retained 90% reaches about 90%. The grey line is the control nobody should skip. Refer the same number of cases at random and accuracy doesn't move, which shows the uncertainty is ranking errors rather than just removing data. Rather than being replaced, a clinician gets a smaller, harder pile.",
+    math: "retained accuracy(r) = acc on the (1 − r) least-uncertain cases   ·   random referral ≈ flat",
+  },
+  {
+    key: "two", label: "two kinds of not knowing",
+    title: "Epistemic uncertainty shrinks with data; aleatoric uncertainty lives in the image",
+    body: "Here the bench leaves the paper and turns to my question, measuring oral epithelial thickness. For a measurement the head predicts a boundary depth μ and its own noise σₐ, following Kendall & Gal (2017), and MC dropout adds the spread of μ across passes. The two kinds of uncertainty mean different things. Epistemic (spread across passes) is the model not having seen enough like this, and it shrinks as labelled patients are added: drag the slider. Aleatoric (σₐ) is the image not containing the answer, like a shadow or a boundary that is physically blurred. No amount of data shrinks it. Toggle the shadow and watch which bar moves.",
+    math: "Var[y] ≈ (1/T) Σ σₐ,ₜ²  (aleatoric)  +  (1/T) Σ μₜ² − μ̄²  (epistemic)",
+  },
+  {
+    key: "three", label: "three answers, not one",
+    title: "The decomposition is what lets the system say “cannot measure”",
+    body: "This is the reason a Bayesian head suits hypothesis H1 in particular. Each A-scan gets one of three outputs, and the decomposition decides which. High aleatoric means the epithelial–stromal boundary isn't in the signal (the shadow at columns 24–30), so the honest answer is “cannot measure”, with no number at all. High epistemic means the boundary may be visible but the model is on unfamiliar ground (the rete ridge at 8–12), so the answer is “uncertain” and gets flagged for review. Otherwise it's “measured”, reported as true thickness: optical depth ÷ 1.38. Add labelled patients and the uncertain region shrinks, but the cannot-measure region doesn't. That asymmetry is the testable signature.",
+    math: "σₐ > τₐ → cannot measure   ·   σₑ > τₑ → uncertain   ·   else measured, t = Δz_optical / n,  n ≈ 1.38",
+  },
+  {
+    key: "conf", label: "then calibrate it",
+    title: "Bayesian σ ranks cases well but isn't a promise; conformal turns it into one",
+    body: "MC-dropout variances are known to be miscalibrated, and they move with the dropout rate you chose. Drag it: a nominal 90% band built from raw σ covers anywhere from about half to about 80% of true thicknesses in this simulation. The fix for H3 keeps the Bayesian model and uses σ only as a scale. On a separate set of calibration patients, compute the normalised error |y − μ| / σ, take its 90% quantile q̂, and report μ ± q̂σ. Coverage then holds at 90% whatever the dropout rate, while each interval stays wide where σ says it should be. The guarantee is an average over patients like the calibration set. It isn't per mouth site, and it doesn't survive a new device without recalibrating.",
+    math: "sᵢ = |yᵢ − μᵢ| / σᵢ on calibration patients  ·  q̂ = ⌈(n+1)(0.9)⌉/n quantile  ·  report μ ± q̂σ",
+  },
+];
+
+export function BnnWalkthrough() {
+  const [step, setStep] = useState(0);
+  const [passes, setPasses] = useState(3);
+  const [p, setP] = useState(0.5);
+  const [mc, setMc] = useState(12);
+  const [ck, setCk] = useState("c");
+  const [refer, setRefer] = useState(0.1);
+  const [nPat, setNPat] = useState(10);
+  const [shadow, setShadow] = useState(false);
+  const [dp, setDp] = useState(0.5);
+
+  const sc = BNN_STEPS[step];
+  const sk = sc.key;
+
+  const arrow = (x1, y1, x2, y2, col, dash) => {
+    const a = Math.atan2(y2 - y1, x2 - x1), w = 4, len = 7;
+    return (
+      <g stroke={col || P.accent} strokeWidth="1.3" fill="none">
+        <path d={`M${x1} ${y1} L${x2} ${y2}`} strokeDasharray={dash ? "4 3" : "none"} />
+        <path d={`M${x2 - len * Math.cos(a) - w * Math.sin(a)} ${y2 - len * Math.sin(a) + w * Math.cos(a)} L${x2} ${y2} L${x2 - len * Math.cos(a) + w * Math.sin(a)} ${y2 - len * Math.sin(a) - w * Math.cos(a)}`} />
+      </g>
+    );
+  };
+
+  /* a small fully-connected net; `drop` marks knocked-out hidden units */
+  const net = (ox, oy, layers, drop, col, fuzzy) => {
+    const pos = layers.map((n, li) => Array.from({ length: n }, (_, k) => [ox + li * 70, oy + (k - (n - 1) / 2) * 24]));
+    return (
+      <g>
+        {pos.slice(0, -1).map((L, li) => L.map(([x1, y1], a) => pos[li + 1].map(([x2, y2], b) => {
+          const off = drop && (drop[li]?.[a] || drop[li + 1]?.[b]);
+          return <line key={`${li}-${a}-${b}`} x1={x1} y1={y1} x2={x2} y2={y2} stroke={off ? P.faint : col} strokeWidth={fuzzy ? 2.2 : 0.8} strokeOpacity={fuzzy ? 0.28 : 0.7} />;
+        })))}
+        {pos.map((L, li) => L.map(([x, y], k) => {
+          const off = drop && drop[li]?.[k];
+          return (
+            <g key={`n${li}-${k}`}>
+              <circle cx={x} cy={y} r={7} fill={off ? P.faint : P.paper2} stroke={off ? P.line : col} strokeWidth="1.2" />
+              {off && <path d={`M${x - 4} ${y - 4} L${x + 4} ${y + 4} M${x + 4} ${y - 4} L${x - 4} ${y + 4}`} stroke={P.red} strokeWidth="1.2" />}
+            </g>
+          );
+        }))}
+      </g>
+    );
+  };
+
+  /* dots on a 0–1 axis, stacked where they collide */
+  const dotAxis = (x0, w, y, vals, col) => {
+    const seen = {};
+    return (
+      <g>
+        <line x1={x0} y1={y} x2={x0 + w} y2={y} stroke={P.ink} strokeWidth="0.9" />
+        {[0, 0.5, 1].map((t) => <text key={t} x={x0 + t * w} y={y + 13} textAnchor="middle" style={SK} fontSize="7.6" fill={P.sub}>{t}</text>)}
+        {vals.map((v, i) => {
+          const b = Math.round(v * 40);
+          seen[b] = (seen[b] || 0) + 1;
+          return <circle key={i} cx={x0 + v * w} cy={y - 5 - (seen[b] - 1) * 7} r={3} fill={col} fillOpacity="0.75" />;
+        })}
+      </g>
+    );
+  };
+
+  const hist = (x0, y0, w, h, vals, col, bins = 20) => {
+    const c = Array(bins).fill(0);
+    vals.forEach((v) => { c[Math.min(bins - 1, Math.floor(v * bins))] += 1; });
+    const m = Math.max(1, ...c);
+    return (
+      <g>
+        {c.map((n, i) => <rect key={i} x={x0 + (i * w) / bins + 0.5} y={y0 + h - (n / m) * h} width={w / bins - 1} height={(n / m) * h} fill={col} fillOpacity="0.55" />)}
+        <line x1={x0} y1={y0 + h} x2={x0 + w} y2={y0 + h} stroke={P.ink} strokeWidth="0.9" />
+        {[0, 0.5, 1].map((t) => <text key={t} x={x0 + t * w} y={y0 + h + 12} textAnchor="middle" style={SK} fontSize="7.6" fill={P.sub}>{t}</text>)}
+      </g>
+    );
+  };
+
+  const mcVals = Array.from({ length: mc }, (_, i) => bnnClip(0.62 + 0.3 * Math.sqrt(p / (1 - p)) * bnnGauss(bnnRng(5000 + i * 104729 + Math.round(p * 100)))));
+  const mcMean = mcVals.reduce((a, b) => a + b, 0) / Math.max(1, mcVals.length);
+  const mcSd = Math.sqrt(mcVals.reduce((a, b) => a + (b - mcMean) ** 2, 0) / Math.max(1, mcVals.length));
+  const mcMask = (() => {
+    const r = bnnRng(900 + mc * 31 + Math.round(p * 100));
+    return [null, Array.from({ length: 5 }, () => r() < p), Array.from({ length: 5 }, () => r() < p), null];
+  })();
+
+  const body = (() => {
+    switch (sk) {
+      case "dist": {
+        const fixed = Array.from({ length: passes }, () => 0.71);
+        const bayes = Array.from({ length: passes }, (_, i) => bnnPass(i, 0.12));
+        return (
+          <g>
+            <text x={300} y={17} textAnchor="middle" style={SK} fontSize="10.5" fill={P.sub}>same image, {passes} forward pass{passes === 1 ? "" : "es"} — one net repeats itself, the other shows its doubt</text>
+            <text x={150} y={42} textAnchor="middle" style={SK} fontSize="9.5" fill={P.ink}>ordinary network — one ω</text>
+            {net(80, 112, [3, 4, 1], null, P.ink)}
+            <text x={250} y={116} style={SK} fontSize="10" fill={P.ink}>0.71</text>
+            {dotAxis(40, 220, 250, fixed, P.ink)}
+            <text x={150} y={282} textAnchor="middle" style={SK} fontSize="8" fill={P.sub}>every dot on the same spot</text>
+
+            <line x1={300} y1={36} x2={300} y2={286} stroke={P.line} strokeWidth="0.8" />
+
+            <text x={450} y={42} textAnchor="middle" style={SK} fontSize="9.5" fill={P.accent}>Bayesian network — p(ω | data)</text>
+            {net(380, 112, [3, 4, 1], null, P.accent, true)}
+            <path d="M424 70 q 6 -14 12 0" stroke={P.accent} fill="none" strokeWidth="1" />
+            <path d="M424 150 q 6 -14 12 0" stroke={P.accent} fill="none" strokeWidth="1" />
+            <text x={548} y={116} style={SK} fontSize="10" fill={P.accent}>{bayes[bayes.length - 1]?.toFixed(2)}</text>
+            {dotAxis(340, 220, 250, bayes, P.accent)}
+            <text x={450} y={282} textAnchor="middle" style={SK} fontSize="8" fill={P.sub}>each pass draws a different plausible network</text>
+          </g>
+        );
+      }
+
+      case "mc": {
+        return (
+          <g>
+            <text x={300} y={17} textAnchor="middle" style={SK} fontSize="10.5" fill={P.sub}>pass {mc} — dropout at p = {p.toFixed(2)} knocks out a fresh random set of units every time</text>
+            {net(60, 150, [4, 5, 5, 1], mcMask, P.ink)}
+            <text x={130} y={260} textAnchor="middle" style={SK} fontSize="8" fill={P.sub}>hidden layer 1</text>
+            <text x={200} y={275} textAnchor="middle" style={SK} fontSize="8" fill={P.sub}>hidden layer 2</text>
+            {arrow(275, 150, 318, 150, P.line)}
+            <text x={330} y={48} style={SK} fontSize="9.5" fill={P.ink}>{mc} predictions, same image</text>
+            {hist(330, 62, 240, 150, mcVals, P.accent)}
+            <line x1={330 + mcMean * 240} y1={58} x2={330 + mcMean * 240} y2={212} stroke={P.red} strokeWidth="1.3" strokeDasharray="3 2" />
+            <text x={330} y={250} style={SK} fontSize="9.5" fill={P.ink}>mean p̂ = {mcMean.toFixed(3)}  → the prediction</text>
+            <text x={330} y={266} style={SK} fontSize="9.5" fill={P.accent}>σ = {mcSd.toFixed(3)}  → the uncertainty</text>
+            <text x={330} y={284} style={SK} fontSize="8" fill={P.sub}>paper: ρ = 50 passes, p = 0.5 on VGG19's FC head</text>
+          </g>
+        );
+      }
+
+      case "spread": {
+        const c = BNN_CASES.find((x) => x.key === ck);
+        const vals = bnnSamples(c);
+        const refer = c.sd > 0.3 || (c.mean >= 0.4 && c.mean <= 0.6);
+        const byVar = c.sd > 0.3;
+        return (
+          <g>
+            <text x={300} y={17} textAnchor="middle" style={SK} fontSize="10.5" fill={P.sub}>50 passes on one image — predicted probability of “suspicious”</text>
+            {hist(60, 50, 330, 170, vals, c.sd > 0.3 ? P.yellow : P.accent, 25)}
+            <line x1={60 + c.mean * 330} y1={44} x2={60 + c.mean * 330} y2={220} stroke={P.red} strokeWidth="1.3" strokeDasharray="3 2" />
+            <text x={60 + c.mean * 330} y={40} textAnchor="middle" style={SK} fontSize="8" fill={P.red}>mean</text>
+            <text x={225} y={258} textAnchor="middle" style={SK} fontSize="8" fill={P.sub}>samples redrawn to the quoted spread</text>
+
+            <text x={420} y={64} style={SK} fontSize="10.5" fill={P.ink}>{c.label}</text>
+            <text x={420} y={84} style={SK} fontSize="9" fill={P.accent}>{c.quoted}</text>
+            <text x={420} y={100} style={SK} fontSize="8.4" fill={P.sub}>{c.note}</text>
+            <rect x={420} y={124} width={150} height={54} fill={refer ? "rgba(155,59,59,0.08)" : "rgba(63,122,87,0.08)"} stroke={refer ? P.red : P.green} strokeWidth="1.2" />
+            <text x={495} y={146} textAnchor="middle" style={SK} fontSize="11" fill={refer ? P.red : P.green}>{refer ? "refer" : "keep"}</text>
+            <text x={495} y={164} textAnchor="middle" style={SK} fontSize="7.8" fill={P.sub}>
+              {refer ? (byVar ? "σ > 0.3" : "σ is small — caught by 0.4 ≤ p̂ ≤ 0.6") : "σ small, p̂ far from 0.5"}
+            </text>
+            {ck === "e" && <text x={420} y={206} style={SK} fontSize="8" fill={P.red}>variance alone would have kept this one</text>}
+          </g>
+        );
+      }
+
+      case "refer": {
+        const X0 = 70, W = 470, Y0 = 50, H = 200;
+        const lo = 0.84, hi = 1.0;
+        const fx = (r) => X0 + (r / 0.5) * W;
+        const fy = (a) => Y0 + H - ((a - lo) / (hi - lo)) * H;
+        const pts = Array.from({ length: 51 }, (_, i) => i / 100).map((r) => [fx(r), fy(bnnAccAfter(r))]);
+        const acc = bnnAccAfter(refer);
+        return (
+          <g>
+            <text x={300} y={17} textAnchor="middle" style={SK} fontSize="10.5" fill={P.sub}>refer the most-uncertain {Math.round(refer * 100)}% — accuracy on what's kept</text>
+            {[0.85, 0.9, 0.95, 1].map((a) => (
+              <g key={a}>
+                <line x1={X0} y1={fy(a)} x2={X0 + W} y2={fy(a)} stroke={P.faint} strokeWidth="1" />
+                <text x={X0 - 8} y={fy(a) + 3} textAnchor="end" style={SK} fontSize="8" fill={P.sub}>{Math.round(a * 100)}%</text>
+              </g>
+            ))}
+            {[0, 0.1, 0.2, 0.3, 0.4, 0.5].map((r) => <text key={r} x={fx(r)} y={Y0 + H + 14} textAnchor="middle" style={SK} fontSize="8" fill={P.sub}>{Math.round(r * 100)}%</text>)}
+            <text x={X0 + W / 2} y={Y0 + H + 30} textAnchor="middle" style={SK} fontSize="8.2" fill={P.sub}>share of cases referred to a clinician</text>
+            <line x1={X0} y1={fy(bnnAccAfter(0))} x2={X0 + W} y2={fy(bnnAccAfter(0))} stroke={P.sub} strokeWidth="1.2" strokeDasharray="5 4" />
+            <text x={X0 + W - 2} y={fy(bnnAccAfter(0)) + 14} textAnchor="end" style={SK} fontSize="8" fill={P.sub}>refer at random — nothing improves</text>
+            <path d={pts.map(([x, y], i) => `${i ? "L" : "M"}${x} ${y}`).join(" ")} fill="none" stroke={P.accent} strokeWidth="1.8" />
+            <circle cx={fx(0)} cy={fy(0.856)} r={4.5} fill="none" stroke={P.red} strokeWidth="1.4" />
+            <circle cx={fx(0.1)} cy={fy(0.9)} r={4.5} fill="none" stroke={P.red} strokeWidth="1.4" />
+            <text x={fx(0.1) + 8} y={fy(0.9) + 16} style={SK} fontSize="7.8" fill={P.red}>paper: ~90% at 10%</text>
+            <circle cx={fx(refer)} cy={fy(acc)} r={4} fill={P.accent} />
+            <text x={fx(refer) + 8} y={fy(acc) - 8} style={SK} fontSize="9" fill={P.accent}>{(acc * 100).toFixed(1)}%</text>
+            <text x={X0 + 6} y={Y0 + 10} style={SK} fontSize="7.8" fill={P.sub}>simulated 371-image test set · red rings are the paper's quoted points</text>
+          </g>
+        );
+      }
+
+      case "two": {
+        const se = 32 * Math.sqrt(10 / nPat);
+        const sa = shadow ? 72 : 11;
+        const S = 1.7;
+        return (
+          <g>
+            <text x={300} y={17} textAnchor="middle" style={SK} fontSize="10.5" fill={P.sub}>one A-scan, ESB depth — {nPat} labelled patients, boundary {shadow ? "under a shadow" : "clearly visible"}</text>
+            <text x={40} y={46} style={SK} fontSize="9" fill={P.ink}>the A-scan (signal vs depth)</text>
+            <path d={`M40 ${60} ${Array.from({ length: 60 }, (_, i) => {
+              const z = i * 3.2;
+              const epi = z < 90 ? 70 * Math.exp(-z / 120) : 0;
+              const lp = z >= 90 ? (shadow ? 12 : 88) * Math.exp(-(z - 90) / 70) : 0;
+              return `L${40 + epi + lp + 6 * Math.sin(i * 1.7)} ${60 + z}`;
+            }).join(" ")}`} fill="none" stroke={P.ink} strokeWidth="1.1" />
+            <line x1={34} y1={60 + 90} x2={170} y2={60 + 90} stroke={shadow ? P.red : P.green} strokeWidth="1.2" strokeDasharray="4 3" />
+            <text x={176} y={60 + 93} style={SK} fontSize="8" fill={shadow ? P.red : P.green}>ESB {shadow ? "— no edge left" : "— sharp step"}</text>
+            <text x={40} y={268} style={SK} fontSize="7.8" fill={P.sub}>epithelium dark · lamina propria bright</text>
+
+            {[["epistemic σₑ", se, P.accent, "the model: shrinks with data"], ["aleatoric σₐ", sa, P.red, "the image: data can't fix it"]].map(([n, v, col, note], i) => {
+              const y = 70 + i * 90;
+              return (
+                <g key={n}>
+                  <text x={300} y={y} style={SK} fontSize="10" fill={col}>{n}</text>
+                  <rect x={300} y={y + 8} width={Math.min(260, v * S)} height={22} fill={col} fillOpacity="0.25" stroke={col} strokeWidth="1" />
+                  <text x={306 + Math.min(260, v * S)} y={y + 24} style={SK} fontSize="9" fill={P.ink}>{v.toFixed(0)} µm</text>
+                  <text x={300} y={y + 46} style={SK} fontSize="8" fill={P.sub}>{note}</text>
+                </g>
+              );
+            })}
+            <text x={300} y={262} style={SK} fontSize="8.6" fill={P.ink}>total σ = √(σₑ² + σₐ²) = {Math.sqrt(se * se + sa * sa).toFixed(0)} µm</text>
+            <text x={300} y={280} style={SK} fontSize="7.8" fill={P.sub}>illustrative magnitudes, not measured values</text>
+          </g>
+        );
+      }
+
+      case "three": {
+        const X0 = 40, W = 520, dx = W / 40;
+        const surf = (c) => 58 + 4 * Math.sin(c / 5);
+        const zpx = 0.1;
+        const st = BNN_COLS.map((col) => bnnState(col, nPat));
+        const counts = { measured: 0, uncertain: 0, cannot: 0 };
+        st.forEach((s) => { counts[s.s] += 1; });
+        const meas = BNN_COLS.filter((_, c) => st[c].s === "measured");
+        const meanT = meas.reduce((a, b) => a + b.t, 0) / Math.max(1, meas.length);
+        const ty = (t) => 272 - ((t - 150) / 300) * 84;
+        const colCol = { measured: P.green, uncertain: P.yellow, cannot: P.red };
+        return (
+          <g>
+            <defs>
+              <pattern id="bnn-hatch" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
+                <line x1="0" y1="0" x2="0" y2="6" stroke={P.red} strokeWidth="1.2" strokeOpacity="0.5" />
+              </pattern>
+            </defs>
+            <text x={300} y={16} textAnchor="middle" style={SK} fontSize="10" fill={P.sub}>one oral B-scan, 40 A-scans — {nPat} labelled training patients</text>
+            <rect x={X0} y={30} width={W} height={130} fill="#12161C" />
+            {BNN_COLS.map((col, c) => {
+              const y1 = surf(c), y2 = y1 + col.t * BNN_N_OCT * zpx;
+              return (
+                <g key={c}>
+                  <rect x={X0 + c * dx} y={y1} width={dx + 0.5} height={y2 - y1} fill="#2A313B" />
+                  <rect x={X0 + c * dx} y={y2} width={dx + 0.5} height={160 - y2} fill={col.shadow ? "#1B1F25" : "#8C939B"} />
+                </g>
+              );
+            })}
+            <path d={BNN_COLS.map((_, c) => `${c ? "L" : "M"}${X0 + c * dx + dx / 2} ${surf(c)}`).join(" ")} stroke="#F4F6F8" strokeWidth="1.6" fill="none" />
+            {BNN_COLS.map((col, c) => st[c].s !== "cannot" && (
+              <line key={c} x1={X0 + c * dx + 1} x2={X0 + (c + 1) * dx - 1} y1={surf(c) + col.t * BNN_N_OCT * zpx} y2={surf(c) + col.t * BNN_N_OCT * zpx} stroke={st[c].s === "measured" ? "#39D0BF" : "#F5B301"} strokeWidth="1.8" />
+            ))}
+            <text x={X0 + 6} y={44} style={SK} fontSize="8" fill="#E6EBF0">surface</text>
+            <text x={X0 + 27 * dx} y={44} textAnchor="middle" style={SK} fontSize="8" fill="#E6EBF0">shadow</text>
+            <text x={X0 + 10 * dx} y={154} textAnchor="middle" style={SK} fontSize="8" fill="#E6EBF0">rete ridge</text>
+
+            {BNN_COLS.map((col, c) => {
+              const s = st[c], x = X0 + c * dx;
+              if (s.s === "cannot") return <rect key={c} x={x} y={188} width={dx} height={84} fill="url(#bnn-hatch)" />;
+              const band = Math.sqrt(s.se ** 2 + col.sa ** 2) * 1.645;
+              return (
+                <g key={c}>
+                  <rect x={x} y={ty(Math.min(450, col.t + band))} width={dx} height={ty(Math.max(150, col.t - band)) - ty(Math.min(450, col.t + band))} fill={colCol[s.s]} fillOpacity="0.18" />
+                  <line x1={x} x2={x + dx} y1={ty(col.t)} y2={ty(col.t)} stroke={colCol[s.s]} strokeWidth="1.8" />
+                </g>
+              );
+            })}
+            <line x1={X0} y1={272} x2={X0 + W} y2={272} stroke={P.ink} strokeWidth="0.8" />
+            {[200, 300, 400].map((t) => <text key={t} x={X0 - 4} y={ty(t) + 3} textAnchor="end" style={SK} fontSize="7.2" fill={P.sub}>{t}</text>)}
+            <text x={X0} y={182} style={SK} fontSize="8" fill={P.ink}>true thickness, µm (optical ÷ 1.38)</text>
+            <text x={X0 + W} y={182} textAnchor="end" style={SK} fontSize="8">
+              <tspan fill={P.green}>measured {counts.measured}</tspan>
+              <tspan fill={P.sub}> · </tspan>
+              <tspan fill={P.yellow}>uncertain {counts.uncertain}</tspan>
+              <tspan fill={P.sub}> · </tspan>
+              <tspan fill={P.red}>cannot measure {counts.cannot}</tspan>
+            </text>
+            <text x={300} y={292} textAnchor="middle" style={SK} fontSize="8" fill={P.sub}>mean over measured columns: {meanT.toFixed(0)} µm · simulated scan</text>
+          </g>
+        );
+      }
+
+      case "conf": {
+        const k = 0.35 + 0.9 * dp;
+        const raw = bnnErf((1.645 * k) / Math.SQRT2);
+        const s = 22;
+        const X0 = 80, W = 440;
+        const fx = (c) => X0 + c * W;
+        return (
+          <g>
+            <text x={300} y={17} textAnchor="middle" style={SK} fontSize="10.5" fill={P.sub}>a nominal 90% interval on epithelial thickness — dropout rate {dp.toFixed(2)}</text>
+            {[["raw MC-dropout band  μ ± 1.645σ", raw, P.yellow, 2 * 1.645 * k * s], ["conformal band  μ ± q̂σ", 0.9, P.green, 2 * 1.645 * s]].map(([n, cov, col, width], i) => {
+              const y = 60 + i * 86;
+              return (
+                <g key={n}>
+                  <text x={X0} y={y} style={SK} fontSize="10" fill={P.ink}>{n}</text>
+                  <rect x={X0} y={y + 10} width={W} height={24} fill={P.faint} />
+                  <rect x={X0} y={y + 10} width={cov * W} height={24} fill={col} fillOpacity="0.35" stroke={col} strokeWidth="1" />
+                  <text x={fx(cov) + 6} y={y + 27} style={SK} fontSize="10" fill={col}>{(cov * 100).toFixed(0)}% covered</text>
+                  <text x={X0} y={y + 52} style={SK} fontSize="8.2" fill={P.sub}>average width {width.toFixed(0)} µm{i === 1 ? " — wide where σ is wide, narrow where it isn't" : ""}</text>
+                </g>
+              );
+            })}
+            <line x1={fx(0.9)} y1={62} x2={fx(0.9)} y2={240} stroke={P.ink} strokeWidth="1" strokeDasharray="4 3" />
+            <text x={fx(0.9)} y={254} textAnchor="middle" style={SK} fontSize="8.4" fill={P.ink}>target 90%</text>
+            <text x={300} y={276} textAnchor="middle" style={SK} fontSize="8" fill={P.sub}>simulated: Gaussian errors, raw σ off by a factor that depends on the dropout rate</text>
+            <text x={300} y={290} textAnchor="middle" style={SK} fontSize="8" fill={P.red}>holds on average over patients like the calibration set — not per site, not on a new device</text>
+          </g>
+        );
+      }
+
+      default:
+        return null;
+    }
+  })();
+
+  const sliderRow = { display: "flex", gap: 10, marginBottom: 10, flexWrap: "wrap", alignItems: "center" };
+  const lbl = { ...SK, fontSize: "0.62rem", color: P.sub };
+  const val = { ...SK, fontSize: "0.66rem", color: P.ink, minWidth: 66 };
+  const toggle = (on) => ({ ...SK, fontSize: "0.68rem", padding: "3px 11px", cursor: "pointer", border: `1px solid ${on ? P.accent : P.line}`, background: on ? P.accentSoft : P.paper2, color: on ? P.accent : P.sub });
+
+  return (
+    <div>
+      {sk === "dist" && (
+        <div style={sliderRow}>
+          <button onClick={() => setPasses((n) => Math.min(40, n + 1))} style={toggle(true)}>run another forward pass</button>
+          <button onClick={() => setPasses(1)} style={toggle(false)}>reset</button>
+          <span style={val}>{passes} pass{passes === 1 ? "" : "es"}</span>
+        </div>
+      )}
+
+      {sk === "mc" && (
+        <div style={sliderRow}>
+          <span style={lbl}>dropout rate:</span>
+          <input type="range" min={0.1} max={0.5} step={0.05} value={p} onChange={(e) => setP(+e.target.value)} aria-label="Dropout rate" style={{ accentColor: P.accent, width: 130 }} />
+          <span style={val}>p = {p.toFixed(2)}</span>
+          <button onClick={() => setMc((n) => Math.min(50, n + 1))} style={toggle(true)}>one more pass</button>
+          <button onClick={() => setMc(50)} style={toggle(mc === 50)}>run to ρ = 50</button>
+          <button onClick={() => setMc(1)} style={toggle(false)}>reset</button>
+        </div>
+      )}
+
+      {sk === "spread" && (
+        <div style={sliderRow}>
+          <span style={lbl}>image:</span>
+          {BNN_CASES.map((c) => (
+            <button key={c.key} onClick={() => setCk(c.key)} aria-pressed={ck === c.key} style={toggle(ck === c.key)}>{c.label}</button>
+          ))}
+        </div>
+      )}
+
+      {sk === "refer" && (
+        <div style={sliderRow}>
+          <span style={lbl}>refer:</span>
+          <input type="range" min={0} max={0.5} step={0.01} value={refer} onChange={(e) => setRefer(+e.target.value)} aria-label="Share of cases referred" style={{ accentColor: P.accent, width: 170 }} />
+          <span style={val}>{Math.round(refer * 100)}% of cases</span>
+        </div>
+      )}
+
+      {(sk === "two" || sk === "three") && (
+        <div style={sliderRow}>
+          <span style={lbl}>labelled patients:</span>
+          <input type="range" min={0} max={3} step={1} value={[5, 10, 20, 40].indexOf(nPat)} onChange={(e) => setNPat([5, 10, 20, 40][+e.target.value])} aria-label="Labelled training patients" style={{ accentColor: P.accent, width: 130 }} />
+          <span style={val}>{nPat} patients</span>
+          {sk === "two" && [[false, "clear ESB"], [true, "shadowed ESB"]].map(([k, label]) => (
+            <button key={label} onClick={() => setShadow(k)} aria-pressed={shadow === k} style={toggle(shadow === k)}>{label}</button>
+          ))}
+        </div>
+      )}
+
+      {sk === "conf" && (
+        <div style={sliderRow}>
+          <span style={lbl}>dropout rate:</span>
+          <input type="range" min={0.05} max={0.5} step={0.05} value={dp} onChange={(e) => setDp(+e.target.value)} aria-label="Dropout rate" style={{ accentColor: P.accent, width: 150 }} />
+          <span style={val}>p = {dp.toFixed(2)}</span>
+        </div>
+      )}
+
+      <div style={{ border: `1px solid ${P.line}`, borderTop: `2px solid ${P.ink}`, background: P.paper2 }}>
+        <div style={{ background: "#fff" }}>
+          <div style={{ aspectRatio: "600 / 300" }}>
+            <svg viewBox="0 0 600 300" width="100%" height="100%" role="img" aria-label={`Bayesian deep learning walkthrough step ${step + 1}: ${sc.label}`} style={{ display: "block" }} strokeLinecap="round" strokeLinejoin="round">
+              {body}
+            </svg>
+          </div>
+        </div>
+        <div style={{ padding: "0.9rem 1.1rem 1rem" }}>
+          <div style={{ ...DISP, fontWeight: 600, fontSize: "1rem", color: P.ink, marginBottom: 4 }}>{sc.title}</div>
+          <p style={{ ...BODY, fontSize: "0.88rem", color: P.sub, lineHeight: 1.65, textWrap: "pretty", margin: 0 }}>
+            <span style={{ ...SK, fontSize: "0.6rem", color: P.accent, textTransform: "uppercase", letterSpacing: "0.08em", marginRight: 6 }}>step {step + 1}</span>
+            {sc.body}
+          </p>
+          <div style={{ ...SK, fontSize: "0.66rem", color: P.ink, marginTop: 9, background: P.faint, padding: "6px 9px", display: "inline-block" }}>{sc.math}</div>
+        </div>
+      </div>
+
+      <div style={{ display: "flex", gap: 6, marginTop: 10, flexWrap: "wrap" }}>
+        {BNN_STEPS.map((s, j) => (
           <button key={s.key} onClick={() => setStep(j)} style={{ ...SK, fontSize: "0.62rem", padding: "4px 9px", cursor: "pointer", border: `1px solid ${j === step ? P.accent : P.line}`, background: j === step ? P.accentSoft : "#fff", color: j === step ? P.accent : P.sub }}>{j + 1}. {s.label}</button>
         ))}
       </div>

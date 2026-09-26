@@ -1,13 +1,15 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, Fragment } from "react";
 import { P, PAPER } from "./data.js";
 import { Callout, Table, Fig, Sec, arw } from "./orthovision.jsx";
 
 /* ════════════════════════════════════════
-   SKETCHDEJ — a dental-OCT decision-support architecture, at its own address
+   ORAL OCT — a trustworthy measurement layer, at its own address
    ════════════════════════════════════════
-   Unlike OrthoVision this is a proposal, not a build: the reasoning for why
-   dental OCT, the one decision the system is organised around, the
-   architecture, and the experiments that would prove each piece.
+   Unlike OrthoVision this is a proposal, not a build. Part I is the revised
+   research question (oral epithelial thickness, a Bayesian head for the
+   three-state output, physics-informed learning, conformal intervals);
+   Part II is the earlier caries design (SketchDEJ), kept as the hard-tissue
+   companion. The Bayesian head has its own bench at #/lab/bnn.
    Route: #/dentaloct. */
 
 const DISP = { fontFamily: "'Spectral',Georgia,serif" };
@@ -16,18 +18,25 @@ const MONO = { fontFamily: "'IBM Plex Mono',monospace" };
 const SK = { fontFamily: "'IBM Plex Mono',monospace" };
 
 const SECTIONS = [
-  { id: "gap", n: "01", t: "Why dental OCT", note: "the gap next to a crowded field" },
-  { id: "decision", n: "02", t: "One decision", note: "has it crossed the DEJ?" },
-  { id: "pipeline", n: "03", t: "The pipeline", note: "scan → rule → or abstain" },
-  { id: "curves", n: "04", t: "Curves, not masks", note: "what the head predicts" },
-  { id: "sketch", n: "05", t: "Sketch labels", note: "label by drawing three lines" },
-  { id: "conformal", n: "06", t: "Honest uncertainty", note: "intervals on the decision variable" },
-  { id: "transfer", n: "07", t: "Borrowing retina", note: "SSL transfer + a physics channel" },
-  { id: "rules", n: "08", t: "Measurement → suggestion", note: "the rule layer" },
-  { id: "experiments", n: "09", t: "Proving it", note: "one ablation per claim" },
-  { id: "plan", n: "10", t: "Build order", note: "starting without dental data" },
-  { id: "risks", n: "11", t: "Where it breaks", note: "the honest list" },
+  { id: "question", n: "01", t: "The question", note: "measurement, not diagnosis", part: "I" },
+  { id: "open", n: "02", t: "Taken vs open", note: "the combination is the contribution", part: "I" },
+  { id: "arch", n: "03", t: "The architecture", note: "measure · abstain · calibrate", part: "I" },
+  { id: "bayes", n: "04", t: "The Bayesian head", note: "why it fits H1", part: "I" },
+  { id: "hyp", n: "05", t: "Hypotheses", note: "H1–H4, each falsifiable", part: "I" },
+  { id: "scope", n: "06", t: "Scope & risks", note: "what the first paper won't claim", part: "I" },
+  { id: "gap", n: "07", t: "Why dental OCT", note: "the gap next to a crowded field", part: "II" },
+  { id: "decision", n: "08", t: "One decision", note: "has it crossed the DEJ?", part: "II" },
+  { id: "pipeline", n: "09", t: "The pipeline", note: "scan → rule → or abstain", part: "II" },
+  { id: "curves", n: "10", t: "Curves, not masks", note: "what the head predicts", part: "II" },
+  { id: "sketch", n: "11", t: "Sketch labels", note: "label by drawing three lines", part: "II" },
+  { id: "conformal", n: "12", t: "Honest uncertainty", note: "intervals on the decision variable", part: "II" },
+  { id: "transfer", n: "13", t: "Borrowing retina", note: "SSL transfer + a physics channel", part: "II" },
+  { id: "rules", n: "14", t: "Measurement → suggestion", note: "the rule layer", part: "II" },
+  { id: "experiments", n: "15", t: "Proving it", note: "one ablation per claim", part: "II" },
+  { id: "plan", n: "16", t: "Build order", note: "starting without dental data", part: "II" },
+  { id: "risks", n: "17", t: "Where it breaks", note: "the honest list", part: "II" },
 ];
+const PARTS = { I: "Part I · oral soft tissue", II: "Part II · caries (SketchDEJ)" };
 
 /* ── diagram 1: the whole pipeline ───────────────────────────────────── */
 const KIND = {
@@ -152,6 +161,61 @@ function DiagBscan() {
   );
 }
 
+/* ── Part I diagram: the oral-epithelium measurement layer ───────────── */
+function DiagMeasure() {
+  const lane = (x, y, s) => <text x={x} y={y} style={SK} fontSize="11" letterSpacing="1" fill={P.sub}>{s}</text>;
+  const tag = (x, y, s) => <text x={x} y={y} textAnchor="end" style={SK} fontSize="11" fontWeight="600" fill={P.accent}>{s}</text>;
+  return (
+    <svg viewBox="0 0 1000 520" width="100%" height="100%" role="img" style={{ display: "block" }}
+      aria-label="Oral OCT measurement architecture: unlabelled scans train a physics decoder; each scan passes a quality gate, a condition-aware encoder and a Bayesian boundary head whose uncertainty splits into epistemic and aleatoric parts, giving measured, uncertain or cannot-measure per A-scan, thickness in micrometres and a conformal interval.">
+      {lane(20, 26, "TRAINING · LABELS ARE SCARCE")}
+      <Box x={20} y={40} w={200} h={72} t="Unlabelled oral OCT" a="every patient, no traces" kind="sketch" />
+      <Box x={250} y={40} w={230} h={72} t="Physics decoder" a="redraw A-scan from S, ESB," b="μ per layer + small correction" kind="sketch" />
+      <Box x={510} y={40} w={200} h={72} t="Reconstruction loss" a="‖Î − I‖, no labels" kind="sketch" />
+      <Box x={740} y={40} w={240} h={72} t="Few labelled patients" a="surface + ESB traces," b="patient-level split" />
+      {tag(476, 58, "H2")}
+      {arw(220, 76, 248, 76, P.yellow)}
+      {arw(480, 76, 508, 76, P.yellow)}
+      {arw(690, 112, 690, 188, P.yellow, true)}
+      {route([[650, 190], [650, 150], [365, 150], [365, 114]], P.yellow, true)}
+      <text x={380} y={142} style={SK} fontSize="10.5" fill={P.yellow}>predicted layers</text>
+      {route([[860, 112], [860, 150], [760, 150], [760, 188]], P.sub, true)}
+
+      {lane(20, 176, "INFERENCE · PER SCAN")}
+      <Box x={20} y={190} w={150} t="OCT volume" a="in vivo, one" b="device + protocol" />
+      <Box x={195} y={190} w={170} t="Quality gate" a="motion · shadow ·" b="contact · focus" />
+      <Box x={390} y={190} w={190} t="Encoder" a="+ scan conditions:" b="depth, focus, signal" kind="method" />
+      <Box x={605} y={190} w={190} t="Bayesian head" a="MC dropout, T passes" b="→ μ, σₐ for S and ESB" kind="method" />
+      <Box x={820} y={190} w={160} t="Split σ" a="σₑ: spread of μ" b="σₐ: from the head" kind="method" />
+      {tag(576, 208, "H1")}
+      {tag(791, 208, "H1")}
+      {arw(170, 229, 193, 229, P.ink)}
+      {arw(365, 229, 388, 229, P.ink)}
+      {arw(580, 229, 603, 229, P.ink)}
+      {arw(795, 229, 818, 229, P.ink)}
+      {arw(900, 268, 900, 338, P.ink)}
+
+      <Box x={820} y={340} w={160} t="Three states" a="per A-scan: measured" b="uncertain · cannot" kind="stop" />
+      <Box x={605} y={340} w={190} t="Thickness, µm" a="Δz optical ÷ n (1.38)" b="site-tagged" />
+      <Box x={390} y={340} w={190} t="Conformal interval" a="μ ± q̂σ, calibrated" b="on unseen patients" kind="method" />
+      <Box x={195} y={340} w={170} t="Measurement map" a="µm ± interval, and" b="reasons where not" />
+      <Box x={20} y={340} w={150} t="Future CDSS" a="links to findings," b="silent mode first" kind="soft" />
+      {tag(576, 358, "H3")}
+      {arw(820, 379, 797, 379, P.ink)}
+      {arw(605, 379, 582, 379, P.ink)}
+      {arw(390, 379, 367, 379, P.ink)}
+      {arw(195, 379, 172, 379, P.sub, true)}
+      {arw(280, 268, 280, 338, P.red, true)}
+      <text x={288} y={306} style={SK} fontSize="10.5" fill={P.red}>reject, with the reason</text>
+
+      <text x={820} y={444} style={SK} fontSize="11" fill={P.red}>σₐ &gt; τₐ → cannot measure</text>
+      <text x={820} y={462} style={SK} fontSize="11" fill={P.yellow}>σₑ &gt; τₑ → uncertain</text>
+      <text x={820} y={480} style={SK} fontSize="11" fill={P.green}>else → measured</text>
+      <text x={20} y={470} style={SK} fontSize="11" fill={P.sub}>train · calibrate · test patients never overlap; the model is frozen before calibration</text>
+    </svg>
+  );
+}
+
 /* ── the page ────────────────────────────────────────────────────────── */
 
 export default function DentalOCT() {
@@ -160,7 +224,7 @@ export default function DentalOCT() {
   useEffect(() => {
     const paperTitle = document.title;
     window.scrollTo(0, 0);
-    document.title = `SketchDEJ — ${PAPER.author}`;
+    document.title = `Oral OCT — ${PAPER.author}`;
     return () => { document.title = paperTitle; };
   }, []);
 
@@ -240,8 +304,8 @@ export default function DentalOCT() {
         <header style={{ borderBottom: `2px solid ${P.ink}`, background: P.paper2, position: "sticky", top: 0, zIndex: 20 }}>
           <div style={{ maxWidth: 1180, margin: "0 auto", padding: "0.7rem 1.4rem", display: "flex", justifyContent: "space-between", alignItems: "center", gap: "1rem", flexWrap: "wrap" }}>
             <div style={{ display: "flex", alignItems: "baseline", gap: 10, flexWrap: "wrap" }}>
-              <span style={{ ...MONO, fontSize: "0.72rem", letterSpacing: "0.16em", textTransform: "uppercase", color: P.ink }}>SketchDEJ</span>
-              <span style={{ ...MONO, fontSize: "0.58rem", color: P.sub }}>dental OCT · clinical decision support · proposal</span>
+              <span style={{ ...MONO, fontSize: "0.72rem", letterSpacing: "0.16em", textTransform: "uppercase", color: P.ink }}>Oral OCT</span>
+              <span style={{ ...MONO, fontSize: "0.58rem", color: P.sub }}>trustworthy measurement · Bayesian uncertainty · proposal</span>
             </div>
             <a href="#Research" style={{ ...MONO, fontSize: "0.66rem", color: P.accent, textDecoration: "underline", textUnderlineOffset: 3 }}>← back to the paper</a>
           </div>
@@ -250,16 +314,20 @@ export default function DentalOCT() {
         <div className="ov-grid">
 
           <nav className="ov-rail" aria-label="Sections">
-            {SECTIONS.map((s) => {
+            {SECTIONS.map((s, i) => {
               const on = active === s.id;
+              const partHead = i === 0 || SECTIONS[i - 1].part !== s.part;
               return (
-                <a key={s.id} href="#/dentaloct" className="ov-railitem"
+                <Fragment key={s.id}>
+                {partHead && <div style={{ ...MONO, fontSize: "0.52rem", letterSpacing: "0.12em", textTransform: "uppercase", color: P.accent, padding: i ? "0.9rem 0 0.3rem 10px" : "0 0 0.3rem 10px" }}>{PARTS[s.part]}</div>}
+                <a href="#/dentaloct" className="ov-railitem"
                   onClick={(e) => { e.preventDefault(); document.getElementById(s.id)?.scrollIntoView({ behavior: "smooth", block: "start" }); }}
                   style={{ borderLeftColor: on ? P.accent : P.line, textDecoration: "none" }}>
                   <div style={{ ...MONO, fontSize: "0.54rem", color: P.sub, letterSpacing: "0.1em" }}>{s.n}</div>
                   <div style={{ ...MONO, fontSize: "0.7rem", color: on ? P.accent : P.ink, lineHeight: 1.3 }}>{s.t}</div>
                   <div style={{ ...MONO, fontSize: "0.54rem", color: P.sub, lineHeight: 1.35, marginTop: 1 }}>{s.note}</div>
                 </a>
+                </Fragment>
               );
             })}
             <div style={{ ...MONO, fontSize: "0.54rem", color: P.sub, marginTop: "1.4rem", paddingLeft: 10, lineHeight: 1.6 }}>esc to leave</div>
@@ -267,25 +335,237 @@ export default function DentalOCT() {
 
           <main className="ov-main">
 
-            <div style={{ ...MONO, fontSize: "0.6rem", letterSpacing: "0.14em", textTransform: "uppercase", color: P.sub, marginBottom: 10 }}>Architecture proposal · not yet built</div>
+            <div style={{ ...MONO, fontSize: "0.6rem", letterSpacing: "0.14em", textTransform: "uppercase", color: P.sub, marginBottom: 10 }}>Research question · revised 25 Sep 2026 · not yet built</div>
             <h1 style={{ ...DISP, fontWeight: 600, fontSize: "clamp(1.9rem,4.6vw,2.9rem)", lineHeight: 1.1, letterSpacing: "-0.02em", marginBottom: "0.9rem" }}>
-              SketchDEJ
+              Measuring the mouth, and knowing when not to
             </h1>
             <p style={{ ...BODY, fontSize: "1.16rem", lineHeight: 1.6, color: P.sub, marginBottom: "1.6rem", maxWidth: 620, textWrap: "pretty" }}>
-              A decision-support system for dental OCT that measures how deep a caries lesion
-              reaches relative to the dentin–enamel junction, learns from quick sketches instead
-              of painted masks, and says “your call” when it isn't sure.
+              A measurement layer for oral soft tissue in OCT: it finds the epithelial–stromal
+              boundary, reports epithelial thickness in micrometres with an interval that holds,
+              says “cannot measure” when the boundary isn't in the image, and learns from very
+              few labelled patients. It's the first building block of a future CDSS.
             </p>
 
             <div style={{ display: "flex", gap: "1.6rem", flexWrap: "wrap", marginBottom: "2.2rem" }}>
-              <Stat v="0" l="public dental-OCT datasets" col={P.red} />
-              <Stat v="10–15 µm" l="OCT resolution, no radiation" />
-              <Stat v="~2 mm" l="imaging depth, where caries starts" />
-              <Stat v="r = 1" l="the threshold that decides treatment" col={P.accent} />
+              <Stat v="100–660 µm" l="normal epithelium, floor of mouth → cheek" />
+              <Stat v="n ≈ 1.38" l="optical depth → true depth" />
+              <Stat v="3" l="answers: measured · uncertain · cannot" col={P.accent} />
+              <Stat v="90%" l="target coverage on unseen patients" col={P.green} />
             </div>
+
+            {/* ══ PART I — the revised research question ══════════════════ */}
 
             {/* 01 ─────────────────────────────────────────────────────── */}
             <Sec s={SECTIONS[0]}>
+              <Lead>
+                With only a small, access-restricted set of in vivo oral OCT scans, can we build a
+                system that <b>measures epithelial thickness accurately</b>, <b>refuses to measure</b> when
+                the boundary can't be seen, and gives an <b>uncertainty range that is reliable</b>,
+                while needing far fewer hand-labelled patients than a standard model?
+              </Lead>
+              <H>
+                The lining of the mouth is layered. The epithelium, a sheet of cells, sits on the
+                lamina propria, collagen-rich connective tissue. The line between them is the
+                epithelial–stromal boundary (ESB). Disease changes both: the epithelium thickens or
+                thins, and the ESB blurs or disappears. In OCT the epithelium reads dark and the
+                lamina propria bright, so the boundary is visible in the top 1–2 mm, without cutting
+                and without radiation.
+              </H>
+              <H>
+                This is deliberately a question about <i>measurement</i>, not diagnosis. It can be
+                answered with labelled OCT volumes alone, without a large set of biopsy-confirmed
+                cancers. A future CDSS sits on top of it.
+              </H>
+              <Callout kind="note" title="why a number needs context">
+                Normal epithelial thickness varies a lot by site: about 100 µm on the floor of the
+                mouth and about 660 µm on the cheek (Di Stasio et al., 2019). “Thick” and “thin” only
+                mean something relative to the site, so the system reports site-tagged micrometres,
+                never a bare label.
+              </Callout>
+            </Sec>
+
+            {/* 02 ─────────────────────────────────────────────────────── */}
+            <Sec s={SECTIONS[1]}>
+              <H>
+                Most of the individual pieces already exist, so the claims have to be scoped honestly.
+              </H>
+              <Table
+                head={["already done", "by"]}
+                rows={[
+                  ["Deep-learning pipeline: field-of-view check, artefacts, surface and ESB, epithelial depth maps", "Hill et al., 2024"],
+                  ["Shape, ESB visibility and attenuation as dysplasia / cancer markers", "Malone et al., 2024"],
+                  ["Semi-supervised oral OCT segmentation, incl. labels transferred from skin", "Liao et al., 2025"],
+                  ["Normal thickness by oral site", "Di Stasio et al., 2019"],
+                  ["Physics-aware deep learning in other OCT (attenuation, simulated physics)", "QOCT-Net 2023 · PhysioSpeck-Net 2026"],
+                  ["Bayesian (MC-dropout) uncertainty for oral-cancer images, with referral", "Song et al., 2021"],
+                ]}
+              />
+              <Callout kind="wrong" title="claims this work must not make">
+                “First oral OCT segmentation.” “First epithelial thickness measurement.” “First
+                attenuation analysis.” “First low-label method” or “first skin-to-oral transfer.”
+                “No oral OCT dataset exists”: no openly downloadable labelled set was found, which
+                is a statement about access, not proof.
+              </Callout>
+              <H>
+                What we did not find anywhere is the combination: an explicit <b>“cannot measure”</b> output,
+                a quality gate that says <b>why</b> a scan was rejected, thickness in <b>physical units</b> with
+                the conversion stated, <b>physics-informed learning</b> from unlabelled scans tested at small
+                label budgets, <b>conformal intervals</b> checked on unseen patients, and strict
+                <b> patient-level splits</b>. The novelty is the combination, done rigorously. That
+                has to be re-checked against the literature before submission.
+              </H>
+            </Sec>
+
+            {/* 03 ─────────────────────────────────────────────────────── */}
+            <Sec s={SECTIONS[2]}>
+              <H>
+                Three ideas carry the design, one per hypothesis. A <b>Bayesian boundary head</b> whose
+                uncertainty splits into two kinds gives the three-state output (H1). A <b>physics
+                decoder</b> that redraws each A-scan from the predicted layers lets every unlabelled
+                scan train the model (H2). A <b>conformal layer</b> turns the Bayesian spread into an
+                interval with a stated coverage (H3).
+              </H>
+              <div className="dx-wide">
+                <Fig ratio="1000 / 520" caption="Blue boxes are the method; ochre is what trains without labels; red is how the system declines. Scan conditions (boundary depth, distance from focus, local signal, artefact flags) go into the encoder, which is H1's “quality-aware” half; the three-state output is the other half.">
+                  <DiagMeasure />
+                </Fig>
+              </div>
+              <Callout kind="clever" title="the physics decoder, in one line">
+                The head describes the tissue as a surface, an ESB and a signal-decay rate per layer.
+                A simple single-scattering OCT model turns that description back into an A-scan, and
+                the loss compares it with the real one. No label is needed, so every unlabelled
+                patient contributes. A small learned correction absorbs what the simple physics
+                gets wrong.
+              </Callout>
+              <H>
+                Signal decay depends on the device, the focus and the image processing as well as the
+                tissue. So it's reported as a signal-decay measure specific to this system and
+                protocol, computed only where the signal is good enough, never as a pure tissue
+                property.
+              </H>
+            </Sec>
+
+            {/* 04 ─────────────────────────────────────────────────────── */}
+            <Sec s={SECTIONS[3]}>
+              <Lead>
+                A normal network trained to find the ESB always returns a depth, including under a
+                shadow where there's nothing to find. A Bayesian network returns a distribution
+                over depths, and the shape of that distribution says <i>why</i> it might be wrong.
+              </Lead>
+              <H>
+                <b>What it is.</b> A Bayesian neural network keeps a distribution over its weights
+                instead of one best set, and predicts by averaging over every network that
+                distribution allows. The exact version is intractable at deep-learning scale, so the
+                practical route is <b>Monte Carlo dropout</b>: leave dropout switched on at test time,
+                run the same scan T times, and treat the passes as samples. The mean is the
+                estimate and the spread is the uncertainty, at no extra training cost.
+              </H>
+              <H>
+                <b>Evidence it helps in the mouth.</b> Song et al. (2021) did exactly this on 2,350
+                intraoral photos: VGG19, two dropout layers at 0.5, 50 passes per image. The
+                Bayesian model was no more accurate outright (85.6% vs 85.1%), but ranking cases by
+                uncertainty and referring the top 10% lifted accuracy on the rest to about 90%.
+                Uncertainty was also higher on photos from an unfamiliar camera. That's the
+                behaviour a “cannot measure” state needs.
+              </H>
+              <H>
+                <b>What's different here.</b> Song et al. classify; this system measures. For a
+                measurement the head predicts, for every A-scan, a boundary depth μ and its own noise
+                σₐ (a heteroscedastic head, after Kendall &amp; Gal 2017). MC dropout adds the spread
+                of μ across passes. The two pieces answer different questions:
+              </H>
+              <Table
+                head={["uncertainty", "comes from", "shrinks with more labels?", "output"]}
+                rows={[
+                  [{ v: "aleatoric σₐ", b: true }, "the image: shadow, blur, saliva, poor contact", { v: "no", col: P.red }, { v: "cannot measure — no number", col: P.red, b: true }],
+                  [{ v: "epistemic σₑ", b: true }, "the model: an unfamiliar site, shape or device", { v: "yes", col: P.green }, { v: "uncertain — flag for review", col: P.yellow, b: true }],
+                  [{ v: "both low", b: true }, "a visible boundary the model knows", "—", { v: "measured — µm ± conformal interval", col: P.green, b: true }],
+                ]}
+              />
+              <Callout kind="clever" title="why this is the piece that fits H1">
+                H1 asks for three outputs: measured, uncertain and cannot measure. A single
+                confidence score can't tell “the boundary isn't there” from “I haven't seen enough
+                boundaries like this”, and those need opposite responses: stop, or collect more
+                data. The epistemic/aleatoric split gives each state its own mechanism. It also
+                makes a falsifiable prediction: adding labelled patients should shrink the
+                “uncertain” columns and leave the “cannot measure” columns where they are.
+              </Callout>
+              <Callout kind="wrong" title="what Bayes does not buy on its own">
+                MC-dropout variances are miscalibrated and move with the dropout rate you picked. So
+                σ is used as a <i>scale</i>, not a promise. The conformal layer calibrates it on held-out
+                patients: μ ± q̂σ, where q̂ is the 90% quantile of |y − μ|/σ. That keeps the intervals
+                adaptive and gives them a coverage statement.
+              </Callout>
+              <a href="#/lab/bnn" style={{ display: "block", textDecoration: "none", border: `1px solid ${P.line}`, borderTop: `2px solid ${P.ink}`, background: P.paper2, padding: "0.9rem 1.05rem", margin: "1.2rem 0 0" }}>
+                <div style={{ ...MONO, fontSize: "0.55rem", textTransform: "uppercase", letterSpacing: "0.13em", color: P.sub, marginBottom: 6 }}>the sketch, in the Lab</div>
+                <div style={{ ...DISP, fontWeight: 600, fontSize: "1.08rem", color: P.ink, marginBottom: 5 }}>Bayesian deep learning, step by step</div>
+                <p style={{ ...BODY, fontSize: "0.9rem", lineHeight: 1.65, color: P.sub, margin: 0 }}>
+                  Seven interactive steps: run MC-dropout passes yourself, refer the uncertain cases,
+                  shade a shadow over the ESB, add labelled patients, and watch which uncertainty
+                  moves. <span style={{ ...MONO, fontSize: "0.7rem", color: P.accent }}>open the bench →</span>
+                </p>
+              </a>
+            </Sec>
+
+            {/* 05 ─────────────────────────────────────────────────────── */}
+            <Sec s={SECTIONS[4]}>
+              <H>
+                Every comparison uses the same patients, the same network size and the same training
+                rules; only the thing being tested changes.
+              </H>
+              <Table
+                head={["", "we expect", "falsified if"]}
+                rows={[
+                  [{ v: "H1 · quality-aware", b: true }, "Scan conditions + a three-state output place the ESB more accurately and make fewer false measurements on difficult scans (deep, faint, shadowed, blurred), with no loss on ordinary ones", "not better on difficult scans, or worse on ordinary ones"],
+                  [{ v: "H1 · Bayesian test", col: P.accent, b: true }, "Aleatoric σ separates the scans experts marked “ESB not visible” (AUROC); epistemic σ falls with label budget while aleatoric σ stays flat", "cannot-measure calls don't track expert “not visible” flags, or both uncertainties move together"],
+                  [{ v: "H2 · few labels", b: true }, "The physics decoder beats both supervised-only and a strong semi-supervised baseline at 5, 10 and 20 labelled patients, repeated over random patient draws", "no clear gain over both at the small budgets"],
+                  [{ v: "H3 · trust", b: true }, "Conformal 90% intervals contain the expert thickness for about 90% of unseen patients, and are narrow enough to be useful by a limit fixed in advance", "coverage clearly below 90%, or intervals too wide"],
+                  [{ v: "H4 · transfer (optional)", b: true }, "Pretraining on another tissue's OCT beats scratch; oesophagus vs skin vs retina vs ImageNet vs oral-only SSL is measured, not assumed", "no pretrained source beats scratch at small budgets"],
+                ]}
+              />
+              <H>
+                Label budgets are counted in <b>patients, not images</b>. Training, calibration and
+                test sets never share a patient. The model is frozen before calibration, and
+                calibration patients are never used for anything else.
+              </H>
+            </Sec>
+
+            {/* 06 ─────────────────────────────────────────────────────── */}
+            <Sec s={SECTIONS[5]}>
+              <Table
+                head={["the first paper will show", "it will not claim"]}
+                rows={[
+                  ["How accurately it finds the surface and ESB and measures thickness, on our device and protocol", "that it detects or rules out cancer or dysplasia"],
+                  ["How reliably it says “cannot measure”, and why", "that it decides whether a biopsy is needed"],
+                  ["Whether physics-informed learning reduces the labels needed", "that it replaces histopathology"],
+                  ["Whether its intervals hold on unseen patients", "that it works on any device"],
+                  ["How repeatable measurements are between scans", "that its confidence is guaranteed per patient"],
+                ]}
+              />
+              {[
+                ["No device or in vivo scans", "Everything depends on it. Healthy volunteers are the fastest start."],
+                ["Only display-processed images", "The physics decoder needs raw or minimally processed signal. Without it, the physics claims stay modest."],
+                ["Too few patients", "A pilot of roughly 10–15 patients checks feasibility before the main study."],
+                ["One annotator", "Two independent experts on a shared subset, so human difficulty is measured, not assumed."],
+                ["Probe pressure on soft tissue", "It changes thickness. Record contact and standardise the protocol."],
+                ["Someone publishes the same combination", "Re-check the literature right before submission."],
+              ].map(([t, b], i) => <Idea key={i} i={i + 1} t={t}>{b}</Idea>)}
+            </Sec>
+
+            {/* ══ PART II — the earlier hard-tissue design ════════════════ */}
+            <div style={{ borderTop: `2px solid ${P.ink}`, borderBottom: `1px solid ${P.line}`, padding: "0.9rem 0", margin: "0.4rem 0 2.2rem" }}>
+              <div style={{ ...MONO, fontSize: "0.6rem", letterSpacing: "0.14em", textTransform: "uppercase", color: P.accent, marginBottom: 6 }}>Part II · companion design</div>
+              <div style={{ ...DISP, fontWeight: 600, fontSize: "1.3rem", marginBottom: 6 }}>SketchDEJ: the same principles on enamel</div>
+              <p style={{ ...BODY, fontSize: "0.95rem", lineHeight: 1.7, color: P.sub, margin: 0 }}>
+                Before the question moved to soft tissue, the first design targeted caries: where
+                the lesion front sits relative to the dentin–enamel junction. It shares the
+                measure-then-abstain-then-calibrate shape, and it's kept here as the hard-tissue
+                extension.
+              </p>
+            </div>
+
+            {/* 07 ─────────────────────────────────────────────────────── */}
+            <Sec s={SECTIONS[6]}>
               <Lead>
                 Retinal OCT is one of the most crowded corners of medical imaging: cross-sectional
                 classification and layer segmentation are near-saturated, and new work competes on
@@ -315,8 +595,8 @@ export default function DentalOCT() {
               </Callout>
             </Sec>
 
-            {/* 02 ─────────────────────────────────────────────────────── */}
-            <Sec s={SECTIONS[1]}>
+            {/* 08 ─────────────────────────────────────────────────────── */}
+            <Sec s={SECTIONS[7]}>
               <Lead>
                 Modern caries management is minimally invasive: arrest early lesions with fluoride or
                 sealants, drill only when you must. The line between those two is mostly one fact —
@@ -341,8 +621,8 @@ export default function DentalOCT() {
               </Callout>
             </Sec>
 
-            {/* 03 ─────────────────────────────────────────────────────── */}
-            <Sec s={SECTIONS[2]}>
+            {/* 09 ─────────────────────────────────────────────────────── */}
+            <Sec s={SECTIONS[8]}>
               <H>
                 It is a hybrid CDSS: deep learning extracts measurements, and a transparent rule
                 layer turns them into clinical language. Most real-world failures happen in the
@@ -355,8 +635,8 @@ export default function DentalOCT() {
               </div>
             </Sec>
 
-            {/* 04 ─────────────────────────────────────────────────────── */}
-            <Sec s={SECTIONS[3]}>
+            {/* 10 ─────────────────────────────────────────────────────── */}
+            <Sec s={SECTIONS[9]}>
               <H>
                 For every A-scan column the head outputs a probability distribution over depth for
                 three boundaries, plus a logit for whether a lesion exists in that column at all.
@@ -377,8 +657,8 @@ export default function DentalOCT() {
               </H>
             </Sec>
 
-            {/* 05 ─────────────────────────────────────────────────────── */}
-            <Sec s={SECTIONS[4]}>
+            {/* 11 ─────────────────────────────────────────────────────── */}
+            <Sec s={SECTIONS[10]}>
               <Lead>
                 The field's real bottleneck is labels, so the label format is designed to be as
                 cheap as the model allows.
@@ -397,8 +677,8 @@ export default function DentalOCT() {
               </Callout>
             </Sec>
 
-            {/* 06 ─────────────────────────────────────────────────────── */}
-            <Sec s={SECTIONS[5]}>
+            {/* 12 ─────────────────────────────────────────────────────── */}
+            <Sec s={SECTIONS[11]}>
               <H>
                 Split-conformal prediction puts an interval on <code>r</code> and on lesion depth in
                 micrometres, calibrated against micro-CT or adjudicated sketches. A suggestion is only
@@ -419,8 +699,8 @@ export default function DentalOCT() {
               </H>
             </Sec>
 
-            {/* 07 ─────────────────────────────────────────────────────── */}
-            <Sec s={SECTIONS[6]}>
+            {/* 13 ─────────────────────────────────────────────────────── */}
+            <Sec s={SECTIONS[12]}>
               <H>
                 Dental OCT has no unlabelled corpus worth the name; retinal OCT has hundreds of
                 thousands of B-scans with the same interferometric physics and speckle statistics.
@@ -439,8 +719,8 @@ export default function DentalOCT() {
               </Callout>
             </Sec>
 
-            {/* 08 ─────────────────────────────────────────────────────── */}
-            <Sec s={SECTIONS[7]}>
+            {/* 14 ─────────────────────────────────────────────────────── */}
+            <Sec s={SECTIONS[13]}>
               <H>
                 The thresholds below show the mechanism. They are placeholders: the real ones get set
                 with a clinical partner and mapped to a recognised caries-management framework
@@ -462,8 +742,8 @@ export default function DentalOCT() {
               </div>
             </Sec>
 
-            {/* 09 ─────────────────────────────────────────────────────── */}
-            <Sec s={SECTIONS[8]}>
+            {/* 15 ─────────────────────────────────────────────────────── */}
+            <Sec s={SECTIONS[14]}>
               <Table
                 head={["claim", "comparison", "metric"]}
                 rows={[
@@ -481,8 +761,8 @@ export default function DentalOCT() {
               </H>
             </Sec>
 
-            {/* 10 ─────────────────────────────────────────────────────── */}
-            <Sec s={SECTIONS[9]}>
+            {/* 16 ─────────────────────────────────────────────────────── */}
+            <Sec s={SECTIONS[15]}>
               {[
                 ["Prototype on public retinal data — now", "The curve head and the conformal layer don't care which tissue they're looking at. Duke SD-OCT ships layer-boundary annotations in exactly this output format, so ordered-curve regression with conformal depth intervals can be built and debugged before a single dental scan exists."],
                 ["Find a dental partner and write the intended use", "One decision (monitor vs restore on reachable surfaces), one device, ethics approval for extracted teeth."],
@@ -492,8 +772,8 @@ export default function DentalOCT() {
               ].map(([t, b], i) => <Idea key={i} i={i + 1} t={t}>{b}</Idea>)}
             </Sec>
 
-            {/* 11 ─────────────────────────────────────────────────────── */}
-            <Sec s={SECTIONS[10]}>
+            {/* 17 ─────────────────────────────────────────────────────── */}
+            <Sec s={SECTIONS[16]}>
               <Callout kind="wrong" title="no data, no project">
                 There is no public dental-OCT dataset. Step 1 is the only part that can happen
                 without a clinical and imaging partner.
@@ -507,9 +787,10 @@ export default function DentalOCT() {
             </Sec>
 
             <footer style={{ marginTop: "2rem", paddingTop: "1rem", borderTop: `2px solid ${P.ink}` }}>
-              <p style={{ ...MONO, fontSize: "0.62rem", color: P.sub }}>{PAPER.author} · SketchDEJ proposal · September 2026</p>
+              <p style={{ ...MONO, fontSize: "0.62rem", color: P.sub }}>{PAPER.author} · oral OCT research proposal · September 2026</p>
               <div style={{ display: "flex", gap: "1.2rem", flexWrap: "wrap", marginTop: 10 }}>
                 <a href="#Research" style={{ ...MONO, fontSize: "0.66rem", color: P.accent, textDecoration: "underline", textUnderlineOffset: 3 }}>← back to the paper</a>
+                <a href="#/lab/bnn" style={{ ...MONO, fontSize: "0.66rem", color: P.accent, textDecoration: "underline", textUnderlineOffset: 3 }}>Bayesian DL, in the Lab →</a>
                 <a href="#/orthovision" style={{ ...MONO, fontSize: "0.66rem", color: P.accent, textDecoration: "underline", textUnderlineOffset: 3 }}>OrthoVision, the other case study →</a>
               </div>
             </footer>

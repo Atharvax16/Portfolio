@@ -1229,6 +1229,13 @@ export const ARCHITECTURES = [
     intro: "The MRNet bench ends by calling attention pooling *the modern repair*; this is the paper that built it. The setup is **weak supervision**: the label is attached to the whole exam, the thing you feed in is thirty separate slices, and nobody ever wrote down which slice earned the label — so a positive bag is mostly negative instances with the evidence buried somewhere inside. Two clicks are the ones worth having. Step 3 is the constraint: shuffle the bag and watch all three pooled numbers refuse to move, because a pile of slices has no order and any legal MIL operator has to be blind to it — then notice that max and mean are *fixed rules with opposite blind spots*, one reporting how bright the brightest was, the other burying a 0.73 finding under fourteen quiet slices. Step 5 puts a number on why that second failure is fatal at scale: under mean pooling the one tear slice gets exactly **1/K** of the vote regardless of what it contains, which is four thousandths of the answer in a bag of 256 — and a whole-slide image is thousands of patches. The fix is to keep the weighted-sum shape and *learn* the weights, and its best consequence is an accident: the same aₖ that did the pooling, read back, say roughly **where** the finding is, from a model that never saw an annotated slice. The last step is the honest one — permutation invariance is what makes the framework legal and what throws the anatomy away, since slice 19 never learns it sits between 18 and 20, and the three planes never learn they are looking at the same knee. That gap is where my own thread goes next.",
   },
   {
+    key: "bnn", name: "Bayesian deep learning — knowing when not to answer", short: "Bayesian DL", family: "Uncertainty & trust",
+    status: "live", component: "BnnWalkthrough", year: 2021,
+    note: "MC dropout · refer the unsure · epistemic vs aleatoric · then calibrate",
+    steps: "weights → distributions → dropout left on → the spread → refer → two kinds of not knowing → three answers → conformal",
+    intro: "An ordinary network gives the same answer every time and never says how sure it is. **Song et al. (2021)** put a Bayesian head on an oral-cancer classifier the cheap way — leave dropout on at test time, run each image 50 times, and read the *spread* — then showed that referring the most uncertain 10% lifts accuracy on the rest from 85.6% to about 90%. The first four steps rebuild that. The last three carry it over to my own question, **measuring oral epithelial thickness in OCT**, where the useful move is to split the spread in two: *epistemic* uncertainty (the model hasn't seen enough) shrinks with labelled patients, *aleatoric* uncertainty (the boundary isn't in the image) never does. That split is what lets a measurement system answer *measured*, *uncertain* or **cannot measure** instead of forcing a number — and the final step is why Bayesian σ still needs conformal calibration before anyone should trust its interval.",
+  },
+  {
     key: "detection", name: "Detecting AI Images", short: "AI-image forensics", family: "Generative & forensics",
     status: "live", component: "DetectionParadigms", year: 2024,
     note: "six lenses on a fake",
@@ -1265,7 +1272,7 @@ export const ARCHITECTURES = [
 
 /* Rail order. Anything whose family isn't listed falls to the end. */
 export const ARCH_FAMILIES = [
-  "Vision backbones", "Self-supervised", "Multimodal", "Memory & retrieval", "Sequence", "Medical imaging", "Generative & forensics",
+  "Vision backbones", "Self-supervised", "Multimodal", "Memory & retrieval", "Sequence", "Medical imaging", "Uncertainty & trust", "Generative & forensics",
 ];
 
 export const LIVE_ARCHITECTURES = ARCHITECTURES.filter((a) => a.status === "live");

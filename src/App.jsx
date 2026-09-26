@@ -169,7 +169,7 @@ export default function App() {
             ))}
             {/* Not sections of the paper — doors out to the other rooms. */}
             <a href="#/orthovision" style={{ ...MONO, fontSize: "0.7rem", color: P.accent, textDecoration: "none", border: `1px solid ${P.accent}`, background: P.accentSoft, padding: "3px 9px", marginLeft: 6 }}>OrthoVision ↗</a>
-            <a href="#/dentaloct" style={{ ...MONO, fontSize: "0.7rem", color: P.accent, textDecoration: "none", border: `1px solid ${P.accent}`, background: P.accentSoft, padding: "3px 9px", marginLeft: 6 }}>Dental OCT ↗</a>
+            <a href="#/dentaloct" style={{ ...MONO, fontSize: "0.7rem", color: P.accent, textDecoration: "none", border: `1px solid ${P.accent}`, background: P.accentSoft, padding: "3px 9px", marginLeft: 6 }}>Oral OCT ↗</a>
             <a href="#/resume" style={{ ...MONO, fontSize: "0.7rem", color: P.ink, textDecoration: "none", border: `1px solid ${P.line}`, background: P.paper2, padding: "3px 9px", marginLeft: 6 }}>Résumé ↗</a>
           </nav>
         </header>
@@ -190,7 +190,7 @@ export default function App() {
                   <p style={{ ...noteTxt, marginBottom: "0.7rem", borderTop: `1px solid ${P.faint}`, paddingTop: "0.5rem" }}>Presenting a poster at <a href="#Publications" style={{ color: P.accent, textDecoration: "underline", textUnderlineOffset: 3, fontStyle: "normal" }}>OMIA 2026</a> (MICCAI) in Strasbourg — Sept–Oct 2026.</p>
                   <div style={{ display: "flex", flexDirection: "column", gap: 3, alignItems: "flex-end" }}>
                     <a href="#/orthovision" style={{ ...MONO, fontSize: "0.64rem", color: P.accent }}>OrthoVision ↗</a>
-                    <a href="#/dentaloct" style={{ ...MONO, fontSize: "0.64rem", color: P.accent }}>Dental OCT ↗</a>
+                    <a href="#/dentaloct" style={{ ...MONO, fontSize: "0.64rem", color: P.accent }}>Oral OCT ↗</a>
                     <a href="#/resume" style={{ ...MONO, fontSize: "0.64rem", color: P.accent }}>Résumé ↗</a>
                     <a href="https://github.com/Atharvax16" target="_blank" rel="noopener noreferrer" style={{ ...MONO, fontSize: "0.64rem", color: P.accent }}>GitHub ↗</a>
                     <a href={`mailto:${PAPER.email}`} style={{ ...MONO, fontSize: "0.64rem", color: P.accent }}>Email ↗</a>
