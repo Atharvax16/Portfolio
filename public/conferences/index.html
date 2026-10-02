@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Deadline Planner — Atharva Kocharekar</title>
+  <meta name="description" content="Upcoming conference and paper deadlines I am tracking for 2026–27, with official dates and estimates marked." />
+  <!-- Apply the saved theme before first paint so there is no flash. -->
+  <script>try{var t=localStorage.getItem('cdp-theme');if(t)document.documentElement.dataset.theme=t;}catch(e){}</script>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=IBM+Plex+Mono:wght@400;500;600&family=DM+Sans:wght@400;500;600&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <a class="skip" href="#all-h">Skip to all deadlines</a>
+
+  <header class="site-head">
+    <div class="wrap head-row">
+      <a class="back" href="../">← Portfolio</a>
+      <button id="theme-toggle" class="btn btn-ghost" type="button" aria-label="Toggle dark mode">◐ Theme</button>
+    </div>
+    <div class="wrap">
+      <p class="eyebrow">Research planning · 2026–27</p>
+      <h1>Conference &amp; Deadline Planner</h1>
+      <p class="meta">Last verified: <strong id="last-verified">October 2026</strong> · times shown in your local time zone</p>
+      <ul class="legend" aria-label="Legend">
+        <li><span class="badge s-official">Official</span> announced by the venue</li>
+        <li><span class="badge s-estimate">Estimate</span> <span class="verify">verify</span> from past cycles</li>
+        <li><span class="badge s-passed">Passed</span> hidden by default</li>
+      </ul>
+      <p class="caution">Estimates come from past cycles; always confirm on the official site.</p>
+    </div>
+  </header>
+
+  <main class="wrap">
+    <section class="block" aria-labelledby="next-h">
+      <h2 id="next-h">Next up</h2>
+      <ol id="next-up" class="next-grid" aria-live="off"></ol>
+    </section>
+
+    <section class="block" aria-labelledby="all-h">
+      <div class="section-head">
+        <h2 id="all-h" tabindex="-1">All deadlines</h2>
+        <div class="toolbar">
+          <div class="seg" role="group" aria-label="View">
+            <button type="button" data-view="timeline" aria-pressed="true">Timeline</button>
+            <button type="button" data-view="table" aria-pressed="false">Table</button>
+          </div>
+          <button id="export-ics" class="btn" type="button">↓ Export .ics</button>
+        </div>
+      </div>
+      <div id="filters" class="filters"></div>
+      <p id="count" class="count" aria-live="polite"></p>
+      <div id="timeline"></div>
+      <div id="table-view" class="table-wrap" hidden></div>
+    </section>
+
+    <div id="error" class="error" role="alert" hidden></div>
+
+    <section class="block" aria-labelledby="strategy-h">
+      <div class="strategy">
+        <h2 id="strategy-h">My strategy</h2>
+        <ol id="strategy-list"></ol>
+      </div>
+    </section>
+  </main>
+
+  <footer class="wrap foot">
+    <p>Dates live in <code>conferences.json</code>. AoE = 23:59 UTC−12. Deadlines without a stated zone count to 23:59 your time.</p>
+  </footer>
+
+  <script src="app.js"></script>
+</body>
+</html>

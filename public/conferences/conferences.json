@@ -1,0 +1,211 @@
+{
+  "lastVerified": "October 2026",
+  "range": { "start": "2026-10", "end": "2027-12" },
+
+  "strategy": [
+    { "label": "Primary target", "text": "MIDL 2027: extend the fidelity-paradox work with more modalities, models and tasks so it is substantially new." },
+    { "label": "Second main shot", "text": "MICCAI 2027, resubmitting with feedback if MIDL fails." },
+    { "label": "Lower-risk routes", "text": "Non-archival workshops (ICLR, ICML, NeurIPS), the ISBI workshop track, IMVIP." },
+    { "label": "Stretch", "text": "UAI, NeurIPS 2027, CVPR, ICCV, IPMI, only with a strong method contribution." },
+    { "label": "Rule", "text": "Set an internal deadline 3 weeks before every real deadline, with one outside reader." }
+  ],
+
+  "conferences": [
+    {
+      "id": "isbi-2027",
+      "name": "ISBI 2027",
+      "field": "medical",
+      "tier": "stretch",
+      "status": "official",
+      "location": "Lausanne, Switzerland",
+      "dates": { "start": "2027-05-25", "end": "2027-05-28" },
+      "pageLimit": "4 pages",
+      "notes": "Must not be substantially similar to previously published work. Max 2 first-author submissions.",
+      "url": "https://biomedicalimaging.org/2027/papers/",
+      "milestones": [
+        { "type": "paper", "label": "Paper (4-page)", "date": "2026-10-26", "tz": "US-Eastern", "deadline": true, "note": "23:59 US Eastern, not AoE" },
+        { "type": "notification", "date": "2027-01-12" },
+        { "type": "workshop", "label": "Workshop papers", "date": "2027-01-26", "tz": "local", "deadline": true }
+      ]
+    },
+    {
+      "id": "cvpr-2027",
+      "name": "CVPR 2027",
+      "field": "cv",
+      "tier": "stretch",
+      "status": "official",
+      "location": "Seattle, USA",
+      "dates": { "start": "2027-06-22", "end": "2027-06-25" },
+      "datesNote": "Workshops 20–21 June",
+      "url": "https://cvpr.thecvf.com/Conferences/2027/CallForPapers",
+      "milestones": [
+        { "type": "registration", "label": "Paper registration (mandatory)", "date": "2026-11-10", "tz": "AoE", "deadline": true },
+        { "type": "paper", "date": "2026-11-16", "tz": "AoE", "deadline": true, "note": "No extension" },
+        { "type": "supplementary", "date": "2026-11-23", "tz": "AoE", "deadline": true },
+        { "type": "reviews", "label": "Reviews released", "date": "2027-01-25" },
+        { "type": "rebuttal", "start": "2027-01-25", "date": "2027-02-01" },
+        { "type": "notification", "label": "Decisions", "date": "2027-02-25" }
+      ]
+    },
+    {
+      "id": "midl-2027",
+      "name": "MIDL 2027",
+      "field": "medical",
+      "tier": "primary",
+      "status": "official",
+      "location": "Porto, Portugal",
+      "dates": { "start": "2027-07-14", "end": "2027-07-16" },
+      "datesNote": "Doctoral symposium 13 July",
+      "pageLimit": "Main Track 10 pages; Clinical Translation & Validation track 14 pages",
+      "notes": "The Clinical Translation & Validation track welcomes negative results, external validation, robustness and failure detection. Dates for the 3-page short-paper track are TBD.",
+      "url": "https://2027.midl.io/important-dates",
+      "milestones": [
+        { "type": "abstract", "label": "Abstract registration", "date": "2026-11-30", "tz": "AoE", "deadline": true },
+        { "type": "paper", "date": "2026-12-04", "tz": "AoE", "deadline": true },
+        { "type": "reviews", "label": "Reviews released", "date": "2027-01-10" },
+        { "type": "rebuttal", "start": "2027-01-18", "date": "2027-01-24" },
+        { "type": "notification", "date": "2027-02-12" },
+        { "type": "camera-ready", "date": "2027-03-12" }
+      ]
+    },
+    {
+      "id": "ipmi-2027",
+      "name": "IPMI 2027",
+      "field": "medical",
+      "tier": "long-shot",
+      "status": "official",
+      "location": "Quebec, Canada",
+      "dates": { "start": "2027-06-27", "end": "2027-07-02" },
+      "notes": "Very selective, methodology-heavy.",
+      "url": "https://miccai.org/2026/06/22/submission-deadline-ipmi-2027/",
+      "milestones": [
+        { "type": "paper", "date": "2026-12-07", "tz": "local", "deadline": true, "note": "Time zone not stated" }
+      ]
+    },
+
+    {
+      "id": "icml-2027",
+      "name": "ICML 2027",
+      "field": "ml",
+      "tier": "stretch",
+      "status": "estimate",
+      "location": "South America (city TBA)",
+      "dates": { "text": "July 2027" },
+      "url": "https://icml.cc/",
+      "milestones": [
+        { "type": "paper", "date": "2027-01-28", "tz": "AoE", "deadline": true, "note": "Trackers disagree: 22–29 Jan" }
+      ]
+    },
+    {
+      "id": "uai-2027",
+      "name": "UAI 2027",
+      "field": "ml",
+      "tier": "stretch",
+      "status": "estimate",
+      "location": "TBA",
+      "dates": { "text": "July 2027" },
+      "notes": "Strong thematic fit (uncertainty).",
+      "url": "https://www.auai.org/",
+      "milestones": [
+        { "type": "paper", "date": "2027-02-12", "tz": "AoE", "deadline": true }
+      ]
+    },
+    {
+      "id": "miccai-2027",
+      "name": "MICCAI 2027",
+      "field": "medical",
+      "tier": "primary",
+      "status": "estimate",
+      "location": "Auckland, New Zealand",
+      "dates": { "start": "2027-09-26", "end": "2027-10-01" },
+      "notes": "Workshops usually have summer deadlines.",
+      "url": "https://conferences.miccai.org/2027/",
+      "milestones": [
+        { "type": "paper", "date": "2027-02-26", "tz": "local", "deadline": true, "note": "Past years fell between 26 Feb and 9 Mar" }
+      ]
+    },
+    {
+      "id": "iccv-2027",
+      "name": "ICCV 2027",
+      "field": "cv",
+      "tier": "stretch",
+      "status": "estimate",
+      "location": "Hong Kong",
+      "dates": { "start": "2027-10-02", "end": "2027-10-08" },
+      "url": "https://iccv.thecvf.com/",
+      "milestones": [
+        { "type": "paper", "date": "2027-03-05", "tz": "AoE", "deadline": true }
+      ]
+    },
+    {
+      "id": "imvip-2027",
+      "name": "IMVIP 2027",
+      "field": "cv",
+      "tier": "low-stakes",
+      "status": "estimate",
+      "location": "Ireland",
+      "dates": { "text": "Usually late August 2027" },
+      "pageLimit": "4-page short papers allowed",
+      "notes": "Good low-pressure venue for presentation practice. Travel bursaries offered in past years.",
+      "url": "https://imvipconference.github.io/",
+      "milestones": [
+        { "type": "paper", "date": "2027-05-15", "tz": "local", "deadline": true }
+      ]
+    },
+    {
+      "id": "neurips-2027",
+      "name": "NeurIPS 2027",
+      "field": "ml",
+      "tier": "stretch",
+      "status": "estimate",
+      "location": "Europe (city TBA)",
+      "dates": { "text": "December 2027" },
+      "notes": "Non-archival workshops are the lower-risk route.",
+      "url": "https://neurips.cc/",
+      "milestones": [
+        { "type": "paper", "date": "2027-05-20", "tz": "AoE", "deadline": true }
+      ]
+    },
+
+    {
+      "id": "iclr-2027",
+      "name": "ICLR 2027",
+      "field": "ml",
+      "tier": "stretch",
+      "status": "official",
+      "location": "TBA",
+      "dates": { "start": "2027-04-26", "end": "2027-04-30" },
+      "url": "https://iclr.cc/",
+      "milestones": [
+        { "type": "paper", "date": "2026-09-25", "tz": "AoE", "deadline": true }
+      ]
+    },
+    {
+      "id": "aistats-2027",
+      "name": "AISTATS 2027",
+      "field": "ml",
+      "tier": "stretch",
+      "status": "official",
+      "location": "Montreal, Canada",
+      "dates": { "start": "2027-05-03", "end": "2027-05-06" },
+      "url": "https://aistats.org/",
+      "milestones": [
+        { "type": "abstract", "date": "2026-09-29", "tz": "AoE", "deadline": true },
+        { "type": "paper", "date": "2026-10-06", "tz": "AoE", "deadline": true }
+      ]
+    },
+    {
+      "id": "spie-mi-2027",
+      "name": "SPIE Medical Imaging 2027",
+      "field": "medical",
+      "tier": "low-stakes",
+      "status": "official",
+      "location": "Vancouver, Canada",
+      "dates": { "start": "2027-02-14", "end": "2027-02-18" },
+      "url": "https://spie.org/conferences-and-exhibitions/medical-imaging",
+      "milestones": [
+        { "type": "abstract", "date": "2026-08-05", "tz": "local", "deadline": true }
+      ]
+    }
+  ]
+}
