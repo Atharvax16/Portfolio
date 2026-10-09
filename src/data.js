@@ -1229,6 +1229,13 @@ export const ARCHITECTURES = [
     intro: "The MRNet bench ends by calling attention pooling *the modern repair*; this is the paper that built it. The setup is **weak supervision**: the label is attached to the whole exam, the thing you feed in is thirty separate slices, and nobody ever wrote down which slice earned the label — so a positive bag is mostly negative instances with the evidence buried somewhere inside. Two clicks are the ones worth having. Step 3 is the constraint: shuffle the bag and watch all three pooled numbers refuse to move, because a pile of slices has no order and any legal MIL operator has to be blind to it — then notice that max and mean are *fixed rules with opposite blind spots*, one reporting how bright the brightest was, the other burying a 0.73 finding under fourteen quiet slices. Step 5 puts a number on why that second failure is fatal at scale: under mean pooling the one tear slice gets exactly **1/K** of the vote regardless of what it contains, which is four thousandths of the answer in a bag of 256 — and a whole-slide image is thousands of patches. The fix is to keep the weighted-sum shape and *learn* the weights, and its best consequence is an accident: the same aₖ that did the pooling, read back, say roughly **where** the finding is, from a model that never saw an annotated slice. The last step is the honest one — permutation invariance is what makes the framework legal and what throws the anatomy away, since slice 19 never learns it sits between 18 and 20, and the three planes never learn they are looking at the same knee. That gap is where my own thread goes next.",
   },
   {
+    key: "fewsome", name: "Siamese networks — anomaly detection from thirty normals", short: "Siamese / FewSOME", family: "Anomaly detection",
+    status: "live", component: "FewSomeWalkthrough", year: 2023,
+    note: "shared weights · pull-only collapses · a stop-gradient anchor · nearest-neighbour scoring",
+    steps: "two branches → one class, K branches → collapse → Stop Loss → no biases → scoring → thirty shots → the caveats",
+    intro: "A **Siamese network** runs one encoder on two inputs with shared weights and learns a space where *distance means similarity*, so it can judge inputs it never saw a label for. **FewSOME** (Belton et al., 2023) turns that into anomaly detection with almost no data: train on **30 normal images** and no anomalies at all, then flag whatever lands far from them. The first two steps build the Siamese idea and show what changes when there is only one class: the push term of contrastive loss disappears, and with it the thing that kept the space from shrinking. Steps 3–5 are the ones worth clicking through. A pull-only loss is solved by mapping every input to one point, *representational collapse*, and the fix comes in two pieces: **Stop Loss**, which ties the embeddings to a frozen anchor through stop-gradient, and removing the bias terms, because otherwise the network collapses onto the anchor instead. Step 6 is how a test image gets scored, and why nearest-neighbour beats distance-to-centre when normal data isn't a ball. The last two steps are the paper's numbers: AUC that plateaus after a handful of shots, robustness to contaminated data, and what those benchmarks do and don't measure.",
+  },
+  {
     key: "bnn", name: "Bayesian deep learning — knowing when not to answer", short: "Bayesian DL", family: "Uncertainty & trust",
     status: "live", component: "BnnWalkthrough", year: 2021,
     note: "MC dropout · refer the unsure · epistemic vs aleatoric · then calibrate",
@@ -1272,7 +1279,7 @@ export const ARCHITECTURES = [
 
 /* Rail order. Anything whose family isn't listed falls to the end. */
 export const ARCH_FAMILIES = [
-  "Vision backbones", "Self-supervised", "Multimodal", "Memory & retrieval", "Sequence", "Medical imaging", "Uncertainty & trust", "Generative & forensics",
+  "Vision backbones", "Self-supervised", "Multimodal", "Memory & retrieval", "Sequence", "Medical imaging", "Anomaly detection", "Uncertainty & trust", "Generative & forensics",
 ];
 
 export const LIVE_ARCHITECTURES = ARCHITECTURES.filter((a) => a.status === "live");

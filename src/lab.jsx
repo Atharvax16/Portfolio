@@ -4,7 +4,7 @@ import {
   VitWalkthrough, CnnWalkthrough, DetectionParadigms, Dinov2Walkthrough, JepaWalkthrough,
   SteerVitWalkthrough, RagWalkthrough, MemoryBankWalkthrough, MovieChatWalkthrough,
   MRNetWalkthrough, AutoencoderWalkthrough, OrthoDiffusionWalkthrough, SslCompareWalkthrough,
-  AttentionMilWalkthrough, BnnWalkthrough,
+  AttentionMilWalkthrough, BnnWalkthrough, FewSomeWalkthrough,
 } from "./ui.jsx";
 
 /* Type tokens — same as the paper, so the Lab reads as the same hand. */
@@ -17,7 +17,7 @@ const SKETCHES = {
   VitWalkthrough, CnnWalkthrough, DetectionParadigms, Dinov2Walkthrough, JepaWalkthrough,
   SteerVitWalkthrough, RagWalkthrough, MemoryBankWalkthrough, MovieChatWalkthrough,
   MRNetWalkthrough, AutoencoderWalkthrough, OrthoDiffusionWalkthrough, SslCompareWalkthrough,
-  AttentionMilWalkthrough, BnnWalkthrough,
+  AttentionMilWalkthrough, BnnWalkthrough, FewSomeWalkthrough,
 };
 
 /* Intro copy in data.js is written with *italic* and **bold** markers so the

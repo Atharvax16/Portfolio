@@ -8030,3 +8030,670 @@ export function BnnWalkthrough() {
     </div>
   );
 }
+
+
+/* ════════════════════════════════════════
+   SIAMESE NETWORKS → FewSOME — one-class few-shot anomaly detection,
+   after Belton et al. (arXiv 2301.06957, 2023).
+   ════════════════════════════════════════
+   The embeddings in steps 1–6 are drawn, not trained: a toy network small
+   enough to run here doesn't reproduce collapse faithfully, so the geometry
+   is placed to show the mechanism and labelled as illustrative. Every number
+   in steps 7–8 is quoted from the paper's Tables 1, 3 and 4. */
+
+const fsRng = (seed) => () => {
+  seed = (seed + 0x6d2b79f5) | 0;
+  let t = Math.imul(seed ^ (seed >>> 15), 1 | seed);
+  t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+  return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+};
+const fsGauss = (r) => Math.sqrt(-2 * Math.log(Math.max(r(), 1e-9))) * Math.cos(2 * Math.PI * r());
+const fsDist = (p, q) => Math.hypot(p[0] - q[0], p[1] - q[1]);
+const fsLerp = (p, q, s) => [p[0] + (q[0] - p[0]) * s, p[1] + (q[1] - p[1]) * s];
+const fsClamp = (v) => Math.min(0.93, Math.max(0.07, v));
+
+/* step 2: thirty untrained reference embeddings, scattered */
+const FS_REF30 = (() => {
+  const r = fsRng(41);
+  return Array.from({ length: 30 }, () => [0.1 + 0.8 * r(), 0.1 + 0.8 * r()]);
+})();
+
+/* steps 3–5: fourteen normals, the anchor is normal 0, two held-out anomalies */
+const FS_NORMALS = (() => {
+  const r = fsRng(23);
+  const pts = Array.from({ length: 14 }, () => [fsClamp(0.45 + 0.19 * fsGauss(r)), fsClamp(0.5 + 0.17 * fsGauss(r))]);
+  pts[0] = [0.3, 0.38];
+  return pts;
+})();
+const FS_ANCHOR = FS_NORMALS[0];
+const FS_ANOMS = [[0.88, 0.16], [0.86, 0.84]];
+const FS_CEN = [0, 1].map((a) => FS_NORMALS.reduce((s, p) => s + p[a], 0) / FS_NORMALS.length);
+const FS_SIGMA0 = [0.6, 0.6];
+
+/* Where a point sits after training fraction τ, for a given α and bias setting.
+   α = 0: everything slides to one output.  α > 0: normals tighten near the
+   anchor and anomalies stay put.  Bias on: after the cluster forms, the whole
+   space slides onto the anchor. */
+function fsPos(p0, anom, alpha, bias, tau) {
+  if (alpha === 0) return fsLerp(p0, FS_SIGMA0, 1 - Math.exp(-7 * tau));
+  const s = 1 - Math.exp(-4 * tau);
+  const C = fsLerp(FS_CEN, FS_ANCHOR, alpha / (alpha + 0.25));
+  const rho = 0.25 - 0.12 * alpha;
+  const target = anom ? fsLerp(p0, C, 0.12) : [C[0] + rho * (p0[0] - FS_CEN[0]), C[1] + rho * (p0[1] - FS_CEN[1])];
+  const p = fsLerp(p0, target, s);
+  if (!bias) return p;
+  const t2 = Math.min(1, Math.max(0, (tau - 0.4) / 0.6));
+  return fsLerp(p, FS_ANCHOR, t2 * t2 * (3 - 2 * t2));
+}
+function fsLoss(alpha, bias, tau) {
+  const N = FS_NORMALS.map((p) => fsPos(p, false, alpha, bias, tau));
+  return N.reduce((acc, p, i) => {
+    const pull = (2 * N.reduce((s, q, j) => s + (i === j ? 0 : fsDist(p, q)), 0)) / (N.length - 1);
+    const D = pull + alpha * fsDist(p, FS_ANCHOR);
+    return acc + (0.5 * D * D) / N.length;
+  }, 0);
+}
+
+/* step 6: trained reference embeddings along a curve, six test images */
+const fsArc = (deg, r = 0.38) => [0.5 + r * Math.cos((deg * Math.PI) / 180), 0.3 - r * Math.sin((deg * Math.PI) / 180)];
+const FS_ARC = Array.from({ length: 12 }, (_, i) => fsArc(212 + i * (116 / 11)));
+const FS_ARC_ANCHOR = FS_ARC[3];
+const FS_ARC_CEN = [0, 1].map((a) => FS_ARC.reduce((s, p) => s + p[a], 0) / FS_ARC.length);
+const FS_TESTS = [
+  { id: "t1", x: fsArc(271, 0.395), anom: false },
+  { id: "t2", x: fsArc(203), anom: false },
+  { id: "t3", x: [0.5, 0.53], anom: true },
+  { id: "t4", x: [0.86, 0.16], anom: true },
+  { id: "t5", x: [0.46, 0.9], anom: true },
+  { id: "t6", x: fsArc(318, 0.37), anom: false },
+];
+
+/* Table 3 — AUC % vs shots, averaged over the ten one-vs-rest classes */
+const FS_SHOTS = [2, 5, 10, 20, 30, 40, 50];
+const FS_T3 = {
+  MNIST: {
+    FewSOME: [90.1, 95.5, 97.0, 97.8, 98.1, 98.2, 98.2],
+    IGD: [80.1, 83.4, 88.5, 90.2, 92.8, 93.9, 94.7],
+    DeepSVDD: [75.9, 78.8, 80.0, 80.9, 81.1, 81.4, 81.6],
+    DROCC: [64.3, 70.3, 66.1, 74.2, 72.1, 69.7, 70.9],
+    HTDG: [null, 85.9, 87.2, null, null, null, null],
+  },
+  "CIFAR-10": {
+    FewSOME: [64.4, 69.6, 72.5, 75.1, 76.6, 76.2, 75.8],
+    IGD: [54.2, 58.2, 65.4, 73.3, 74.6, 75.8, 74.6],
+    DeepSVDD: [57.4, 58.6, 59.7, 60.0, 59.4, 59.2, 59.8],
+    DROCC: [54.2, 55.3, 55.6, 55.5, 56.2, 55.1, 55.5],
+    HTDG: [null, 67.5, 70.2, null, null, null, null],
+  },
+};
+/* Table 4 — AUC % with the Reference Set contaminated by anomalies */
+const FS_CONTAM = [1, 5, 10, 20];
+const FS_T4 = {
+  MNIST: { FewSOME: [97.2, 96.7, 95.8, 93.7], DeepSVDD: [92.9, 90.4, 87.4, 82.9], DROCC: [82.8, 82.7, 77.9, 76.9] },
+  "CIFAR-10": { FewSOME: [76.0, 75.1, 74.8, 73.7], DeepSVDD: [63.1, 62.3, 61.5, 60.3], DROCC: [70.1, 69.6, 68.9, 68.4] },
+};
+
+const FS_STEPS = [
+  {
+    key: "pair", label: "two branches, one network",
+    title: "A Siamese network is one encoder run twice, compared by distance",
+    body: "Koch et al. (2015), the paper FewSOME cites for the idea, feed two images through the same encoder f, with literally the same weights W in both branches, and compare the two output vectors by Euclidean distance. Nothing in the network classifies anything. It learns a space where distance means similarity, which is why it can say something about classes it never trained on: a new image only has to be near or far from something. Training uses contrastive loss. A same-class pair (y = 0) is pulled together by ½d². A different-class pair (y = 1) is pushed apart by ½·max(0, m − d)², but only until it clears the margin m, so the third pair is already far enough and contributes nothing. Hold on to that push term. In anomaly detection it's the one you lose.",
+    math: "L = ½(1 − y)·d² + ½·y·max(0, m − d)²   ·   d = ‖f(x₁) − f(x₂)‖   ·   same W in both branches",
+  },
+  {
+    key: "branch", label: "one class, K branches",
+    title: "FewSOME trains on normals only, so y is always 0",
+    body: "Anomaly detection removes the second class. All you have is a Reference Set of N normal images (N = 30 in the paper, against the 5,000–6,000 the competing methods train on) and no anomalies at all. FewSOME keeps the Siamese machinery but changes two things. The number of branches becomes a hyper-parameter: each training sample rᵢ goes through f alongside K others from the set (K ∈ {1, 2, 3}), all sharing weights, and the loss sums the K distances. And because every pair is normal–normal, y = 0 everywhere, so contrastive loss reduces to its pull term. Partners are drawn at random. The Smart variant (S-FewSOME) picks the farthest one instead, the hard-mining move from triplet loss. It barely helps in their tables (98.0 → 98.1 on MNIST) and costs a search over the set every step.",
+    math: "L_dist(rᵢ) = Σₖ₌₁ᴷ ‖f(rᵢ) − f(rₖ)‖ / √l   — bounded in [0, 1] because f ends in a sigmoid",
+  },
+  {
+    key: "collapse", label: "pull-only collapses",
+    title: "A loss that only pulls is solved by mapping everything to one point",
+    body: "Here is the trap. If the only goal is to put normal embeddings close together, the cheapest solution is to stop looking at the input: drive a layer's weights to zero and the network outputs the same vector for every image. Distances are then exactly zero, loss is zero, and the model has learned nothing. The red triangles are anomalies the model never trains on, drawn for reference. They land on the same spot as everything else, so their anomaly scores fall to zero too. This is representational collapse, and the tell is in the loss curve: it drops to almost nothing straight away. A one-class model that converges suspiciously fast has usually found this exit rather than the features of normality. Drag the epochs.",
+    math: "W = 0  ⇒  f(x) = σ(0) for every x  ⇒  L_dist = 0, and every anomaly scores 0",
+  },
+  {
+    key: "stop", label: "Stop Loss: a frozen anchor",
+    title: "Stop Loss ties the embeddings to a point that training isn't allowed to move",
+    body: "FewSOME's fix borrows stop-gradient from SimSiam (Chen & He, 2021). Before training, pick one reference image rₐ at random, run it through the untrained network once, and freeze that output f*(rₐ) as an anchor. Every sample is now also pulled toward the anchor, weighted by α. Because the anchor is frozen, no gradient flows back through it, so the network can't satisfy the term by dragging the anchor to wherever it collapsed. The constant-output solution now has a cost: the anchor is a specific vector the network has to keep hitting. Loss settles above zero, normals tighten, and the anomalies stay out. Unlike DeepSVDD's centre, which is the mean of all training embeddings, the anchor is one random sample, and with α < 1 it needn't end up in the middle. The paper's ablation (Fig. 3) credits Stop Loss with AUC gains of up to 60% on one MVTec class.",
+    math: "D(rᵢ) = Σₖ ‖f(rᵢ) − f(rₖ)‖  +  α‖f(rᵢ) − stop(f*(rₐ))‖     — Eq. 1, 0 ≤ α ≤ 1",
+  },
+  {
+    key: "bias", label: "…and no bias terms",
+    title: "With bias terms the network can still collapse, onto the anchor this time",
+    body: "Stop Loss closes one exit and leaves another open, and the paper says so (§3.3). If the layers have bias terms, the network can zero its weights and set the biases so that the constant output is exactly f*(rₐ). Every embedding sits on the anchor, both terms of the loss are zero, and anomalies again score nothing. Turn the biases on and drag the epochs: the cluster forms as before, then the whole space slides onto the star. The fix is DeepSVDD's. Build f without bias terms, so a zero-weight network can only output σ(0), which isn't the anchor. That's two separate guards for two separate shortcuts, with weight decay added on top in the training objective.",
+    math: "min (1/N) Σᵢ ½·D(rᵢ)² + (λ/2)‖W‖²   — Eq. 2   ·   no biases, so W = 0 ⇒ f = σ(0) ≠ f*(rₐ)",
+  },
+  {
+    key: "score", label: "scoring a test image",
+    title: "An anomaly is far from its nearest normal, not just far from the middle",
+    body: "At test time nothing is compared pairwise any more. Each test image is embedded and scored by its distance to the nearest reference embedding, plus α times its distance to the anchor (Eq. 3). Most one-class methods score by distance to the centre of the normal class instead, which assumes normal data sits in a round ball. Switch the rule to see why that's fragile. Here the normal embeddings curve, so a normal image at the end of the curve (t2) is far from the centre and outranks a real anomaly, while the anomaly in the hollow (t3) sits closest of all to the centre. The nearest-neighbour rule follows the shape and ranks every anomaly above every normal. Then push α up: the anchor term starts to dominate, and FewSOME drifts back toward a single-point method.",
+    math: "s(t) = minᵣ ‖f(t) − f(r)‖ + α‖f(t) − f*(rₐ)‖   — Eq. 3, r over the Reference Set",
+  },
+  {
+    key: "shots", label: "thirty is enough",
+    title: "Performance plateaus after a handful of normal images",
+    body: "This is the headline result. On MNIST, FewSOME trained on 5 normal images (95.5 AUC) already beats every competitor trained on 50, and by N = 30 it reaches 98.1. DeepSVDD with all 6,000 training images gets 92.4 (Table 1). CIFAR-10 is harder and closer: FewSOME and IGD finish within about a point of each other, and IGD gets there with a generator, a critic and adversarial interpolation, where FewSOME is a single network of 4–11 M parameters. The open question I'd put to it is initialisation. FewSOME can start from ImageNet weights, so 30 images only have to bend an existing feature space rather than build one, and the paper never separates how much of the result is the loss and how much is the pretraining. Drag N to read any column.",
+    math: "AUC (%) averaged over the ten one-vs-rest classes · Table 3 · HTDG reports only N = 5 and 10",
+  },
+  {
+    key: "limits", label: "what it doesn't say",
+    title: "Robust to dirty data, but read the benchmark before borrowing the number",
+    body: "One more strength first: slip anomalies into the Reference Set and FewSOME barely notices. With 20% of its “normal” images actually anomalous it keeps about 96% of its peak AUC, and it stays ahead of both baselines at every level (Table 4). The caveats are mine rather than the paper's. MNIST, F-MNIST and CIFAR-10 are run one-vs-rest, so the anomaly is a whole different object class. That's a much wider gap than a subtle defect or lesion. MVTec AD is the realistic test, and there FewSOME scores 84.7, reported as the best test-set result averaged over seeds (done for the baselines too), which is optimistic for everyone. The F1 and balanced-accuracy figures put the threshold at the 10th percentile because 90% of the test set is known to be anomalous, which a deployed system wouldn't know. And the output is one score per image, with no map of where the anomaly is.",
+    math: "Table 4 · AUC (%) with the Reference Set contaminated at 1 / 5 / 10 / 20 %",
+  },
+];
+
+const FS_PAIRS = [
+  { key: "same", label: "same digit · y = 0", g: ["5", "5"], y: 0, d: 0.18 },
+  { key: "diff", label: "different · y = 1", g: ["5", "3"], y: 1, d: 0.42 },
+  { key: "far", label: "different, already far", g: ["5", "7"], y: 1, d: 1.3 },
+];
+const FS_VEC = {
+  "5": [0.82, 0.21, 0.64, 0.12, 0.55, 0.37],
+  "5b": [0.76, 0.26, 0.58, 0.18, 0.61, 0.33],
+  "3": [0.52, 0.48, 0.71, 0.34, 0.22, 0.58],
+  "7": [0.08, 0.91, 0.17, 0.83, 0.12, 0.89],
+};
+const FS_LINE_COL = { FewSOME: P.accent, IGD: P.yellow, DeepSVDD: P.sub, DROCC: P.red, HTDG: P.ink };
+
+export function FewSomeWalkthrough() {
+  const [step, setStep] = useState(0);
+  const [pk, setPk] = useState("same");
+  const [nRef, setNRef] = useState(30);
+  const [K, setK] = useState(2);
+  const [ri, setRi] = useState(4);
+  const [seed, setSeed] = useState(1);
+  const [smart, setSmart] = useState(false);
+  const [epoch, setEpoch] = useState(0);
+  const [alpha, setAlpha] = useState(0.3);
+  const [bias, setBias] = useState(false);
+  const [rule, setRule] = useState("fs");
+  const [tsel, setTsel] = useState("t3");
+  const [ds, setDs] = useState("MNIST");
+  const [shot, setShot] = useState(4);
+
+  const sc = FS_STEPS[step];
+  const sk = sc.key;
+  const tau = epoch / 40;
+
+  /* the collapse step is the α = 0, bias-free case by definition */
+  const effAlpha = sk === "collapse" ? 0 : alpha;
+  const effBias = sk === "bias" ? bias : false;
+
+  const tile = (x, y, s, g, col, rot = 0, key) => (
+    <g key={key}>
+      <rect x={x} y={y} width={s} height={s} fill="#fff" stroke={col} strokeWidth={col === P.line ? 0.8 : 1.6} />
+      <text x={x + s / 2} y={y + s * 0.74} textAnchor="middle" style={SK} fontSize={s * 0.66} fill={P.ink} transform={rot ? `rotate(${rot} ${x + s / 2} ${y + s / 2})` : undefined}>{g}</text>
+    </g>
+  );
+  const enc = (x, y, w, h, col) => (
+    <g>
+      <path d={`M${x} ${y - h / 2} L${x + w} ${y - h / 4} L${x + w} ${y + h / 4} L${x} ${y + h / 2} Z`} fill={P.accentSoft} stroke={col || P.accent} strokeWidth="1.2" />
+      <text x={x + w / 2} y={y + 4} textAnchor="middle" style={SK} fontSize="11" fill={col || P.accent}>f</text>
+    </g>
+  );
+  const vec = (x, y, vals, col) => (
+    <g>
+      {vals.map((v, i) => <rect key={i} x={x} y={y + i * 9} width={14} height={8} fill={col} fillOpacity={0.12 + 0.8 * v} stroke={col} strokeWidth="0.5" />)}
+    </g>
+  );
+  const star = (x, y, r, col) => {
+    const pts = Array.from({ length: 10 }, (_, i) => {
+      const a = -Math.PI / 2 + (i * Math.PI) / 5, rr = i % 2 ? r * 0.45 : r;
+      return `${x + rr * Math.cos(a)},${y + rr * Math.sin(a)}`;
+    });
+    return <polygon points={pts.join(" ")} fill={col} stroke="#fff" strokeWidth="0.8" />;
+  };
+  const tri = (x, y, r, col, fill) => <polygon points={`${x},${y - r} ${x + r * 0.9},${y + r * 0.6} ${x - r * 0.9},${y + r * 0.6}`} fill={fill || col} stroke={col} strokeWidth="1.2" />;
+
+  const body = (() => {
+    switch (sk) {
+      case "pair": {
+        const pr = FS_PAIRS.find((x) => x.key === pk);
+        const m = 1;
+        const v1 = FS_VEC["5"], v2 = FS_VEC[pr.key === "same" ? "5b" : pr.g[1]];
+        const pull = pr.y === 0 ? 0.5 * pr.d * pr.d : 0;
+        const push = pr.y === 1 ? 0.5 * Math.max(0, m - pr.d) ** 2 : 0;
+        return (
+          <g>
+            <text x={300} y={17} textAnchor="middle" style={SK} fontSize="10.5" fill={P.sub}>two images, one encoder applied twice — the output is a distance, not a class</text>
+            {tile(28, 52, 58, pr.g[0], P.line, -6)}
+            {tile(28, 190, 58, pr.g[1], P.line, pr.key === "same" ? 7 : 0)}
+            <text x={57} y={265} textAnchor="middle" style={SK} fontSize="8" fill={P.sub}>x₂</text>
+            <text x={57} y={46} textAnchor="middle" style={SK} fontSize="8" fill={P.sub}>x₁</text>
+            {enc(112, 81, 92, 70)}
+            {enc(112, 219, 92, 70)}
+            <line x1={158} y1={118} x2={158} y2={182} stroke={P.accent} strokeWidth="1" strokeDasharray="3 3" />
+            <rect x={110} y={140} width={96} height={20} fill="#fff" />
+            <text x={158} y={154} textAnchor="middle" style={SK} fontSize="8.4" fill={P.accent}>shared weights W</text>
+            {vec(228, 54, v1, P.accent)}
+            {vec(228, 192, v2, P.accent)}
+            <text x={235} y={120} textAnchor="middle" style={SK} fontSize="8" fill={P.sub}>f(x₁)</text>
+            <text x={235} y={258} textAnchor="middle" style={SK} fontSize="8" fill={P.sub}>f(x₂)</text>
+            <path d="M246 81 C 280 81, 280 150, 300 150" stroke={P.ink} strokeWidth="1" fill="none" />
+            <path d="M246 219 C 280 219, 280 150, 300 150" stroke={P.ink} strokeWidth="1" fill="none" />
+            <circle cx={318} cy={150} r={18} fill="#fff" stroke={P.ink} strokeWidth="1.2" />
+            <text x={318} y={154} textAnchor="middle" style={SK} fontSize="9" fill={P.ink}>‖·‖</text>
+            <text x={318} y={186} textAnchor="middle" style={SK} fontSize="10" fill={P.ink}>d = {pr.d.toFixed(2)}</text>
+
+            <text x={372} y={58} style={SK} fontSize="10" fill={P.ink}>contrastive loss, margin m = {m}</text>
+            {[["pull  ½(1 − y)·d²", pull, pr.y === 0, P.green, "same class: drag together"], ["push  ½·y·max(0, m − d)²", push, pr.y === 1, P.red, "different: shove apart, up to m"]].map(([n, v, on, col, note], i) => {
+              const y = 86 + i * 70;
+              return (
+                <g key={n} opacity={on ? 1 : 0.35}>
+                  <text x={372} y={y} style={SK} fontSize="9.4" fill={col}>{n}</text>
+                  <rect x={372} y={y + 7} width={200} height={16} fill={P.faint} />
+                  <rect x={372} y={y + 7} width={Math.min(200, v * 400)} height={16} fill={col} fillOpacity="0.35" stroke={col} strokeWidth="0.8" />
+                  <text x={378 + Math.min(194, v * 400)} y={y + 19} style={SK} fontSize="9" fill={P.ink}>{v.toFixed(3)}</text>
+                  <text x={372} y={y + 38} style={SK} fontSize="8" fill={P.sub}>{note}</text>
+                </g>
+              );
+            })}
+            <text x={372} y={250} style={SK} fontSize="8.4" fill={pr.key === "far" ? P.red : P.sub}>
+              {pr.key === "far" ? "d > m — this pair is already far enough: zero loss" : pr.y === 0 ? "y = 0 — only the pull term is live" : "y = 1 — only the push term is live"}
+            </text>
+            <text x={372} y={272} style={SK} fontSize="7.8" fill={P.sub}>embeddings and distances are illustrative</text>
+          </g>
+        );
+      }
+
+      case "branch": {
+        const cols = nRef === 30 ? 6 : 5, s = nRef === 30 ? 22 : 26, gap = 4;
+        const idxs = Array.from({ length: nRef }, (_, i) => i);
+        const i0 = ri % nRef;
+        const emb = FS_REF30.slice(0, nRef);
+        const others = idxs.filter((j) => j !== i0);
+        let partners;
+        if (smart) {
+          partners = [...others].sort((a, b) => fsDist(emb[b], emb[i0]) - fsDist(emb[a], emb[i0])).slice(0, K);
+        } else {
+          const r = fsRng(seed * 97 + i0 * 13 + nRef);
+          const pool = [...others];
+          partners = Array.from({ length: K }, () => pool.splice(Math.floor(r() * pool.length), 1)[0]);
+        }
+        const ldist = partners.reduce((a, j) => a + fsDist(emb[i0], emb[j]), 0);
+        const rows = [i0, ...partners];
+        const PX = 372, PY = 38, PW = 210, PH = 220;
+        const px = (p) => [PX + p[0] * PW, PY + p[1] * PH];
+        return (
+          <g>
+            <text x={300} y={17} textAnchor="middle" style={SK} fontSize="10.5" fill={P.sub}>Reference Set of N = {nRef} normals · rᵢ and K = {K} {smart ? "hardest" : "random"} partner{K > 1 ? "s" : ""} share one f</text>
+            {idxs.map((j) => {
+              const x = 20 + (j % cols) * (s + gap), y = 38 + Math.floor(j / cols) * (s + gap);
+              const col = j === i0 ? P.accent : partners.includes(j) ? P.yellow : P.line;
+              return tile(x, y, s, "5", col, ((j * 37) % 17) - 8, j);
+            })}
+            <text x={20} y={272} style={SK} fontSize="8" fill={P.sub}>every tile is the normal class — no anomalies exist at training time</text>
+
+            {rows.map((j, k) => {
+              const y = 150 + (k - (rows.length - 1) / 2) * 50;
+              const col = k === 0 ? P.accent : P.yellow;
+              return (
+                <g key={`b${k}`}>
+                  {tile(196, y - 12, 24, "5", col, ((j * 37) % 17) - 8)}
+                  {enc(228, y, 46, 32, col)}
+                  <text x={292} y={y + 3} style={SK} fontSize="8" fill={col}>{k === 0 ? "rᵢ" : `r${String.fromCharCode(8320 + k)}`}</text>
+                  {arrow(306, y, px(emb[j])[0] - 7, px(emb[j])[1], P.line)}
+                </g>
+              );
+            })}
+            <text x={252} y={150 + ((rows.length - 1) / 2) * 50 + 34} textAnchor="middle" style={SK} fontSize="7.8" fill={P.accent}>same W</text>
+
+            <rect x={PX} y={PY} width={PW} height={PH} fill="none" stroke={P.line} strokeWidth="0.8" />
+            <text x={PX + 4} y={PY + 12} style={SK} fontSize="7.6" fill={P.sub}>embedding space (untrained)</text>
+            {emb.map((p, j) => {
+              const [x, y] = px(p);
+              const on = j === i0 || partners.includes(j);
+              return <circle key={j} cx={x} cy={y} r={on ? 4.2 : 2.6} fill={j === i0 ? P.accent : partners.includes(j) ? P.yellow : P.line} />;
+            })}
+            {partners.map((j, n) => {
+              const [x1, y1] = px(emb[i0]), [x2, y2] = px(emb[j]);
+              const lx = x1 + (x2 - x1) * (0.35 + 0.25 * n), ly = y1 + (y2 - y1) * (0.35 + 0.25 * n);
+              return (
+                <g key={`l${j}`}>
+                  <line x1={x1} y1={y1} x2={x2} y2={y2} stroke={P.yellow} strokeWidth="1.2" strokeDasharray="4 3" />
+                  <text x={lx + 4} y={ly - 5} style={SK} fontSize="8" fill={P.yellow}>{fsDist(emb[i0], emb[j]).toFixed(2)}</text>
+                </g>
+              );
+            })}
+            <text x={PX} y={PY + PH + 18} style={SK} fontSize="9.4" fill={P.ink}>L_dist(rᵢ) = {ldist.toFixed(2)}  <tspan fill={P.green}>· pull only, y = 0</tspan></text>
+            <text x={PX} y={PY + PH + 32} style={SK} fontSize="7.6" fill={P.sub}>nothing to push away from — there is no second class</text>
+          </g>
+        );
+      }
+
+      case "collapse":
+      case "stop":
+      case "bias": {
+        const X0 = 30, Y0 = 34, W = 300, H = 240;
+        const px = (p) => [X0 + p[0] * W, Y0 + p[1] * H];
+        const N = FS_NORMALS.map((p) => fsPos(p, false, effAlpha, effBias, tau));
+        const A = FS_ANOMS.map((p) => fsPos(p, true, effAlpha, effBias, tau));
+        const gapNow = Math.min(...A.map((a) => Math.min(...N.map((n) => fsDist(a, n)))));
+        const curve = Array.from({ length: 41 }, (_, e) => fsLoss(effAlpha, effBias, e / 40));
+        const LX = 384, LY = 46, LW = 196, LH = 110;
+        const lmax = 0.36;
+        const lx = (e) => LX + (e / 40) * LW, ly = (v) => LY + LH - (Math.min(v, lmax) / lmax) * LH;
+        const lossNow = curve[epoch];
+        const collapsed = gapNow < 0.02;
+        return (
+          <g>
+            <text x={300} y={17} textAnchor="middle" style={SK} fontSize="10.5" fill={P.sub}>
+              epoch {epoch} · {effAlpha === 0 ? "L_dist only" : `L_dist + ${effAlpha}·L_stop`}{sk === "bias" ? (effBias ? " · bias terms ON" : " · no bias terms") : ""}
+            </text>
+            <rect x={X0} y={Y0} width={W} height={H} fill="none" stroke={P.line} strokeWidth="0.8" />
+            <text x={X0 + 4} y={Y0 + 12} style={SK} fontSize="7.6" fill={P.sub}>representation space</text>
+            {effAlpha === 0 && (
+              <g>
+                <circle cx={px(FS_SIGMA0)[0]} cy={px(FS_SIGMA0)[1]} r={9} fill="none" stroke={P.red} strokeWidth="0.8" strokeDasharray="2 2" />
+                <text x={px(FS_SIGMA0)[0] + 12} y={px(FS_SIGMA0)[1] + 18} style={SK} fontSize="7.6" fill={P.red}>σ(0) — every input</text>
+              </g>
+            )}
+            {N.map((p, i) => <circle key={i} cx={px(p)[0]} cy={px(p)[1]} r={3.6} fill={P.accent} fillOpacity="0.8" />)}
+            {A.map((p, i) => <g key={`a${i}`}>{tri(px(p)[0], px(p)[1], 6, P.red, "rgba(155,59,59,0.25)")}</g>)}
+            {effAlpha > 0 && (
+              <g>
+                {star(px(FS_ANCHOR)[0], px(FS_ANCHOR)[1], 8, P.green)}
+                <text x={px(FS_ANCHOR)[0] - 10} y={px(FS_ANCHOR)[1] - 11} textAnchor="end" style={SK} fontSize="8" fill={P.green}>f*(rₐ) · frozen</text>
+              </g>
+            )}
+
+            <text x={LX} y={LY - 8} style={SK} fontSize="9" fill={P.ink}>train loss</text>
+            <line x1={LX} y1={LY + LH} x2={LX + LW} y2={LY + LH} stroke={P.ink} strokeWidth="0.8" />
+            <line x1={LX} y1={LY} x2={LX} y2={LY + LH} stroke={P.ink} strokeWidth="0.8" />
+            <path d={curve.map((v, e) => `${e ? "L" : "M"}${lx(e)} ${ly(v)}`).join(" ")} fill="none" stroke={P.accent} strokeWidth="1.6" />
+            <circle cx={lx(epoch)} cy={ly(lossNow)} r={3.5} fill={P.accent} />
+            <text x={LX + LW} y={LY + LH + 12} textAnchor="end" style={SK} fontSize="7.4" fill={P.sub}>epochs →</text>
+            <text x={LX} y={LY + LH + 30} style={SK} fontSize="9.4" fill={P.ink}>loss = {lossNow.toFixed(3)}</text>
+            <text x={LX} y={LY + LH + 50} style={SK} fontSize="9.4" fill={collapsed ? P.red : P.green}>anomaly → nearest normal: {gapNow.toFixed(2)}</text>
+            <text x={LX} y={LY + LH + 66} style={SK} fontSize="8.4" fill={collapsed ? P.red : P.sub}>
+              {collapsed ? (effAlpha > 0 ? "collapsed onto the anchor — loss 0, nothing learned" : "collapsed — loss 0, nothing learned") : epoch === 0 ? "untrained: drag the epochs" : "anomalies stay out of the cluster"}
+            </text>
+            <text x={LX} y={268} style={SK} fontSize="7.6" fill={P.sub}>illustrative geometry, not a trained model</text>
+          </g>
+        );
+      }
+
+      case "score": {
+        const X0 = 30, Y0 = 28, W = 300, H = 250;
+        const px = (p) => [X0 + p[0] * W, Y0 + p[1] * H];
+        const nn = (x) => FS_ARC.reduce((b, r) => (fsDist(x, r) < fsDist(x, b) ? r : b), FS_ARC[0]);
+        const score = (x) => (rule === "fs" ? fsDist(x, nn(x)) + alpha * fsDist(x, FS_ARC_ANCHOR) : fsDist(x, FS_ARC_CEN));
+        const rows = FS_TESTS.map((t) => ({ ...t, s: score(t.x) })).sort((a, b) => b.s - a.s);
+        const pos = rows.filter((t) => t.anom), neg = rows.filter((t) => !t.anom);
+        const auc = pos.reduce((acc, a) => acc + neg.reduce((c, b) => c + (a.s > b.s ? 1 : a.s === b.s ? 0.5 : 0), 0), 0) / (pos.length * neg.length);
+        const sel = FS_TESTS.find((t) => t.id === tsel);
+        const smax = Math.max(...rows.map((t) => t.s));
+        return (
+          <g>
+            <text x={300} y={16} textAnchor="middle" style={SK} fontSize="10.5" fill={P.sub}>
+              {rule === "fs" ? `FewSOME: nearest reference + ${alpha}·anchor` : "distance to the centre of the normal class"}
+            </text>
+            <rect x={X0} y={Y0} width={W} height={H} fill="none" stroke={P.line} strokeWidth="0.8" />
+            <path d={FS_ARC.map((p, i) => `${i ? "L" : "M"}${px(p)[0]} ${px(p)[1]}`).join(" ")} stroke={P.accent} strokeOpacity="0.25" strokeWidth="8" fill="none" />
+            {FS_ARC.map((p, i) => <circle key={i} cx={px(p)[0]} cy={px(p)[1]} r={3.4} fill={P.accent} />)}
+            {rule === "fs" ? star(px(FS_ARC_ANCHOR)[0], px(FS_ARC_ANCHOR)[1], 7.5, P.green) : (
+              <g stroke={P.ink} strokeWidth="1.4">
+                <path d={`M${px(FS_ARC_CEN)[0] - 6} ${px(FS_ARC_CEN)[1]} h12 M${px(FS_ARC_CEN)[0]} ${px(FS_ARC_CEN)[1] - 6} v12`} />
+              </g>
+            )}
+            {rule === "fs" ? (
+              <g>
+                <line x1={px(sel.x)[0]} y1={px(sel.x)[1]} x2={px(nn(sel.x))[0]} y2={px(nn(sel.x))[1]} stroke={P.accent} strokeWidth="1.4" />
+                <line x1={px(sel.x)[0]} y1={px(sel.x)[1]} x2={px(FS_ARC_ANCHOR)[0]} y2={px(FS_ARC_ANCHOR)[1]} stroke={P.green} strokeWidth="1.1" strokeDasharray="4 3" />
+              </g>
+            ) : (
+              <line x1={px(sel.x)[0]} y1={px(sel.x)[1]} x2={px(FS_ARC_CEN)[0]} y2={px(FS_ARC_CEN)[1]} stroke={P.ink} strokeWidth="1.2" strokeDasharray="4 3" />
+            )}
+            {FS_TESTS.map((t) => {
+              const [x, y] = px(t.x), on = t.id === tsel;
+              return (
+                <g key={t.id}>
+                  {t.anom ? tri(x, y, on ? 7.5 : 6, P.red, on ? "rgba(155,59,59,0.35)" : "#fff") : <circle cx={x} cy={y} r={on ? 6 : 4.8} fill={on ? "rgba(63,122,87,0.3)" : "#fff"} stroke={P.green} strokeWidth="1.4" />}
+                  <text x={x + 9} y={t.anom ? y - 6 : y + 16} style={SK} fontSize="8.4" fill={t.anom ? P.red : P.green}>{t.id}</text>
+                </g>
+              );
+            })}
+            <text x={X0 + 4} y={Y0 + H - 6} style={SK} fontSize="7.4" fill={P.sub}>● normal  ▲ anomaly (ground truth, for the reader)</text>
+
+            <text x={372} y={44} style={SK} fontSize="9.4" fill={P.ink}>ranked by anomaly score</text>
+            {rows.map((t, i) => {
+              const y = 56 + i * 28;
+              const col = t.anom ? P.red : P.green;
+              return (
+                <g key={t.id} onClick={() => setTsel(t.id)} style={{ cursor: "pointer" }}>
+                  <text x={372} y={y + 12} style={SK} fontSize="8.6" fill={col}>{t.id}</text>
+                  <rect x={394} y={y + 2} width={(t.s / smax) * 150} height={14} fill={col} fillOpacity={t.id === tsel ? 0.5 : 0.25} stroke={col} strokeWidth="0.8" />
+                  <text x={400 + (t.s / smax) * 150} y={y + 13} style={SK} fontSize="8.4" fill={P.ink}>{t.s.toFixed(2)}</text>
+                </g>
+              );
+            })}
+            <text x={372} y={238} style={SK} fontSize="10" fill={auc === 1 ? P.green : P.red}>AUC = {auc.toFixed(2)}</text>
+            <text x={372} y={254} style={SK} fontSize="8" fill={P.sub}>{auc === 1 ? "every anomaly outranks every normal" : "a normal outranks an anomaly somewhere"}</text>
+            <text x={372} y={272} style={SK} fontSize="7.6" fill={P.sub}>illustrative embeddings</text>
+          </g>
+        );
+      }
+
+      case "shots": {
+        const T = FS_T3[ds];
+        const lo = ds === "MNIST" ? 60 : 50, hi = ds === "MNIST" ? 100 : 80;
+        const X0 = 52, W = 330, Y0 = 34, H = 220;
+        const lmin = Math.log(2), lmax = Math.log(50);
+        const fx = (n) => X0 + ((Math.log(n) - lmin) / (lmax - lmin)) * W;
+        const fy = (v) => Y0 + H - ((v - lo) / (hi - lo)) * H;
+        const ticks = ds === "MNIST" ? [60, 70, 80, 90, 100] : [50, 60, 70, 80];
+        const names = ["FewSOME", "IGD", "DeepSVDD", "DROCC", "HTDG"];
+        return (
+          <g>
+            <text x={300} y={17} textAnchor="middle" style={SK} fontSize="10.5" fill={P.sub}>{ds} · AUC (%) against the number of normal training images</text>
+            {ticks.map((v) => (
+              <g key={v}>
+                <line x1={X0} y1={fy(v)} x2={X0 + W} y2={fy(v)} stroke={P.faint} strokeWidth="1" />
+                <text x={X0 - 6} y={fy(v) + 3} textAnchor="end" style={SK} fontSize="8" fill={P.sub}>{v}</text>
+              </g>
+            ))}
+            {FS_SHOTS.map((n, i) => (
+              <g key={n}>
+                <text x={fx(n)} y={Y0 + H + 14} textAnchor="middle" style={SK} fontSize="8" fill={i === shot ? P.accent : P.sub}>{n}</text>
+              </g>
+            ))}
+            <text x={X0 + W / 2} y={Y0 + H + 30} textAnchor="middle" style={SK} fontSize="8.2" fill={P.sub}>N — shots of the normal class (log scale)</text>
+            <line x1={fx(FS_SHOTS[shot])} y1={Y0} x2={fx(FS_SHOTS[shot])} y2={Y0 + H} stroke={P.accent} strokeWidth="1" strokeDasharray="3 3" />
+            {names.filter((n) => n !== "HTDG").map((n) => (
+              <g key={n}>
+                <path d={T[n].map((v, i) => `${i ? "L" : "M"}${fx(FS_SHOTS[i])} ${fy(v)}`).join(" ")} fill="none" stroke={FS_LINE_COL[n]} strokeWidth={n === "FewSOME" ? 2.2 : 1.3} />
+                {T[n].map((v, i) => <circle key={i} cx={fx(FS_SHOTS[i])} cy={fy(v)} r={n === "FewSOME" ? 3 : 2.2} fill={FS_LINE_COL[n]} />)}
+              </g>
+            ))}
+            {T.HTDG.map((v, i) => v != null && <rect key={i} x={fx(FS_SHOTS[i]) - 3.5} y={fy(v) - 3.5} width={7} height={7} fill="#fff" stroke={P.ink} strokeWidth="1.2" />)}
+
+            <text x={414} y={48} style={SK} fontSize="9.4" fill={P.ink}>at N = {FS_SHOTS[shot]}</text>
+            {names.map((n, i) => {
+              const v = T[n][shot];
+              return (
+                <g key={n}>
+                  {n === "HTDG"
+                    ? <rect x={418.5} y={66.5 + i * 24} width={7} height={7} fill="#fff" stroke={P.ink} strokeWidth="1.2" />
+                    : <line x1={414} y1={70 + i * 24} x2={430} y2={70 + i * 24} stroke={FS_LINE_COL[n]} strokeWidth={n === "FewSOME" ? 2.4 : 1.4} />}
+                  <text x={436} y={73 + i * 24} style={SK} fontSize="9" fill={FS_LINE_COL[n]}>{n}</text>
+                  <text x={580} y={73 + i * 24} textAnchor="end" style={SK} fontSize="9" fill={P.ink}>{v == null ? "—" : v.toFixed(1)}</text>
+                </g>
+              );
+            })}
+            <text x={414} y={202} style={SK} fontSize="8" fill={P.sub}>full training set, Table 1:</text>
+            <text x={414} y={216} style={SK} fontSize="8" fill={P.sub}>DeepSVDD {ds === "MNIST" ? "92.4" : "64.8"} · DROCC {ds === "MNIST" ? "87.8" : "76.9"}</text>
+            <text x={414} y={230} style={SK} fontSize="8" fill={P.sub}>on {ds === "MNIST" ? "6,000" : "5,000"} images per class</text>
+            <text x={414} y={252} style={SK} fontSize="7.6" fill={P.sub}>HTDG □ reports N = 5, 10 only</text>
+          </g>
+        );
+      }
+
+      case "limits": {
+        const T = FS_T4[ds];
+        const lo = ds === "MNIST" ? 70 : 55, hi = ds === "MNIST" ? 100 : 80;
+        const X0 = 60, W = 500, Y0 = 40, H = 190;
+        const fy = (v) => Y0 + H - ((v - lo) / (hi - lo)) * H;
+        const names = ["FewSOME", "DeepSVDD", "DROCC"];
+        const gw = W / FS_CONTAM.length, bw = 30;
+        const ticks = ds === "MNIST" ? [70, 80, 90, 100] : [55, 60, 70, 80];
+        const peak = ds === "MNIST" ? 98.0 : 76.6;
+        return (
+          <g>
+            <text x={300} y={17} textAnchor="middle" style={SK} fontSize="10.5" fill={P.sub}>{ds} · AUC (%) when part of the “normal” Reference Set is secretly anomalous</text>
+            {ticks.map((v) => (
+              <g key={v}>
+                <line x1={X0} y1={fy(v)} x2={X0 + W} y2={fy(v)} stroke={P.faint} strokeWidth="1" />
+                <text x={X0 - 6} y={fy(v) + 3} textAnchor="end" style={SK} fontSize="8" fill={P.sub}>{v}</text>
+              </g>
+            ))}
+            <line x1={X0} y1={fy(peak)} x2={X0 + W} y2={fy(peak)} stroke={P.accent} strokeWidth="1" strokeDasharray="5 4" />
+            <text x={X0 + W} y={fy(peak) - 5} textAnchor="end" style={SK} fontSize="7.8" fill={P.accent}>FewSOME, clean data: {peak.toFixed(1)}</text>
+            {FS_CONTAM.map((c, g) => {
+              const gx = X0 + g * gw + (gw - names.length * bw - 8) / 2;
+              return (
+                <g key={c}>
+                  {names.map((n, k) => {
+                    const v = T[n][g];
+                    return (
+                      <g key={n}>
+                        <rect x={gx + k * (bw + 4)} y={fy(v)} width={bw} height={Y0 + H - fy(v)} fill={FS_LINE_COL[n]} fillOpacity={n === "FewSOME" ? 0.55 : 0.3} stroke={FS_LINE_COL[n]} strokeWidth="0.8" />
+                        <text x={gx + k * (bw + 4) + bw / 2} y={fy(v) - 4} textAnchor="middle" style={SK} fontSize="7.4" fill={P.ink}>{v.toFixed(1)}</text>
+                      </g>
+                    );
+                  })}
+                  <text x={X0 + g * gw + gw / 2} y={Y0 + H + 15} textAnchor="middle" style={SK} fontSize="8.6" fill={P.ink}>{c}% contaminated</text>
+                </g>
+              );
+            })}
+            <line x1={X0} y1={Y0 + H} x2={X0 + W} y2={Y0 + H} stroke={P.ink} strokeWidth="0.9" />
+            {names.map((n, i) => (
+              <g key={n}>
+                <rect x={X0 + i * 120} y={262} width={12} height={10} fill={FS_LINE_COL[n]} fillOpacity={n === "FewSOME" ? 0.55 : 0.3} stroke={FS_LINE_COL[n]} strokeWidth="0.8" />
+                <text x={X0 + i * 120 + 18} y={271} style={SK} fontSize="8.6" fill={P.ink}>{n}</text>
+              </g>
+            ))}
+            <text x={X0 + W} y={271} textAnchor="end" style={SK} fontSize="8.6" fill={P.green}>at 20%: {((T.FewSOME[3] / peak) * 100).toFixed(0)}% of clean AUC</text>
+            <text x={300} y={292} textAnchor="middle" style={SK} fontSize="7.8" fill={P.sub}>y-axis starts at {lo} · bars are Table 4, clean reference line is Table 1</text>
+          </g>
+        );
+      }
+
+      default:
+        return null;
+    }
+  })();
+
+  function arrow(x1, y1, x2, y2, col) {
+    const a = Math.atan2(y2 - y1, x2 - x1), w = 3.5, len = 6;
+    return (
+      <g stroke={col || P.accent} strokeWidth="1.1" fill="none">
+        <path d={`M${x1} ${y1} L${x2} ${y2}`} />
+        <path d={`M${x2 - len * Math.cos(a) - w * Math.sin(a)} ${y2 - len * Math.sin(a) + w * Math.cos(a)} L${x2} ${y2} L${x2 - len * Math.cos(a) + w * Math.sin(a)} ${y2 - len * Math.sin(a) - w * Math.cos(a)}`} />
+      </g>
+    );
+  }
+
+  const sliderRow = { display: "flex", gap: 10, marginBottom: 10, flexWrap: "wrap", alignItems: "center" };
+  const lbl = { ...SK, fontSize: "0.62rem", color: P.sub };
+  const val = { ...SK, fontSize: "0.66rem", color: P.ink, minWidth: 66 };
+  const toggle = (on) => ({ ...SK, fontSize: "0.68rem", padding: "3px 11px", cursor: "pointer", border: `1px solid ${on ? P.accent : P.line}`, background: on ? P.accentSoft : P.paper2, color: on ? P.accent : P.sub });
+
+  return (
+    <div>
+      {sk === "pair" && (
+        <div style={sliderRow}>
+          <span style={lbl}>pair:</span>
+          {FS_PAIRS.map((x) => (
+            <button key={x.key} onClick={() => setPk(x.key)} aria-pressed={pk === x.key} style={toggle(pk === x.key)}>{x.label}</button>
+          ))}
+        </div>
+      )}
+
+      {sk === "branch" && (
+        <div style={sliderRow}>
+          <span style={lbl}>N:</span>
+          {[5, 10, 30].map((n) => <button key={n} onClick={() => setNRef(n)} aria-pressed={nRef === n} style={toggle(nRef === n)}>{n}</button>)}
+          <span style={lbl}>K:</span>
+          {[1, 2, 3].map((k) => <button key={k} onClick={() => setK(k)} aria-pressed={K === k} style={toggle(K === k)}>{k}</button>)}
+          <button onClick={() => setRi((i) => (i + 1) % nRef)} style={toggle(false)}>next rᵢ</button>
+          <button onClick={() => { setSmart(false); setSeed((s) => s + 1); }} style={toggle(!smart)}>random partners</button>
+          <button onClick={() => setSmart(true)} aria-pressed={smart} style={toggle(smart)}>S-FewSOME: hardest</button>
+        </div>
+      )}
+
+      {(sk === "collapse" || sk === "stop" || sk === "bias") && (
+        <div style={sliderRow}>
+          <span style={lbl}>epoch:</span>
+          <input type="range" min={0} max={40} step={1} value={epoch} onChange={(e) => setEpoch(+e.target.value)} aria-label="Training epoch" style={{ accentColor: P.accent, width: 160 }} />
+          <span style={val}>{epoch} / 40</span>
+          {sk !== "collapse" && (
+            <>
+              <span style={lbl}>α:</span>
+              {[0, 0.1, 0.3, 0.6, 1].map((a) => <button key={a} onClick={() => setAlpha(a)} aria-pressed={alpha === a} style={toggle(alpha === a)}>{a}</button>)}
+            </>
+          )}
+          {sk === "bias" && [[false, "no bias terms"], [true, "bias terms on"]].map(([b, label]) => (
+            <button key={label} onClick={() => setBias(b)} aria-pressed={bias === b} style={toggle(bias === b)}>{label}</button>
+          ))}
+        </div>
+      )}
+
+      {sk === "score" && (
+        <div style={sliderRow}>
+          <span style={lbl}>rule:</span>
+          {[["fs", "FewSOME (Eq. 3)"], ["cen", "distance to centre"]].map(([k, label]) => (
+            <button key={k} onClick={() => setRule(k)} aria-pressed={rule === k} style={toggle(rule === k)}>{label}</button>
+          ))}
+          {rule === "fs" && (
+            <>
+              <span style={lbl}>α:</span>
+              {[0.1, 0.3, 0.6, 1].map((a) => <button key={a} onClick={() => setAlpha(a)} aria-pressed={alpha === a} style={toggle(alpha === a)}>{a}</button>)}
+            </>
+          )}
+          <span style={lbl}>test image:</span>
+          {FS_TESTS.map((t) => <button key={t.id} onClick={() => setTsel(t.id)} aria-pressed={tsel === t.id} style={toggle(tsel === t.id)}>{t.id}</button>)}
+        </div>
+      )}
+
+      {(sk === "shots" || sk === "limits") && (
+        <div style={sliderRow}>
+          <span style={lbl}>dataset:</span>
+          {["MNIST", "CIFAR-10"].map((d) => <button key={d} onClick={() => setDs(d)} aria-pressed={ds === d} style={toggle(ds === d)}>{d}</button>)}
+          {sk === "shots" && (
+            <>
+              <span style={lbl}>N:</span>
+              <input type="range" min={0} max={FS_SHOTS.length - 1} step={1} value={shot} onChange={(e) => setShot(+e.target.value)} aria-label="Number of normal training images" style={{ accentColor: P.accent, width: 140 }} />
+              <span style={val}>{FS_SHOTS[shot]} images</span>
+            </>
+          )}
+        </div>
+      )}
+
+      <div style={{ border: `1px solid ${P.line}`, borderTop: `2px solid ${P.ink}`, background: P.paper2 }}>
+        <div style={{ background: "#fff" }}>
+          <div style={{ aspectRatio: "600 / 300" }}>
+            <svg viewBox="0 0 600 300" width="100%" height="100%" role="img" aria-label={`Siamese networks and FewSOME walkthrough step ${step + 1}: ${sc.label}`} style={{ display: "block" }} strokeLinecap="round" strokeLinejoin="round">
+              {body}
+            </svg>
+          </div>
+        </div>
+        <div style={{ padding: "0.9rem 1.1rem 1rem" }}>
+          <div style={{ ...DISP, fontWeight: 600, fontSize: "1rem", color: P.ink, marginBottom: 4 }}>{sc.title}</div>
+          <p style={{ ...BODY, fontSize: "0.88rem", color: P.sub, lineHeight: 1.65, textWrap: "pretty", margin: 0 }}>
+            <span style={{ ...SK, fontSize: "0.6rem", color: P.accent, textTransform: "uppercase", letterSpacing: "0.08em", marginRight: 6 }}>step {step + 1}</span>
+            {sc.body}
+          </p>
+          <div style={{ ...SK, fontSize: "0.66rem", color: P.ink, marginTop: 9, background: P.faint, padding: "6px 9px", display: "inline-block" }}>{sc.math}</div>
+        </div>
+      </div>
+
+      <div style={{ display: "flex", gap: 6, marginTop: 10, flexWrap: "wrap" }}>
+        {FS_STEPS.map((s, j) => (
+          <button key={s.key} onClick={() => { setStep(j); if (s.key !== FS_STEPS[step].key && ["collapse", "stop", "bias"].includes(s.key)) setEpoch(0); }} style={{ ...SK, fontSize: "0.62rem", padding: "4px 9px", cursor: "pointer", border: `1px solid ${j === step ? P.accent : P.line}`, background: j === step ? P.accentSoft : "#fff", color: j === step ? P.accent : P.sub }}>{j + 1}. {s.label}</button>
+        ))}
+      </div>
+    </div>
+  );
+}
