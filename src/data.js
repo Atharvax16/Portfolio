@@ -30,7 +30,7 @@ export const PAPER = {
 
 /* Nav + scroll-tracked sections (paper running order).
    The gallery "Appendix" is intentionally NOT here — it stays out of nav. */
-export const SECS = ["Abstract", "Research", "Tracks", "Work", "Publications", "Findings", "Metrics", "Architectures", "Reading", "Foundations", "Methods", "About", "Contact"];
+export const SECS = ["Abstract", "Research", "Tracks", "Work", "OCT", "Publications", "Findings", "Metrics", "Architectures", "Reading", "Foundations", "Methods", "About", "Contact"];
 
 /* ════════════════════════════════════════
    CURRENT TRACKS — the live threads, updated as they move.

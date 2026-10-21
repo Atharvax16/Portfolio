@@ -3,6 +3,7 @@ import {
   P, SECS, PAPER, RESEARCH_AREAS, READING_LOG, TIL_REPO, FROM_SCRATCH,
   METHODS, JOURNEY, ORDERED_PROJECTS, INSIGHTS, TRACKS, PUBLICATIONS, RESUME,
 } from "./data.js";
+import { OralOCTPipeline } from "./oraloct.jsx";
 import { Rv, Radar, PhotoGallery, MatrixOverlay, ResearchModal, SketchFidelityAccuracy, SketchResearcherFrontier, SketchMolecule, SketchAttention, SketchFFT, SketchSpectral, SketchDCT, InsightsViewer, MetricsGateway, LabGateway, VisitorStats } from "./ui.jsx";
 
 /* Type tokens */
@@ -440,6 +441,25 @@ export default function App() {
               </Rv>
             ))}
           </div>
+        </Section>
+
+        {/* ═══ 3a · ORAL OCT (research in progress) ═══
+            A concept explainer for the volumetric pipeline, drawn as a
+            sketchbook page. Numbered 3a rather than 4 so the §-references
+            across the paper (§4 Publications onward) keep pointing where they
+            did. Deliberately names no data, collaborators or results. */}
+        <Section id="OCT" num="3a" note={<p style={noteTxt}>A pipeline explainer, not a result. Every number in the sketch is made up to make the arithmetic visible. The longer proposal has its own room: <a href="#/dentaloct" className="body-link" style={{ fontStyle: "normal" }}>Oral OCT ↗</a></p>}>
+          <SecTitle>Oral OCT — research in progress</SecTitle>
+          <Rv>
+            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: "0.8rem" }}>
+              <span style={{ width: 7, height: 7, borderRadius: "50%", background: P.accent, boxShadow: `0 0 0 3px ${P.accentSoft}` }} />
+              <span style={{ ...MONO, fontSize: "0.6rem", color: P.accent, border: `1px solid ${P.accent}55`, padding: "1px 7px", textTransform: "uppercase", letterSpacing: "0.1em" }}>Research in progress</span>
+            </div>
+            <p style={{ ...BODY, fontSize: "0.95rem", lineHeight: 1.75, color: P.ink, marginBottom: "1.6rem", maxWidth: 600, textWrap: "pretty" }}>
+              Optical coherence tomography (OCT) can image the lining of the inner cheek without cutting it, a few millimetres deep and in 3D. Two early changes in oral cancer are a <span style={{ background: P.highlight, padding: "0 2px" }}>thicker epithelium</span> and a <span style={{ background: P.highlight, padding: "0 2px" }}>disrupted basement membrane</span>. The goal is a decision-support pipeline that runs on volumetric in-vivo scans, measures both of these in a way a clinician can check, and reports where it isn't sure.
+            </p>
+          </Rv>
+          <Rv delay={0.06}><OralOCTPipeline /></Rv>
         </Section>
 
         {/* ═══ 4 · PUBLICATIONS ═══
